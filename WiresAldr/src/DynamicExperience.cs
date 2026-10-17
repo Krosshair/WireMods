@@ -84,7 +84,7 @@ namespace WiresAldr
             bool[] keys = WorldProgress.ReadKeys();
             int tier = 1;
             for (int i=0; i<keys.Length; i++)
-                if (keys[i]) tier = Math.Max(tier, i+2);
+                if (keys[i]) tier = Math.Max(tier, i+1); // conquered biome = your tier
             cachedTier = tier; cachedPlayerId = player == null ? -1 : player.GetInstanceID(); lastCheck = Time.time;
             return tier;
         }
@@ -126,8 +126,10 @@ namespace WiresAldr
             if (c.TargetTier >= PlayerTier(player) - 1)
                 danger *= 1f + 0.8f * Mathf.Clamp01(
                     (player.GetSkillLevel(skill) - 40f) / 50f);
-            float precision = Mathf.Clamp(c.Precision, 0f, 0.12f);
-            if (skill == Skills.SkillType.Polearms || skill == Skills.SkillType.ElementalMagic) precision += 0.03f * Mathf.Max(0, c.HitCount - 1);
+            bool ranged = skill == Skills.SkillType.Bows || skill == Skills.SkillType.Crossbows;
+            float precision = Mathf.Clamp(c.Precision, 0f, ranged ? 0.25f : 0.12f);
+            // One attack hitting several enemies (cleaves, sweeps, piercing shots, AoE).
+            precision += 0.03f * Mathf.Max(0, c.HitCount - 1);
             return danger + precision * (Plugin.XpCombatStrength.Value / 100f);
         }
         [HarmonyPatch(typeof(Skills), nameof(Skills.RaiseSkill))]
@@ -167,7 +169,7 @@ namespace WiresAldr
                 if (c != null && c.Player == p && c.Target && IsCombatSkill(skillType))
                 {
                     // Preserve the familiar 1x / 2x / 3x enemy-star level scaling.
-                    growth *= Mathf.Clamp(c.Stars, 1, 4);
+                    growth *= 1f + 0.25f * (Mathf.Clamp(c.Stars, 1, 4) - 1); // 0/1/2 stars: x1 / x1.25 / x1.5
                     if (skillType != Skills.SkillType.Blocking && !addingParryXp)
                         growth *= 1f + CombatChallenge(c, p, skillType);
                 }
@@ -198,7 +200,7 @@ namespace WiresAldr
                 }
                 // Momentum from real activity; nested bonus awards granted
                 // inside another XP event don't count twice.
-                if (xpDepth == 1) Expedition.ObserveXp();
+                if (xpDepth == 1) Expedition.ObserveXp(currentBiomeTier);
                 growth *= Expedition.Multiplier();
                 factor *= growth;
                 AldrDiagnostics.Skill(skillType, xpBefore, factor, p);
@@ -335,7 +337,12 @@ namespace WiresAldr
                 c.Raid = c.Dangerous && IsRaidCreature(__instance);
                 // Leading a moving target at range requires more accuracy than hitting a stationary target.
                 float distance = Vector3.Distance(c.Player.transform.position, __instance.transform.position);
-                c.Precision = distance > 12f && IsMoving(__instance) ? Mathf.Min(0.07f, (distance - 12f) * 0.002f) : 0f;
+                bool rangedHit = hit.m_skill == Skills.SkillType.Bows || hit.m_skill == Skills.SkillType.Crossbows;
+                if (rangedHit)
+                    // Any moving target is hard to hit; distance adds more.
+                    c.Precision = (IsMoving(__instance) ? 0.08f : 0.03f) + Mathf.Min(0.12f, distance * 0.003f);
+                else
+                    c.Precision = distance > 12f && IsMoving(__instance) ? Mathf.Min(0.07f, (distance - 12f) * 0.002f) : 0f;
                 bool unaware = ai != null && !ai.IsAlerted() && hit.m_backstabBonus > 1.01f;
                 if (unaware) c.Precision += 0.07f;
                 if (c.Dangerous) SkillSpecific.NoteConnectedHit();
@@ -434,10 +441,7 @@ namespace WiresAldr
                         " additional_bonus_factor=" + bonus.ToString("0.###"));
                     // 10x applies only to this extra bonus, never to all Blocking XP.
                     addingParryXp = true;
-                    p.RaiseSkill(Skills.SkillType.Blocking, 2f * bonus);
-                    SkillReward.Grant(p, Skills.SkillType.Blocking,
-                        0.001f + 0.006f * Mathf.Pow(r, 4f) *
-                            __state.AttackRisk, "successful_risky_parry");
+                    SkillReward.Grant(p, Skills.SkillType.Blocking, 3f * bonus, "risky_parry");
                 }
                 finally
                 {
@@ -542,10 +546,8 @@ namespace WiresAldr
                 if (AldrDiagnostics.Active) AldrDiagnostics.Sample("DODGE_BONUS",
                     "confirmed_streak=" + s.Streak + " added_skill_gain=" +
                     bonus.ToString("0.###"));
-                __instance.RaiseSkill(Skills.SkillType.Dodge, bonus);
-                SkillReward.Grant(__instance, Skills.SkillType.Dodge,
-                    0.001f + 0.0009f * s.Streak,
-                    "confirmed_dodge_streak_" + s.Streak);
+                SkillReward.Grant(__instance, Skills.SkillType.Dodge, bonus,
+                    "dodge_streak_" + s.Streak);
             }
         }
     }

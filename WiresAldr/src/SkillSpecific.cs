@@ -119,7 +119,7 @@ namespace WiresAldr
                         {
                             int prior = Mathf.Max(0,
                                 Mathf.FloorToInt(previousCount));
-                            familiarity = 0.12f - prior * 0.04f;
+                            familiarity = 0f; // first crafts are rewarded by CraftingProgression
                             if (AldrDiagnostics.Active)
                                 AldrDiagnostics.Sample("RECIPE_XP",
                                     "recipe=" +

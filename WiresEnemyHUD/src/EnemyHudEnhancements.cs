@@ -106,6 +106,32 @@ namespace EnemyHudRework
             return -1f;
         }
 
+        // Full window in which vanilla doubles damage (Character.IsStaggering:
+        // the stagger animation including its recovery/exit). Learned per
+        // creature type from real observations; the first time it is
+        // estimated from the stagger animation's length.
+        private static readonly System.Collections.Generic.Dictionary<string, float> StaggerWindows =
+            new System.Collections.Generic.Dictionary<string, float>();
+
+        private static string CreatureKey(Character c)
+        {
+            string n = c.gameObject.name;
+            int i = n.IndexOf("(Clone)", System.StringComparison.Ordinal);
+            return i >= 0 ? n.Substring(0, i) : n;
+        }
+
+        private static float EstimateStaggerWindow(Animator animator)
+        {
+            if (animator == null || !animator.isActiveAndEnabled) return 1.5f;
+            int tag = Animator.StringToHash("stagger");
+            AnimatorStateInfo s = animator.GetCurrentAnimatorStateInfo(0);
+            if (s.tagHash != tag && animator.IsInTransition(0)) s = animator.GetNextAnimatorStateInfo(0);
+            if (s.tagHash != tag || s.length <= 0f) return 1.5f;
+            float speed = Mathf.Max(0.05f, animator.speed);
+            // Remaining state time plus the blend out, during which the bonus still applies.
+            return s.length * Mathf.Max(0f, 1f - s.normalizedTime) / speed + 0.25f;
+        }
+
         private void UpdateEnhancedEffects(EnemyUiState state, bool isEnemy)
         {
             if (state == null || state.Kind != HudKind.Enemy ||
@@ -115,12 +141,29 @@ namespace EnemyHudRework
 
             Image overlay = state.RecoveryOverlay;
             if (overlay == null) return;
+            bool staggering = state.Character.IsStaggering();
+            float now = Time.time;
+            if (staggering && state.StaggerBegan < 0f)
+            {
+                state.StaggerBegan = now;
+                float learned;
+                state.StaggerEstimate = StaggerWindows.TryGetValue(CreatureKey(state.Character), out learned)
+                    ? learned : EstimateStaggerWindow(state.StaggerAnimator);
+                state.StaggerEstimate = Mathf.Max(0.3f, state.StaggerEstimate);
+            }
+            else if (!staggering && state.StaggerBegan >= 0f)
+            {
+                float actual = now - state.StaggerBegan;
+                if (actual > 0.2f && actual < 15f) StaggerWindows[CreatureKey(state.Character)] = actual;
+                state.StaggerBegan = -1f;
+            }
             bool show = isEnemy && _staggerBarEnabled.Value &&
                 _staggerRecoveryEnabled.Value &&
                 state.StaggerRoot != null && state.StaggerRoot.activeSelf &&
-                state.Character.IsStaggering();
-            float progress = show ? ActualStaggerProgress(state.StaggerAnimator) : -1f;
-            show = show && progress >= 0f && progress < 1f;
+                staggering && state.StaggerBegan >= 0f;
+            // Shrinks across the whole damage-bonus window; if this one runs
+            // longer than learned, a thin sliver stays until it truly ends.
+            float progress = show ? Mathf.Clamp01((now - state.StaggerBegan) / state.StaggerEstimate) : 1f;
             overlay.gameObject.SetActive(show);
             if (show)
             {
@@ -128,7 +171,7 @@ namespace EnemyHudRework
                 RectTransform rect = overlay.rectTransform;
                 rect.anchoredPosition = fill.anchoredPosition;
                 rect.sizeDelta = fill.sizeDelta;
-                overlay.fillAmount = 1f - progress;
+                overlay.fillAmount = Mathf.Max(0.03f, 1f - progress);
             }
         }
 

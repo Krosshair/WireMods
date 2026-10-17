@@ -91,11 +91,11 @@ namespace WiresAldr
                         item.m_quality <= __state.PreviousQuality)
                         continue;
                     int gained = Mathf.Clamp(item.m_quality - __state.PreviousQuality, 1, 5);
-                    float fraction = 0f;
+                    // 1 XP + 0.5 per quality level, for every level gained.
+                    float xp = 0f;
                     for (int q = __state.PreviousQuality + 1; q <= __state.PreviousQuality + gained; ++q)
-                        fraction += Mathf.Min(0.017f, 0.004f + q * 0.0025f +
-                            Mathf.Min(4, __state.IngredientTypes) * 0.001f);
-                    SkillReward.Grant(player, __state.Skill, fraction,
+                        xp += 1f + 0.5f * q;
+                    SkillReward.Grant(player, __state.Skill, xp,
                         "successful_upgrade_quality_" + item.m_quality);
                     break;
                 }
@@ -114,9 +114,9 @@ namespace WiresAldr
             profile.m_playerStats[0].m_itemCraftStats.TryGetValue(
                 __state.ItemName, out after);
             if (after <= __state.PreviousCraftCount) return;
-            float bonus = Mathf.Min(0.015f,
-                0.005f + 0.002f * __state.IngredientTypes);
-            SkillReward.Grant(player, __state.Skill, bonus, "first_complex_craft");
+            // First craft of a multi-ingredient item: 1.5 XP + 0.5 per ingredient type (max 5).
+            SkillReward.Grant(player, __state.Skill,
+                Mathf.Min(5f, 1.5f + 0.5f * __state.IngredientTypes), "first_complex_craft");
         }
     }
 }

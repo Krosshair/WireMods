@@ -1,66 +1,24 @@
-using System;
 using UnityEngine;
 
 namespace WiresAldr
 {
-    // Convert one verified gameplay accomplishment to a fraction of the
-    // vanilla next-level requirement. The vanilla Skills.RaiseSkill path
-    // still applies skill-gain rate, biome progression and skill caps.
+    // Flat bonus XP for a real accomplishment, in vanilla XP units (a weapon
+    // hit on a creature is 1.5, one craft is 1, one second of sprinting is 1).
+    // It is a normal XP gain: Aldr's biome, catch-up and Expedition scaling
+    // apply, so the same accomplishment is worth more in a dangerous biome.
     internal static class SkillReward
     {
         internal static void Grant(Player player, Skills.SkillType type,
-            float nextLevelFraction, string reason)
+            float xp, string reason)
         {
             if (player == null || player != Player.m_localPlayer ||
                 Plugin.Enabled == null || !Plugin.Enabled.Value ||
                 !Plugin.XpEnabled.Value || !Plugin.XpChallenge.Value ||
-                nextLevelFraction <= 0f) return;
-
-            Skills skills = player.GetSkills();
-            if (skills == null || Game.m_skillGainRate <= 0f) return;
-
-            // Use the underlying vanilla skill level, not an effective
-            // level potentially raised by FortifiedSkillsRedux.
-            Skills.Skill trained = null;
-            foreach (var entry in skills.GetSkillList())
-                if (entry != null && entry.m_info != null &&
-                    entry.m_info.m_skill == type)
-                {
-                    trained = entry;
-                    break;
-                }
-            if (trained == null)
-            {
-                // Let vanilla initialize a never-used skill if necessary.
-                skills.GetSkillLevel(type);
-                foreach (var entry in skills.GetSkillList())
-                    if (entry != null && entry.m_info != null &&
-                        entry.m_info.m_skill == type)
-                    {
-                        trained = entry;
-                        break;
-                    }
-            }
-            if (trained == null || trained.m_info.m_increseStep <= 0f)
-                return;
-            float step = trained.m_info.m_increseStep;
-            float level = trained.m_level;
-            if (level >= 100f) return;
-
-            // Mirrors vanilla Skill.GetNextLevelRequirement exactly.
-            float required = Mathf.Pow(Mathf.Floor(level + 1f), 1.5f)
-                * 0.5f + 0.5f;
-            float gain = required * Mathf.Clamp(nextLevelFraction, 0f, 0.04f);
-            float factor = gain / (step * Game.m_skillGainRate);
-            if (float.IsNaN(factor) || float.IsInfinity(factor) ||
-                factor <= 0f) return;
-
+                type == Skills.SkillType.None || xp <= 0f) return;
             if (AldrDiagnostics.Active)
-                AldrDiagnostics.Sample("COMPLETION_XP",
-                    "skill=" + type + " reason=" + reason +
-                    " next_level_fraction=" + nextLevelFraction.ToString("0.####") +
-                    " level=" + level.ToString("0.#"));
-            player.RaiseSkill(type, factor);
+                AldrDiagnostics.Sample("REWARD_XP", "skill=" + type +
+                    " reason=" + reason + " base_xp=" + xp.ToString("0.##"));
+            player.RaiseSkill(type, xp);
         }
     }
 }

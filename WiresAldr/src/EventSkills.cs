@@ -37,9 +37,7 @@ namespace WiresAldr
                 if (escaped.TryGetValue(id, out last) && Time.time - last < 90f) return;
                 if (escaped.Count > 2048) escaped.Clear();
                 escaped[id] = Time.time;
-                p.RaiseSkill(Skills.SkillType.Sneak, 0.18f);
-                SkillReward.Grant(p, Skills.SkillType.Sneak,
-                    0.003f, "escaped_hostile_detection");
+                SkillReward.Grant(p, Skills.SkillType.Sneak, 2f, "escaped_detection");
             }
         }
 
@@ -68,10 +66,8 @@ namespace WiresAldr
                 if (shieldHit.TryGetValue(id, out previous) && Time.time - previous < 10f) return;
                 if (shieldHit.Count > 1024) shieldHit.Clear();
                 shieldHit[id] = Time.time;
-                p.RaiseSkill(Skills.SkillType.BloodMagic, Mathf.Clamp(ratio * 0.15f, 0f, 0.12f));
                 SkillReward.Grant(p, Skills.SkillType.BloodMagic,
-                    Mathf.Clamp(0.002f + ratio * 0.01f, 0.002f, 0.009f),
-                    "dangerous_shield_absorption");
+                    Mathf.Clamp(0.5f + ratio * 3f, 0.5f, 2f), "shield_absorbed_hit");
             }
         }
     }

@@ -3,7 +3,7 @@ namespace WiresAldr
 {
     internal static class ExperienceMath
     {
-        private static readonly double[] TierSteps = { 1, 1, 1.1, 1.3, 1.6, 2, 2.6, 3.4, 4, 5 };
+        private static readonly double[] TierSteps = { 1, 1, 1.1, 1.25, 1.45, 1.7, 2.0, 2.35, 2.7, 3.0 };
         internal static double Progression(int tier, double strengthPercent)
         {
             tier = Math.Max(1, Math.Min(tier, TierSteps.Length - 1));

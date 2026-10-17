@@ -5,89 +5,83 @@ using UnityEngine;
 
 namespace WiresAldr
 {
-    // Per-skill accomplishment rewards. Each one is a real vanilla event,
-    // paid as a share of the skill's next level (SkillReward), so it stays
-    // worthwhile at high levels without inflating every single hit.
+    // Accomplishment rewards (flat bonus XP, see SkillReward).
+    // Detected on the player's OWN game, so they work the same in
+    // multiplayer no matter whose game controls the creature, tree or rock:
+    // a hit is remembered for 6 s, and if the target dies or is destroyed in
+    // that time while the player is still nearby, the reward is paid.
+    // In co-op, everyone who hit it in those 6 s gets the reward.
     internal static class Accomplishments
     {
-        // ---- Killing blows -------------------------------------------------
-        private struct LocalHit
+        private sealed class Pending
         {
+            internal UnityEngine.Object Target;
+            internal Character Creature;
+            internal Vector3 Position;
             internal float Time;
             internal Skills.SkillType Skill;
-            internal int Tier;
-            internal int Stars;
-            internal bool Sneak;
+            internal float Xp;
+            internal float SneakXp;
+            internal string Reason;
         }
-        private static readonly Dictionary<int, LocalHit> lastHits = new Dictionary<int, LocalHit>();
 
-        // Recorded on the attacking client (Character.Damage runs there), so
-        // kills are credited even when another player owns the creature.
+        private const float Window = 6f;
+        private const float Range = 40f;
+        private static readonly Dictionary<int, Pending> pending = new Dictionary<int, Pending>();
+        private static readonly List<int> scratch = new List<int>();
+
+        private static void Remember(UnityEngine.Object target, Pending p)
+        {
+            if (pending.Count > 256) Prune(true);
+            pending[target.GetInstanceID()] = p;
+        }
+
+        // ---- Kills -------------------------------------------------------
+        // Same tier as your progression: 2.5 XP (about two hits' worth),
+        // +1 per tier above (max +3), one tier below: 1, older: nothing.
+        // +50% per star. Sneak-attack kills also give Sneak XP.
         internal static void RecordHit(Character target, Player player, HitData hit,
             int targetTier, int stars, bool unaware)
         {
-            if (!target || !player || hit == null || hit.m_skill == Skills.SkillType.None) return;
-            if (lastHits.Count > 256) lastHits.Clear();
-            lastHits[target.GetInstanceID()] = new LocalHit
+            if (!target || !player || hit == null || hit.m_skill == Skills.SkillType.None ||
+                target.IsBoss() || target.IsTamed() || target.IsPlayer()) return;
+            int diff = targetTier - DynamicExperience.PlayerTierOf(player);
+            float xp = diff >= 0 ? 2.5f + Mathf.Min(diff, 3) : diff == -1 ? 1f : 0f;
+            if (xp <= 0f) { pending.Remove(target.GetInstanceID()); return; }
+            xp *= 1f + 0.5f * (Mathf.Clamp(stars, 1, 4) - 1);
+            float sneak = unaware && player.IsCrouching() ? (diff >= 0 ? 3f : 1.5f) : 0f;
+            Remember(target, new Pending
             {
-                Time = UnityEngine.Time.time, Skill = hit.m_skill, Tier = targetTier,
-                Stars = Mathf.Clamp(stars, 1, 4),
-                Sneak = unaware && player.IsCrouching()
-            };
+                Target = target, Creature = target, Position = target.transform.position,
+                Time = UnityEngine.Time.time, Skill = hit.m_skill, Xp = xp, SneakXp = sneak,
+                Reason = "kill_tier_diff_" + diff
+            });
         }
 
+        private static void Pay(Pending p)
+        {
+            Player player = Player.m_localPlayer;
+            if (!player) return;
+            SkillReward.Grant(player, p.Skill, p.Xp, p.Reason);
+            if (p.SneakXp > 0f) SkillReward.Grant(player, Skills.SkillType.Sneak, p.SneakXp, "sneak_attack_kill");
+        }
+
+        // Immediate payout when this game controls the creature.
         [HarmonyPatch(typeof(Character), nameof(Character.OnDeath))]
-        private static class KillingBlow
+        private static class KillOnOwner
         {
             private static void Prefix(Character __instance)
             {
-                if (!__instance || __instance.IsPlayer() || __instance.IsBoss() || __instance.IsTamed()) return;
+                if (!__instance) return;
                 int id = __instance.GetInstanceID();
-                LocalHit h;
-                if (!lastHits.TryGetValue(id, out h)) return;
-                lastHits.Remove(id);
-                Player p = Player.m_localPlayer;
-                if (!p || UnityEngine.Time.time - h.Time > 4f) return;
-                BaseAI ai = __instance.GetBaseAI();
-                if (ai == null || !ai.IsEnemy(p)) return;
-
-                int diff = h.Tier - DynamicExperience.PlayerTierOf(p);
-                float fraction = diff >= 0 ? 0.006f + 0.002f * Mathf.Min(diff, 3)
-                    : diff == -1 ? 0.003f : 0f;
-                if (fraction <= 0f) return; // trivial old-tier foes: vanilla XP only
-                fraction *= 1f + 0.5f * (h.Stars - 1);
-                SkillReward.Grant(p, h.Skill, fraction, "killing_blow_tier_diff_" + diff);
-                if (h.Sneak)
-                    SkillReward.Grant(p, Skills.SkillType.Sneak, 0.004f + 0.002f * Mathf.Max(0, diff),
-                        "sneak_attack_kill");
+                Pending p;
+                if (!pending.TryGetValue(id, out p)) return;
+                pending.Remove(id);
+                if (UnityEngine.Time.time - p.Time <= Window) Pay(p);
             }
         }
 
-        // ---- Woodcutting: felling a whole tree ------------------------------
-        [ThreadStatic] private static HitData treeHit;
-
-        [HarmonyPatch(typeof(TreeBase), "RPC_Damage")]
-        private static class TreeDamageScope
-        {
-            private static void Prefix(HitData hit, out HitData __state) { __state = treeHit; treeHit = hit; }
-            private static void Postfix(HitData __state) { treeHit = __state; }
-            private static Exception Finalizer(Exception __exception, HitData __state) { treeHit = __state; return __exception; }
-        }
-
-        [HarmonyPatch(typeof(TreeBase), "SpawnLog")]
-        private static class TreeFelled
-        {
-            private static void Prefix(TreeBase __instance)
-            {
-                Player p = Player.m_localPlayer;
-                if (treeHit == null || !p || treeHit.GetAttacker() != p) return;
-                int biome = Mathf.Max(0, BiomeCatalog.FromBiome(Heightmap.FindBiome(__instance.transform.position)));
-                float fraction = 0.003f + biome * 0.0012f + Mathf.Max(0, __instance.m_minToolTier) * 0.0015f;
-                SkillReward.Grant(p, Skills.SkillType.WoodCutting, fraction, "tree_felled");
-            }
-        }
-
-        // ---- Mining: emptying a regional deposit ----------------------------
+        // ---- Trees and deposits (recorded on the hitting player's side) ----
         private static bool RegionalDeposit(DropTable table)
         {
             if (table == null || table.m_drops == null) return false;
@@ -96,69 +90,83 @@ namespace WiresAldr
             return false;
         }
 
-        private static float DepositFraction(Component source, int toolTier)
+        private static void RecordObject(Component target, HitData hit, Skills.SkillType skill, float xp, string reason)
         {
-            int biome = Mathf.Max(0, BiomeCatalog.FromBiome(Heightmap.FindBiome(source.transform.position)));
-            return 0.006f + biome * 0.0015f + Mathf.Max(0, toolTier) * 0.001f;
+            Player player = Player.m_localPlayer;
+            if (!target || hit == null || !player || hit.GetAttacker() != player ||
+                hit.GetTotalDamage() <= 0f || xp <= 0f) return;
+            Remember(target, new Pending
+            {
+                Target = target, Position = target.transform.position, Time = UnityEngine.Time.time,
+                Skill = skill, Xp = xp, Reason = reason
+            });
         }
 
-        private static readonly AccessTools.FieldRef<MineRock5, bool> AllDestroyed5 =
-            AccessTools.FieldRefAccess<MineRock5, bool>("m_allDestroyed");
-
-        [HarmonyPatch(typeof(MineRock5), "DamageArea")]
-        private static class DepositEmptied5
+        // Felling a whole standing tree: 2 XP, +1 per tool tier the tree needs.
+        [HarmonyPatch(typeof(TreeBase), nameof(TreeBase.Damage))]
+        private static class TreeHit
         {
-            private static void Prefix(MineRock5 __instance, out bool __state)
-            { __state = __instance != null && AllDestroyed5(__instance); }
-            private static void Postfix(MineRock5 __instance, HitData hit, bool __state)
+            private static void Prefix(TreeBase __instance, HitData hit) =>
+                RecordObject(__instance, hit, Skills.SkillType.WoodCutting,
+                    2f + Mathf.Max(0, __instance.m_minToolTier), "tree_felled");
+        }
+
+        // Emptying a whole deposit of a biome-exclusive material: 4 XP, +1 per tool tier.
+        [HarmonyPatch(typeof(MineRock5), nameof(MineRock5.Damage))]
+        private static class DepositHit5
+        {
+            private static void Prefix(MineRock5 __instance, HitData hit)
             {
-                Player p = Player.m_localPlayer;
-                if (__state || __instance == null || !AllDestroyed5(__instance) || hit == null ||
-                    !p || hit.GetAttacker() != p || !RegionalDeposit(__instance.m_dropItems)) return;
-                SkillReward.Grant(p, Skills.SkillType.Pickaxes,
-                    DepositFraction(__instance, __instance.m_minToolTier), "deposit_emptied");
+                if (RegionalDeposit(__instance.m_dropItems))
+                    RecordObject(__instance, hit, Skills.SkillType.Pickaxes,
+                        4f + Mathf.Max(0, __instance.m_minToolTier), "deposit_emptied");
             }
         }
 
-        private static readonly AccessTools.FieldRef<MineRock, ZNetView> RockView =
-            AccessTools.FieldRefAccess<MineRock, ZNetView>("m_nview");
-        // Read only when an area actually breaks (rare), so plain reflection is fine.
-        private static readonly System.Reflection.FieldInfo RockAreas =
-            AccessTools.Field(typeof(MineRock), "m_hitAreas");
-
-        private static float AreaHealth(MineRock rock, int index)
+        [HarmonyPatch(typeof(MineRock), nameof(MineRock.Damage))]
+        private static class DepositHit
         {
-            ZNetView nview = RockView(rock);
-            if (nview == null || !nview.IsValid()) return 0f;
-            return nview.GetZDO().GetFloat("Health" + index, rock.m_health);
-        }
-
-        // Smaller deposits: each broken area pays its share, so emptying
-        // the whole deposit pays the same as a large one.
-        [HarmonyPatch(typeof(MineRock), "RPC_Hit")]
-        private static class DepositAreaBroken
-        {
-            private static void Prefix(MineRock __instance, int hitAreaIndex, out bool __state)
+            private static void Prefix(MineRock __instance, HitData hit)
             {
-                __state = false;
-                ZNetView nview = __instance != null ? RockView(__instance) : null;
-                if (nview == null || !nview.IsValid() || !nview.IsOwner()) return;
-                __state = AreaHealth(__instance, hitAreaIndex) > 0f;
-            }
-            private static void Postfix(MineRock __instance, HitData hit, int hitAreaIndex, bool __state)
-            {
-                Player p = Player.m_localPlayer;
-                if (!__state || __instance == null || hit == null || !p || hit.GetAttacker() != p) return;
-                if (AreaHealth(__instance, hitAreaIndex) > 0f) return;
-                if (!RegionalDeposit(__instance.m_dropItems)) return;
-                Array areas = RockAreas != null ? RockAreas.GetValue(__instance) as Array : null;
-                int count = areas != null && areas.Length > 0 ? areas.Length : 1;
-                SkillReward.Grant(p, Skills.SkillType.Pickaxes,
-                    DepositFraction(__instance, __instance.m_minToolTier) / count, "deposit_area_broken");
+                if (__instance.m_removeWhenDestroyed && RegionalDeposit(__instance.m_dropItems))
+                    RecordObject(__instance, hit, Skills.SkillType.Pickaxes,
+                        4f + Mathf.Max(0, __instance.m_minToolTier), "deposit_emptied");
             }
         }
 
-        // ---- Farming: harvesting grown crops -------------------------------
+        // Called on vanilla's ~2 s player refresh. No per-frame work.
+        internal static void Tick(Player player)
+        {
+            if (pending.Count == 0 || !player) return;
+            float now = UnityEngine.Time.time;
+            scratch.Clear();
+            foreach (var kv in pending)
+            {
+                Pending p = kv.Value;
+                bool gone = p.Target == null;
+                bool dead = !gone && p.Creature != null && (p.Creature.IsDead() || p.Creature.GetHealth() <= 0f);
+                if (gone || dead)
+                {
+                    if (now - p.Time <= Window && !player.IsDead() && !player.IsTeleporting() &&
+                        Vector3.Distance(player.transform.position, p.Position) <= Range)
+                        Pay(p);
+                    scratch.Add(kv.Key);
+                }
+                else if (now - p.Time > Window) scratch.Add(kv.Key);
+            }
+            foreach (int id in scratch) pending.Remove(id);
+        }
+
+        private static void Prune(bool all)
+        {
+            scratch.Clear();
+            float now = UnityEngine.Time.time;
+            foreach (var kv in pending)
+                if (all || now - kv.Value.Time > Window) scratch.Add(kv.Key);
+            foreach (int id in scratch) pending.Remove(id);
+        }
+
+        // ---- Farming: harvesting grown crops: +0.5 XP -------------------
         [HarmonyPatch(typeof(Pickable), nameof(Pickable.Interact))]
         private static class CropHarvest
         {
@@ -176,11 +184,11 @@ namespace WiresAldr
             private static void Postfix(Pickable __instance, bool __state)
             {
                 if (!__state || !PickedLocal(__instance)) return;
-                SkillReward.Grant(Player.m_localPlayer, Skills.SkillType.Farming, 0.002f, "crop_harvested");
+                SkillReward.Grant(Player.m_localPlayer, Skills.SkillType.Farming, 0.5f, "crop_harvested");
             }
         }
 
-        // ---- Cooking: first time producing a station/fermenter dish ---------
+        // ---- Cooking: first time you get each station/fermenter product: 2 XP
         private static HashSet<string> stationProducts;
 
         private static bool IsStationProduct(string sharedName)
@@ -214,11 +222,11 @@ namespace WiresAldr
                 if (__instance != Player.m_localPlayer || item == null || item.m_shared == null ||
                     __instance.IsMaterialKnown(item.m_shared.m_name) ||
                     !IsStationProduct(item.m_shared.m_name)) return;
-                SkillReward.Grant(__instance, Skills.SkillType.Cooking, 0.012f, "first_station_dish");
+                SkillReward.Grant(__instance, Skills.SkillType.Cooking, 2f, "first_station_dish");
             }
         }
 
-        internal static void Reset() { lastHits.Clear(); stationProducts = null; }
+        internal static void Reset() { pending.Clear(); stationProducts = null; }
     }
 
     [HarmonyPatch(typeof(Game), "Start")]

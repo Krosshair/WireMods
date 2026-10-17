@@ -187,9 +187,7 @@ namespace WiresAldr
                         .Append(Num(Expedition.StoredPercent, 1))
                         .Append("% waiting, fading while at a base</i></size></color>");
                 expedition.AppendLine();
-                expedition.AppendLine("<color=#99A6AD><size=80%><i>Grows the longer you earn XP away from bases: +" +
-                    Num(Plugin.VenturePerKm.Value, 2) + "% per active minute, up to +" + Num(Plugin.VentureCap.Value, 0) +
-                    "%. Only applies away from bases. Fades slowly at a base or when standing still, ends on death.</i></size></color>");
+                expedition.AppendLine("<color=#99A6AD><size=80%><i>Every XP gain away from a base extends your expedition (faster in more dangerous biomes). The longer it runs, the faster the bonus grows. No cap. Fades at a base (faster while resting), or after 90 s without XP (45 s while resting).</i></size></color>");
                 Section(result, "Expedition", expedition);
             }
             return result.ToString();

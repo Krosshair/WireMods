@@ -22,7 +22,7 @@ namespace WiresAldr
         internal static ConfigEntry<bool> Enabled, Stars, Forage, Materials, Lock,
             FishYields, XpEnabled, XpAllSkills, XpChallenge, XpDodgeStreaks, Diagnostics;
         internal static ConfigEntry<float> StarBonus, ForageBonus, ForageCap,
-                        MaterialBonus, StoneBonus, VeteranForage, VeteranMaterials, VentureCap, VenturePerKm, RaidBonus, LaterFactor, SkippedFactor,
+                        MaterialBonus, StoneBonus, VeteranForage, VeteranMaterials, VenturePerKm, RaidBonus, LaterFactor, SkippedFactor,
             WoodEikthyr, WoodElder, WoodLater, StoneLater,
             CoreWoodElder, FineWoodElder, FineWoodYagluth, AshwoodFader,
             MushroomBlackForestPremium, ThistleSwampElderPremium,
@@ -43,7 +43,7 @@ namespace WiresAldr
             Materials = Bind("01 - Global Toggles", "Natural material yields", true,
                 "Slightly increase natural wood, stone, and ore yields through existing drop tables.");
             FishYields = Bind("01 - Global Toggles", "Wild fishing yields", true,
-                "Progress native fish spawning, quality, native catch yields and reeling efficiency through existing Valheim systems.");
+                "After each biome's Forsaken: more and better native fish, a chance of an extra fish per rod catch, and catch XP. Reeling itself stays vanilla.");
             XpEnabled = Bind("01 - Global Toggles", "Dynamic experience", true,
                 "Strong progression XP for all vanilla skills with optional contextual combat bonuses.");
             Lock = Bind("01 - Global Toggles", "Lock server configuration", true,
@@ -124,13 +124,11 @@ namespace WiresAldr
             XpAllSkills = Bind("07 - Experience", "Progression for all vanilla skills", true,
                 "Scale every vanilla skill via the current biome and existing Forsaken progression. Makes new weapon types viable late in a world.");
             XpProgressionStrength = Percent("07 - Experience", "Biome XP growth strength (%)", 100,
-                "100% matches the familiar strong 1x to 4x tier curve; 0% means normal XP, without disabling action bonuses.", 0, 300);
+                "100% = the designed curve: 1x in Meadows up to 2.7x in Deep North (Mistlands 2x). 0% means normal XP, without disabling action bonuses.", 0, 300);
             XpCatchUpBonus = Percent("07 - Experience", "Low skill catch-up bonus cap (%)", 15,
                 "Small optional extra for skills below expected world progression, on top of the strong tier multiplier.", 0, 50);
-            VenturePerKm = Percent("07 - Experience", "Expedition bonus per active minute (%)", 1f,
-                "Expedition grows linearly with active time away from bases: this much extra XP for all skills per minute in which you earn any skill XP. Standing around builds nothing. Only applies away from bases. 0 disables Expedition.", 0, 10);
-            VentureCap = Percent("07 - Experience", "Expedition bonus cap (%)", 200,
-                "Upper limit for the Expedition bonus.", 0, 1000);
+            VenturePerKm = Percent("07 - Experience", "Expedition base growth per minute (%)", 0.3f,
+                "Expedition: every XP gain away from a base advances an expedition clock (faster in more dangerous biomes). The XP bonus grows with the clock and accelerates the longer the expedition lasts (about +20% after 30 active minutes in the Swamp). No cap. Fades at a base, or after 90 s without XP (45 s while resting). 0 disables Expedition.", 0, 5);
             XpChallenge = Bind("08 - Experience challenge", "Challenge XP", true,
                 "Extra XP for genuine combat threats, good parries and confirmed perfect dodge streaks. No boss challenge bonuses.");
             XpCombatStrength = Percent("08 - Experience challenge", "Enemy challenge bonus strength (%)", 100,

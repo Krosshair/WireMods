@@ -141,6 +141,8 @@ namespace EnemyHudRework
             public bool HasLevel3;
             public Image RecoveryOverlay;
             public Animator StaggerAnimator;
+            public float StaggerBegan = -1f;
+            public float StaggerEstimate;
             public TMP_Text StarCountLabel;
 
             public float HideTimer = PlayerLikeHideDelay;

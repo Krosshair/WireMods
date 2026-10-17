@@ -131,7 +131,7 @@ namespace WiresAldr
                 "% fishYield=" + Plugin.FishYieldBonus.Value +
                 "% forageVeteran=" + Plugin.VeteranForage.Value +
                 "% materialVeteran=" + Plugin.VeteranMaterials.Value +
-                "% expeditionPerMinute=" + Plugin.VenturePerKm.Value + "% expeditionCap=" + Plugin.VentureCap.Value +
+                "% expeditionPerMinute=" + Plugin.VenturePerKm.Value +
                 "% raid=" + Plugin.RaidBonus.Value + "%");
             try
             {

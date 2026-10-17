@@ -123,12 +123,10 @@ namespace WiresAldr
             pending.Remove(key);
             // Reward a real fish only when vanilla pickup succeeded.
             float quality = Mathf.Clamp(reward.FishQuality, 1, 5);
-            float fraction = 0.005f + quality * 0.0035f +
-                Mathf.Clamp(reward.FishBiomeTier, 0, 7) * 0.001f;
+            // Catch bonus: 3 XP, +1.5 per quality level above 1.
             DynamicExperience.WithFishCompletion(player, reward.FishXpTier, () =>
                 SkillReward.Grant(player, Skills.SkillType.Fishing,
-                    Mathf.Min(0.035f, fraction),
-                    "fish_quality_" + reward.FishQuality));
+                    3f + 1.5f * (quality - 1f), "fish_caught_quality_" + reward.FishQuality));
 
             int extra = ProgressionMath.ExtraCount(1, reward.Percent, UnityEngine.Random.value);
             if (AldrDiagnostics.Active) AldrDiagnostics.Sample("FISH_CAUGHT", "rod pickup confirmed, extra_fish=" +

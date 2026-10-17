@@ -16,7 +16,7 @@
       "thunderstore": true,
       "thunderstore_categories": [],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4103,
       "nexus_file_id": null,
       "publish": true
     },
@@ -44,7 +44,7 @@
         "tweaks"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4026,
       "nexus_file_id": null,
       "publish": true
     },
@@ -55,7 +55,7 @@
         "mods"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4205,
       "nexus_file_id": null,
       "publish": true
     },
@@ -66,7 +66,7 @@
         "utility"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4236,
       "nexus_file_id": null,
       "publish": true
     },
@@ -74,7 +74,7 @@
       "thunderstore": true,
       "thunderstore_categories": [],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4364,
       "nexus_file_id": null,
       "publish": true
     },
@@ -130,7 +130,7 @@
         "utility"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4350,
       "nexus_file_id": null,
       "publish": true
     },
@@ -141,7 +141,7 @@
         "gear"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4277,
       "nexus_file_id": null,
       "publish": true
     },
@@ -163,7 +163,7 @@
       "nexus_mod_id": null,
       "nexus_file_id": null,
       "publish": true,
-      "note": "Not on Thunderstore. Hexium/Nexus status unknown: check and fill in."
+      "note": "Not on Thunderstore or Nexus. Hexium status unknown."
     },
     "WiresMeisterhau": {
       "thunderstore": true,
@@ -191,7 +191,7 @@
         "utility"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4146,
       "nexus_file_id": null,
       "publish": true
     },
@@ -230,7 +230,7 @@
         "mods"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4078,
       "nexus_file_id": null,
       "publish": true
     },
@@ -275,7 +275,7 @@
       "thunderstore": true,
       "thunderstore_categories": [],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4269,
       "nexus_file_id": null,
       "publish": true
     },
@@ -286,7 +286,7 @@
         "mods"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4076,
       "nexus_file_id": null,
       "publish": true
     },
@@ -300,7 +300,7 @@
         "utility"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 3981,
       "nexus_file_id": null,
       "publish": true
     },
@@ -311,7 +311,7 @@
         "mods"
       ],
       "hexium": true,
-      "nexus_mod_id": null,
+      "nexus_mod_id": 4201,
       "nexus_file_id": null,
       "publish": true
     }
