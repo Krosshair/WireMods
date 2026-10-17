@@ -137,7 +137,8 @@ namespace EnemyHudRework
                         _playerHealthDisplayMode.Value = "Current HP/Max HP";
                         _doublePlayerHealthBar.Value = true;
                         _staggerBarEnabled.Value = true;
-                        
+                        if (_transparentBackground != null)
+                            _transparentBackground.Value = true;
                         _staggerVerticalOffset.Value = 8f;
                         _starVerticalOffset.Value = 8f;
                         _hideForNonStaggerable.Value = true;
@@ -167,7 +168,7 @@ namespace EnemyHudRework
 
         private void ApplyVanillaVisualValues()
         {
-            _nameColorMode.Value = NameColorMode.None;
+            _nameColorMode.Value = NameColorMode.Icons;
             _uppercaseNames.Value = false;
             _enemyHealthDisplayMode.Value = "None";
             _doubleEnemyHealthBar.Value = false;
@@ -176,7 +177,8 @@ namespace EnemyHudRework
             _bossNameColorMode.Value = BossNameColorMode.Vanilla;
             _playerHealthDisplayMode.Value = "None";
             _doublePlayerHealthBar.Value = false;
-            
+            if (_transparentBackground != null)
+                _transparentBackground.Value = false;
             _staggerVerticalOffset.Value = 8f;
             _starVerticalOffset.Value = 8f;
             _hideForNonStaggerable.Value = true;

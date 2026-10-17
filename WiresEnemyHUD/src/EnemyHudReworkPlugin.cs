@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.6.2";
+        public const string PluginVersion = "0.6.3";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -24,7 +24,7 @@ namespace EnemyHudRework
 
         internal static EnemyHudReworkPlugin Instance;
 
-        public enum NameColorMode { Pastel, Normal, None }
+        public enum NameColorMode { Pastel, Normal, Icons, None }
         public enum HealthDisplayMode { CurrentHP, CurrentHPMaxHP, Percentage, None }
         public enum BossHealthTextPosition { Tracked, Centered }
         public enum BossNameColorMode { Pastel, Vanilla, White }
@@ -145,6 +145,9 @@ namespace EnemyHudRework
             public float StaggerEnd;
             public float StaggerChecked;
             public float StaggerSpeed = 1f;
+            public Image HealthBkg, StaggerBkg;
+            public Color HealthBkgOriginal, StaggerBkgOriginal;
+            public int BkgApplied = -1;
             public TMP_Text StarCountLabel;
 
             public float HideTimer = PlayerLikeHideDelay;
@@ -318,22 +321,31 @@ namespace EnemyHudRework
             BindEnhancedOptions();
 
             _nameColorMode = Config.Bind(
-                "Features",
-                "NameAwarenessColors",
+                "Enemy Health Bar",
+                "Awareness display",
                 NameColorMode.Pastel,
                 new ConfigDescription(
-                    "Choose awareness name colors: Pastel uses softer colors; Normal uses stronger Valheim colors; None keeps normal name colors and awareness icons.",
+                    "How an enemy shows that it noticed you. Pastel: soft name colors. Normal: stronger Valheim name colors. Icons: the vanilla awareness icons. None: no awareness display at all.",
                     null,
-                    new ConfigurationManagerAttributes { Order = 200 }));
+                    new ConfigurationManagerAttributes { Order = 60 }));
 
             _uppercaseNames = Config.Bind(
-                "Features",
-                "UppercaseEnemyNames",
+                "Enemy Health Bar",
+                "Uppercase names",
                 false,
                 new ConfigDescription(
                     "Display ordinary enemy names in uppercase letters.",
                     null,
-                    new ConfigurationManagerAttributes { Order = 100 }));
+                    new ConfigurationManagerAttributes { Order = 55 }));
+
+            // Settings from the old "Features" section carry over once.
+            string old;
+            if (TakeOrphan("Features", "NameAwarenessColors", out old))
+                _nameColorMode.Value =
+                    old == "Normal" ? NameColorMode.Normal :
+                    old == "Pastel" ? NameColorMode.Pastel : NameColorMode.Icons;
+            if (TakeOrphan("Features", "UppercaseEnemyNames", out old))
+                _uppercaseNames.Value = string.Equals(old, "true", StringComparison.OrdinalIgnoreCase);
 
             _syncStaggerForMultiplayer = Config.Bind(
                 "Multiplayer",
@@ -606,8 +618,9 @@ namespace EnemyHudRework
             if (state.NameGraphic == null)
                 return;
 
+            // Icons: vanilla shows and hides them itself.
             if (state.Ai == null ||
-                _nameColorMode.Value == NameColorMode.None)
+                _nameColorMode.Value == NameColorMode.Icons)
             {
                 state.NameGraphic.color = state.NormalNameColor;
                 return;
@@ -618,6 +631,12 @@ namespace EnemyHudRework
 
             if (state.AwareIcon != null)
                 state.AwareIcon.SetActive(false);
+
+            if (_nameColorMode.Value == NameColorMode.None)
+            {
+                state.NameGraphic.color = state.NormalNameColor;
+                return;
+            }
 
             bool pastel = _nameColorMode.Value == NameColorMode.Pastel;
             Color alertedColor;
@@ -648,6 +667,18 @@ namespace EnemyHudRework
                 state.NameGraphic.color = awareColor;
             else
                 state.NameGraphic.color = state.NormalNameColor;
+        }
+
+        // A setting from an older config layout, read once and removed.
+        private bool TakeOrphan(string section, string key, out string value)
+        {
+            value = null;
+            var orphans = AccessTools.Property(typeof(BepInEx.Configuration.ConfigFile), "OrphanedEntries")
+                ?.GetValue(Config) as System.Collections.Generic.Dictionary<BepInEx.Configuration.ConfigDefinition, string>;
+            var definition = new BepInEx.Configuration.ConfigDefinition(section, key);
+            if (orphans == null || !orphans.TryGetValue(definition, out value)) return false;
+            orphans.Remove(definition);
+            return true;
         }
 
         private void ApplyBossNameColor(EnemyUiState state)
@@ -1601,6 +1632,7 @@ namespace EnemyHudRework
 
             ApplyHealthBarScale(_debugBossState);
             UpdateNativePalette(_debugBossState, false);
+            UpdateBarBackground(_debugBossState);
             UpdateHealthValue(_debugBossState);
             UpdateDpsUi(_debugBossState, 0f);
         }

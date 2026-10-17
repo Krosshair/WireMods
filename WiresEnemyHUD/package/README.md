@@ -8,12 +8,13 @@ Overhauled health bars and additional stats.
 * Generally improved health bar visuals. Double bar width, adjusted colors, additional effects etc. Images on Hexium and Nexus. Everything is made with Valheim's visual language in mind.
 * A stagger bar
   * Bar under the in-world health bar, conceptually inspired by Elden Ring's stagger bar mod, visual language taken from vanilla's player HUD stagger bar.
-  * Flashes white on initial staggering, parried or just regular stagger. 
+  * The dark border around the bar flashes white on initial staggering, parried or just regular stagger.
   * Shows the stagger time with a yellow bar over the stagger bar's color, fully based on each enemy's actual stagger time when staggered.
 * HP numbers for enemies, bosses, and other players
   * Current HP, current/max HP, percentage. Example: 75 (default) or 75/150 or 50%
   * Seperate toggles for enemies, bosses and players. Enemy default is Current HP and boss default is Current/Max.
-* Enemy awareness is now represented by with it's name color instead of an icon.
+* Enemy awareness is shown by its name color instead of an icon (or the vanilla icons, or nothing at all if you prefer reading enemy behavior).
+* See-through bar backgrounds, like the player's own HUD bars (on by default).
 * Seperate friendly and enemy nameplate colors; ex. friendly summoned skeleton health bars are green.
 * Improvements to visibility conditions
   * Briefly shows enemy health bars when damaging enemies, no matter how far away
@@ -66,6 +67,20 @@ Reveals an enemy's health bar for 3 seconds after you successfully damage it. Ad
 Default: `true`
 
 Briefly flashes the dark frame surrounding an enemy's health bar white when a backstab or stagger-critical hit lands.
+
+**Awareness display**
+
+Options: `Pastel`, `Normal`, `Icons`, `None`
+
+Default: `Pastel`
+
+How an enemy shows that it noticed you. Pastel uses soft name colors, Normal uses stronger Valheim-style name colors, Icons keeps the vanilla awareness icons, and None shows no awareness at all.
+
+**Uppercase names**
+
+Default: `false`
+
+Displays ordinary enemy names in uppercase letters.
 
 ### Boss Health Bar
 
@@ -171,23 +186,15 @@ Automatically hides the stagger meter on enemies that cannot be staggered.
 
 Default: `true`
 
-Displays a pale gold layer inside the stagger meter while an enemy is staggered. The layer recedes from right to left as the stagger animation progresses, revealing the orange stagger meter underneath.
+Displays a yellow layer inside the stagger meter while an enemy is staggered. The layer recedes from right to left over the enemy's actual stagger time (the window in which your hits deal double damage), revealing the orange stagger meter underneath.
 
-### Features
+### Bars
 
-**NameAwarenessColors**
+**Transparent bar background**
 
-Options: `Pastel`, `Normal`, `None`
+Default: `true`
 
-Default: `Pastel`
-
-Controls enemy name colors based on their awareness state. Pastel uses softer colors, Normal uses stronger Valheim-style colors, and None keeps normal name colors and awareness icons.
-
-**UppercaseEnemyNames**
-
-Default: `false`
-
-Displays ordinary enemy names in uppercase letters.
+Makes the solid gray background behind health and stagger bars (enemies, bosses and players) see-through, matching the player's own HUD bars. Off restores the vanilla gray.
 
 ### Text
 
