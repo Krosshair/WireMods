@@ -1,5 +1,6 @@
 using System;
 using BepInEx.Configuration;
+using HarmonyLib;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -52,13 +53,13 @@ namespace EnemyHudRework
                 image.fillMethod = Image.FillMethod.Horizontal;
                 image.fillOrigin = (int)Image.OriginHorizontal.Left;
                 image.fillAmount = 1f;
-                image.color = new Color32(236, 198, 137, 245);
+                image.color = new Color32(255, 243, 75, 255); // vanilla stamina yellow
                 image.raycastTarget = false;
                 rect.SetAsLastSibling();
                 overlayGo.SetActive(false);
                 state.RecoveryOverlay = image;
                 state.StaggerAnimator = state.Character != null
-                    ? state.Character.GetComponentInChildren<Animator>() : null;
+                    ? CharacterAnimator(state.Character) : null;
             }
 
             if (state.HasLevel2 && state.Level2 != null)
@@ -87,49 +88,128 @@ namespace EnemyHudRework
             }
         }
 
-        private static float ActualStaggerProgress(Animator animator)
-        {
-            if (animator == null || !animator.isActiveAndEnabled)
-                return -1f;
-            const int layer = 0;
-            int tag = Animator.StringToHash("stagger");
-            AnimatorStateInfo current = animator.GetCurrentAnimatorStateInfo(layer);
-            if (current.tagHash == tag)
-                return Mathf.Clamp01(current.normalizedTime);
+        // The overlay covers exactly the window in which vanilla doubles damage:
+        // Character.RPC_Damage applies x2 while Character.IsStaggering() is true,
+        // and IsStaggering() is "layer 0 current or next state is tagged stagger".
+        // When a stagger starts, a hidden copy of the creature's own animator
+        // state machine is run forward (same controller, parameters, state and
+        // speed) until that check would turn false. That gives the real end time
+        // up front, so the bar drains linearly from the start to the very end of
+        // the bonus window. Runs once per stagger, nothing is stored.
+        private static readonly AccessTools.FieldRef<Character, Animator> CharacterAnimator =
+            AccessTools.FieldRefAccess<Character, Animator>("m_animator");
+        private static readonly AccessTools.FieldRef<Character, CharacterAnimEvent> CharacterAnimEvents =
+            AccessTools.FieldRefAccess<Character, CharacterAnimEvent>("m_animEvent");
+        private static readonly AccessTools.FieldRef<CharacterAnimEvent, float> PauseTimer =
+            AccessTools.FieldRefAccess<CharacterAnimEvent, float>("m_pauseTimer");
+        private static readonly AccessTools.FieldRef<CharacterAnimEvent, float> PauseSpeed =
+            AccessTools.FieldRefAccess<CharacterAnimEvent, float>("m_pauseSpeed");
+        private static readonly int StaggerTag = ZSyncAnimation.GetHash("stagger");
 
-            if (animator.IsInTransition(layer))
+        // Vanilla hit-stop (CharacterAnimEvent.FreezeFrame, 0.15 s when an attack
+        // lands, e.g. on the shield you parry with) sets the animator speed to
+        // 0.0001 and restores it afterwards. Returns the speed the animation will
+        // actually play at, and how long the freeze still holds it.
+        private static float PlaySpeed(Character c, Animator a, out float hold)
+        {
+            hold = 0f;
+            float speed = a.speed;
+            if (speed >= 0.01f) return speed;
+            CharacterAnimEvent ev = CharacterAnimEvents(c);
+            if (ev != null)
             {
-                AnimatorStateInfo next = animator.GetNextAnimatorStateInfo(layer);
-                if (next.tagHash == tag)
-                    return Mathf.Clamp01(next.normalizedTime);
+                hold = Mathf.Max(0f, PauseTimer(ev));
+                speed = PauseSpeed(ev);
             }
-            return -1f;
+            return speed >= 0.01f ? speed : 1f;
+        }
+        private const float ProbeStep = 1f / 60f;
+        private const float ProbeLimit = 8f;
+        private static Animator _probe;
+
+        private static Animator Probe()
+        {
+            if (_probe == null)
+            {
+                var go = new GameObject("WireStaggerProbe");
+                go.hideFlags = HideFlags.HideAndDontSave;
+                UnityEngine.Object.DontDestroyOnLoad(go);
+                _probe = go.AddComponent<Animator>();
+                _probe.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                _probe.applyRootMotion = false;
+                _probe.speed = 0f;
+            }
+            return _probe;
         }
 
-        // Full window in which vanilla doubles damage (Character.IsStaggering:
-        // the stagger animation including its recovery/exit). Learned per
-        // creature type from real observations; the first time it is
-        // estimated from the stagger animation's length.
-        private static readonly System.Collections.Generic.Dictionary<string, float> StaggerWindows =
-            new System.Collections.Generic.Dictionary<string, float>();
-
-        private static string CreatureKey(Character c)
+        private static bool ProbeStaggering(Animator a)
         {
-            string n = c.gameObject.name;
-            int i = n.IndexOf("(Clone)", System.StringComparison.Ordinal);
-            return i >= 0 ? n.Substring(0, i) : n;
+            if (a.IsInTransition(0) && a.GetNextAnimatorStateInfo(0).tagHash == StaggerTag)
+                return true;
+            return a.GetCurrentAnimatorStateInfo(0).tagHash == StaggerTag;
         }
 
-        private static float EstimateStaggerWindow(Animator animator)
+        // Seconds until IsStaggering() turns false, and seconds already spent in
+        // the window. -1 when the animator can't be read.
+        private static float StaggerTimeLeft(Character c, Animator real, out float elapsed, out float speed)
         {
-            if (animator == null || !animator.isActiveAndEnabled) return 1.5f;
-            int tag = Animator.StringToHash("stagger");
-            AnimatorStateInfo s = animator.GetCurrentAnimatorStateInfo(0);
-            if (s.tagHash != tag && animator.IsInTransition(0)) s = animator.GetNextAnimatorStateInfo(0);
-            if (s.tagHash != tag || s.length <= 0f) return 1.5f;
-            float speed = Mathf.Max(0.05f, animator.speed);
-            // Remaining state time plus the blend out, during which the bonus still applies.
-            return s.length * Mathf.Max(0f, 1f - s.normalizedTime) / speed + 0.25f;
+            elapsed = 0f;
+            speed = 1f;
+            if (real == null || !real.isActiveAndEnabled || real.runtimeAnimatorController == null)
+                return -1f;
+            speed = PlaySpeed(c, real, out float hold);
+            AnimatorStateInfo cur = real.GetCurrentAnimatorStateInfo(0);
+            bool blending = real.IsInTransition(0);
+            AnimatorStateInfo s;
+            if (blending && real.GetNextAnimatorStateInfo(0).tagHash == StaggerTag)
+                s = real.GetNextAnimatorStateInfo(0);
+            else if (cur.tagHash == StaggerTag)
+            {
+                elapsed = cur.normalizedTime * cur.length / speed;
+                if (blending)
+                {
+                    // Already blending out: the window ends when this blend completes.
+                    AnimatorTransitionInfo t = real.GetAnimatorTransitionInfo(0);
+                    float dur = t.durationUnit == DurationUnit.Fixed ? t.duration : t.duration * cur.length;
+                    return hold + Mathf.Max(0f, (1f - t.normalizedTime) * dur / speed);
+                }
+                s = cur;
+            }
+            else return -1f;
+            if (elapsed <= 0f) elapsed = s.normalizedTime * s.length / speed;
+
+            Animator p = Probe();
+            try
+            {
+                if (p.runtimeAnimatorController != real.runtimeAnimatorController)
+                    p.runtimeAnimatorController = real.runtimeAnimatorController;
+                foreach (AnimatorControllerParameter par in real.parameters)
+                {
+                    switch (par.type)
+                    {
+                        case AnimatorControllerParameterType.Float: p.SetFloat(par.nameHash, real.GetFloat(par.nameHash)); break;
+                        case AnimatorControllerParameterType.Int: p.SetInteger(par.nameHash, real.GetInteger(par.nameHash)); break;
+                        case AnimatorControllerParameterType.Bool: p.SetBool(par.nameHash, real.GetBool(par.nameHash)); break;
+                        default: p.ResetTrigger(par.nameHash); break;
+                    }
+                }
+                p.speed = speed;
+                p.Play(s.fullPathHash, 0, s.normalizedTime);
+                p.Update(0f);
+                if (!ProbeStaggering(p)) return -1f;
+                float time = 0f;
+                while (time < ProbeLimit)
+                {
+                    p.Update(ProbeStep);
+                    time += ProbeStep;
+                    if (!ProbeStaggering(p)) return hold + time - ProbeStep * 0.5f;
+                }
+                return hold + time;
+            }
+            catch { return -1f; }
+            // Stays active (no rebind next time); speed 0 makes Unity's own
+            // per-frame pass on it a no-op.
+            finally { p.speed = 0f; }
         }
 
         private void UpdateEnhancedEffects(EnemyUiState state, bool isEnemy)
@@ -141,38 +221,46 @@ namespace EnemyHudRework
 
             Image overlay = state.RecoveryOverlay;
             if (overlay == null) return;
-            bool staggering = state.Character.IsStaggering();
-            float now = Time.time;
-            if (staggering && state.StaggerBegan < 0f)
-            {
-                state.StaggerBegan = now;
-                float learned;
-                state.StaggerEstimate = StaggerWindows.TryGetValue(CreatureKey(state.Character), out learned)
-                    ? learned : EstimateStaggerWindow(state.StaggerAnimator);
-                state.StaggerEstimate = Mathf.Max(0.3f, state.StaggerEstimate);
-            }
-            else if (!staggering && state.StaggerBegan >= 0f)
-            {
-                float actual = now - state.StaggerBegan;
-                if (actual > 0.2f && actual < 15f) StaggerWindows[CreatureKey(state.Character)] = actual;
-                state.StaggerBegan = -1f;
-            }
             bool show = isEnemy && _staggerBarEnabled.Value &&
                 _staggerRecoveryEnabled.Value &&
-                state.StaggerRoot != null && state.StaggerRoot.activeSelf &&
-                staggering && state.StaggerBegan >= 0f;
-            // Shrinks across the whole damage-bonus window; if this one runs
-            // longer than learned, a thin sliver stays until it truly ends.
-            float progress = show ? Mathf.Clamp01((now - state.StaggerBegan) / state.StaggerEstimate) : 1f;
-            overlay.gameObject.SetActive(show);
-            if (show)
+                state.StaggerRoot != null && state.StaggerRoot.activeSelf;
+            bool staggering = show && state.Character.IsStaggering();
+            float now = Time.time;
+            if (!staggering)
+                state.StaggerBegan = -1f;
+            else
             {
-                RectTransform fill = state.StaggerFast.m_bar;
-                RectTransform rect = overlay.rectTransform;
-                rect.anchoredPosition = fill.anchoredPosition;
-                rect.sizeDelta = fill.sizeDelta;
-                overlay.fillAmount = Mathf.Max(0.03f, 1f - progress);
+                if (state.StaggerAnimator == null)
+                    state.StaggerAnimator = CharacterAnimator(state.Character);
+                // Recalculate at the start, whenever the play speed changes, or
+                // if still staggered past the predicted end.
+                bool recheck = state.StaggerBegan < 0f;
+                if (!recheck && state.StaggerAnimator != null && now - state.StaggerChecked >= 0.1f)
+                {
+                    float speedNow = PlaySpeed(state.Character, state.StaggerAnimator, out _);
+                    recheck = Mathf.Abs(speedNow - state.StaggerSpeed) > 0.02f ||
+                        now >= state.StaggerEnd;
+                }
+                if (recheck) Restagger(state, now);
             }
+            overlay.gameObject.SetActive(staggering);
+            if (!staggering) return;
+            float length = Mathf.Max(0.05f, state.StaggerEnd - state.StaggerBegan);
+            float progress = Mathf.Clamp01((now - state.StaggerBegan) / length);
+            RectTransform fill = state.StaggerFast.m_bar;
+            RectTransform rect = overlay.rectTransform;
+            rect.anchoredPosition = fill.anchoredPosition;
+            rect.sizeDelta = fill.sizeDelta;
+            overlay.fillAmount = 1f - progress;
+        }
+
+        private static void Restagger(EnemyUiState state, float now)
+        {
+            float left = StaggerTimeLeft(state.Character, state.StaggerAnimator, out float elapsed, out float speed);
+            if (state.StaggerBegan < 0f) state.StaggerBegan = now - elapsed;
+            state.StaggerEnd = now + (left >= 0f ? left : 0.1f);
+            state.StaggerSpeed = speed;
+            state.StaggerChecked = now;
         }
 
         private static void UpdateCompactStarCount(EnemyUiState state)

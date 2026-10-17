@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.6.1";
+        public const string PluginVersion = "0.6.2";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -142,7 +142,9 @@ namespace EnemyHudRework
             public Image RecoveryOverlay;
             public Animator StaggerAnimator;
             public float StaggerBegan = -1f;
-            public float StaggerEstimate;
+            public float StaggerEnd;
+            public float StaggerChecked;
+            public float StaggerSpeed = 1f;
             public TMP_Text StarCountLabel;
 
             public float HideTimer = PlayerLikeHideDelay;
