@@ -1,0 +1,53 @@
+Wire's Aldr 0.4.1 (DLL only; manifest/README/CHANGELOG kept from the 0.3.2 package as before)
+=======================================================================================
+
+- FIX: Creature biome tiers now come from Valheim's own world spawn lists (ungated spawns; boss-key or event-gated guest spawns only as a fallback). Covers later content automatically. The curated list remains only as a fallback for dungeon/location/quest creatures.
+- FIX: Corrected fallback tiers: Hare, Tick, SeekerBrood (Mistlands), Bat (Mountain), Kvastur (Swamp), Lord Reto (Ashlands), Hildir's quest bosses (their own biomes). Removed one unverified entry. Added common variants (piggy, cub, calf, ranged/archer, cave leech, dverger mage variants, etc.).
+- FIX: Star roll native-biome check uses the same spawn-data source, so creatures without a hard-coded prefix are no longer silently excluded.
+- FIX: Open ocean no longer counts as Meadows for XP. It counts as the Swamp step (serpent waters). Ashlands/Deep North waters already report their own biome.
+- NEW (high risk, higher reward): combat/parry XP against a hostile, non-boss creature from a later biome uses that creature's biome for the location multiplier, wherever the fight happens.
+- NEW: Fishing XP (reeling and catch completion) uses the later of the current biome and the fish's native biome.
+- FIX: Forge of Goodtential jackpots (+2 to +5 quality) now earn upgrade completion XP for every level gained (still capped by SkillReward's 4% per event). Failed/ignored/destroyed attempts still earn nothing.
+- VERIFIED: the Deep North progression key Aldr reads exists in the current game data and is the key vanilla uses for that boss's unlocks.
+- Build: 0 errors, 0 warnings, against the 15 Oct 2026 assembly_valheim.dll. Not yet tested in game.
+- Multiplayer: ServerSync requires the same 0.4.1 DLL on every client and the server.
+
+Foraging rework (same 0.4.1 build, updated 17 Oct 13:1x):
+- NEW: Veteran yield. Each Forsaken defeated after a wild resource's own biome boss adds 40% (configurable, "03 - Foraging / Veteran yield per later Forsaken (%)") extra yield per pick, as extra native items. It does not shrink with distance. Example: Black Forest blueberries after Queen = +160%, after Fader = +200%.
+- Extra items go through vanilla's own bonus-yield path (same "+N" text and bonus effect, same RPC_Pick count), first pick only, cultivated crops excluded, capped at 12 extra items per pick.
+- Unchanged: the existing extra-harvest chance bonus and Swamp thistle / Black Forest mushroom risk premiums.
+- Compendium shows each resource's "(extra yield)" with per-boss breakdown.
+- New config entry is added automatically with its default; existing settings are untouched.
+
+Materials, raids, Venture (same 0.4.1 build, later on 17 Oct):
+- CHANGE: Biome-exclusive materials (copper, tin, iron scrap, ancient bark, silver, obsidian, tar, etc.) keep their own-boss bonus (10%) and gain a flat 25% per Forsaken defeated after their own biome boss (config "04 - Natural Materials / Regional veteran yield per later Forsaken (%)"). At most 4 extra copies per drop. Wood and stone rules are unchanged.
+- NEW: Raid defense bonus. +50% combat XP (config "08 - Experience challenge / Raid defense bonus (%)") against vanilla event creatures while you are inside the active raid area. Includes Legacy Raids, since those are vanilla events. Bosses excluded.
+- (Venture replaced, see Expedition below.)
+
+Expedition, spoiler-safe Compendium, diagnostics (same 0.4.1 build, later on 17 Oct):
+- NEW: Expedition XP (replaces Venture). Up to +25% XP for all skills, config "07 - Experience / Expedition XP bonus cap (%)".
+  * Base = vanilla's own player base value >= 3, the same threshold vanilla raids use. Ticks on vanilla's own 2 s base-value refresh (no extra update loop).
+  * Builds from horizontal distance travelled off-base (about 5 km to full; jumps over 80 m per tick, e.g. portals, ignored) plus any skill XP earned off-base while you have moved recently (about 150 m in the last minute for full credit).
+  * Bonus applies only off-base. At a base it fades over about 7 min (not reset). Standing still off-base for 90 s starts a slow 15 min fade. Death ends it.
+  * Compendium: own "Expedition" section after the biome sections. Mod Status is back to exactly the 0.4.0 lines.
+- CHANGE: Compendium hides undiscovered things as "???": resource and material names use vanilla's known-materials list, biome headings use known biomes. Material/resource recognition now uses vanilla shared item names verified against game data (fixes two invented later-biome material names).
+- Diagnostics (only when "09 - Diagnostics / Enable diagnostics" is on, throttled, no per-frame work): CREATURE_TIERS, EXPEDITION (base enter/leave, every 10% progress, resets), RAID_XP, FORAGE_ROLL now includes veteran extra items, CONFIG lists the new settings.
+
+Expedition (linear) and skill accomplishment rework (same 0.4.1 build, later on 17 Oct):
+- CHANGE: "Expedition" now grows linearly, with no fill-up: +2.5% XP per km travelled away from bases (config "07 - Experience / Expedition bonus per km (%)"), plus 20 m worth for each XP event while moving. Cap 200% (config "Expedition bonus cap (%)"). At a base it fades by about 30 percentage points per hour (12 km worth) and doesn't apply; standing still off-base fades at half that after 90 s. Death ends it. Diagnostics log every 5 points.
+- NEW accomplishments (share of next level, then normal Aldr XP scaling):
+  * Killing blow on a hostile non-boss creature at or above your progression tier: 0.6-1.2% of next level for the weapon skill used (0.3% one tier below, nothing for older foes), x1.5 per star. Recorded on the attacking client, so it also works when another player owns the creature.
+  * Sneak attack kill (unaware target, crouching): extra Sneak reward.
+  * Felling a whole tree (Woodcutting), scaled by biome and tree hardness.
+  * Emptying a deposit that drops a biome-exclusive material (Pickaxes); small multi-area rocks pay per broken area. Works when your game owns the tree/rock, which is the usual case.
+  * Harvesting grown crops (Farming).
+  * First time obtaining each cooking station or fermenter product (Cooking). Cauldron dishes already count via first crafts.
+- REMOVED: combo-position and secondary-attack per-hit bonuses, run/swim/ride travel bonus (Expedition covers travel), per-hit resource hardness bonus, cooking-station recipe-count bonus, jump ledge-landing reward. Kept: counter-after-parry/dodge, moving-target and backstab precision, threat challenge, risky parry, dodge streaks, stealth escape, blood magic shield, fishing, crafting/upgrade rewards.
+
+Player-perspective pass (same 0.4.1 build, 17 Oct afternoon):
+- CHANGE: Expedition grows with ACTIVE TIME away from bases: +1% XP per active minute (config "07 - Experience / Expedition bonus per active minute (%)"), plus 0.05% per XP event while on the move. Active = actually travelling (about 40 m in the last minute), or fighting/gathering within 20 s of travelling. A ~30 min expedition is roughly +30-40%. Cap 200%. At a base it fades 1.25% per minute; standing still off-base fades at half that after 90 s; death ends it.
+- RESTORED + BETTER: Run/Swim/Ride travel bonus. Up to +40% XP when covering real ground in a steady direction (straight-line progress over the last ~5 XP ticks vs. sprint/swim/ride speed). Circling or running into walls earns nothing.
+- RESTORED + BETTER: Combo bonus. Only for consecutive chain steps that actually hit a hostile target: 2nd landed step +12%, 3rd +24%, longer chains up to +36%. A swing that hits nothing breaks the combo.
+
+Simplification (17 Oct, later):
+- CHANGE: Expedition "active" = earning any skill XP away from a base (within the last 15 s). No distance or movement checks anymore. +1% per active minute, cap 200%. No XP off-base for 90 s starts a slow fade; at a base it fades 1.25%/min; death ends it.

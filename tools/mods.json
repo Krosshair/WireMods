@@ -1,0 +1,319 @@
+{
+  "thunderstore_namespace": "Wire",
+  "hexium_team": "Wire",
+  "community": "valheim",
+  "mods": {
+    "WiresAldr": {
+      "thunderstore": false,
+      "thunderstore_categories": [],
+      "hexium": false,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": false,
+      "note": "Unpublished, mid-development. DLL 0.4.1 vs manifest 0.3.2 on purpose. Set publish=true when ready."
+    },
+    "WiresAltBiomeInfo": {
+      "thunderstore": true,
+      "thunderstore_categories": [],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresBalancedCraftFromNearbyChests": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "deep-north-update",
+        "mods"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 4011,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresCameraTweaks": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "deep-north-update",
+        "misc",
+        "mods",
+        "tweaks"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresCombatFlow": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "mods"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresComfortInfo": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "client-side",
+        "utility"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresDecimalsBegone": {
+      "thunderstore": true,
+      "thunderstore_categories": [],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresEnemyHUD": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "enemies",
+        "mods",
+        "npcs",
+        "server-side",
+        "tweaks",
+        "utility"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 3733,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresForgeOfGoodtential": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "client-side",
+        "deep-north-update",
+        "gear"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 4302,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresGrassTweaks": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "mods",
+        "tweaks",
+        "utility"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 3732,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresHealthAwareness": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "audio",
+        "client-side",
+        "deep-north-update",
+        "utility"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresHelmetHider": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "client-side",
+        "gear"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresInstafill": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "mods"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 4077,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresLegacyRaids": {
+      "thunderstore": false,
+      "thunderstore_categories": [],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true,
+      "note": "Not on Thunderstore. Hexium/Nexus status unknown: check and fill in."
+    },
+    "WiresMeisterhau": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "deep-north-update",
+        "enemies",
+        "gear",
+        "mods",
+        "server-side",
+        "utility"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 3820,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresNativeCursorSupport": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "client-side",
+        "mods",
+        "tweaks",
+        "utility"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresNotificationOverhaul": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "mods",
+        "utility"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 3966,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresPings": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "utility"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 4187,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresRecycler": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "deep-north-update",
+        "gear",
+        "mods"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresSailingCamera": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "mods"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 4202,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresSmoothUI": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "mods",
+        "tweaks"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 3854,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresStableFirelight": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "mods",
+        "tweaks"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 4048,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresStandSwap": {
+      "thunderstore": true,
+      "thunderstore_categories": [],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresTinyToolTweaks": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "mods"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresWeaponMaster": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "deep-north-update",
+        "mods",
+        "utility"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    },
+    "WiresWeightedSlots": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "mods"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
+    }
+  }
+}

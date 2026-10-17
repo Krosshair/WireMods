@@ -1,0 +1,60 @@
+# Wire's Alt Biome Info translation file
+# Valheim version used for this template: 1.0.16
+#
+# This file contains ALL 32 current vanilla AltBiome definitions.
+# The text on the LEFT is the game's AltBiome name/key. DO NOT translate it.
+# Translate only the text on the RIGHT side of =.
+#
+# Valheim already localizes the normal base biome names
+# (Meadows, Black Forest, Swamp, Mountain, Plains, Mistlands, etc.).
+# This file translates the extra AltBiome description added by this mod.
+#
+# Format controls the final order.
+# Keep both placeholders exactly: {modifiers} and {biome}
+Format={modifiers} {biome}
+
+# Multi-biome / general AltBiomes
+Mushroom=Fungal
+Lantern=Lantern
+Bones=Skeletal
+Menhir=Menhir
+
+# Meadows
+Dark Meadows=Dark
+Peaceful Meadows=Peaceful
+Dandelion Meadows=Dandelion
+Raspberry Meadows=Bountiful
+Smalltree Meadows=Sapling
+Birch Meadows=Birch
+
+# Black Forest
+Troll Black Forest=Trollish
+Root Black Forest=Rooty
+Ruin Black Forest=Ruined
+Rock Black Forest=Rocky
+Pinetree Black Forest=Piney
+Blueberry Black Forest=Bountiful
+Kalhygge Black Forest=Kalhygge
+
+# Swamp
+Hut Swamp=Hut
+Bog Swamp=Boggy
+Bat Swamp=Swarming
+Abomination Swamp=Abominable
+
+# Mountain
+Wolf Mountain=Lupine
+Drake Mountain=Drake
+Fortress Mountain=Fortified
+
+# Plains
+Lox Plains=Teeming
+Goblin Plains=Overrun
+Death Plains=Death
+
+# Mistlands
+Rockless Mistlands=Rockless
+Trees Mistlands=Sylvan
+Swords Mistlands=Gladial
+Hare Mistlands=Teeming
+BroodSwarm Mistlands=Infested

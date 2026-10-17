@@ -1,0 +1,12 @@
+Wire's Balanced Craft From Nearby Chests
+
+This mod is built for Valheim using BepInEx and Harmony.
+
+BepInEx:
+https://github.com/BepInEx/BepInEx
+
+Harmony:
+https://github.com/pardeike/Harmony
+
+No third-party source code is bundled into this package.
+Valheim and its assets are property of their respective owners.

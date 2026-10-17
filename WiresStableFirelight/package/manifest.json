@@ -1,0 +1,7 @@
+{
+    "name": "WiresStableFirelight",
+    "description": "Reduces positional wiggle of fireplaces and similar fuel-burning lights. Default 90% reduction, configurable from 0% to 100%.",
+    "version_number": "1.0.0",
+    "website_url": "",
+    "dependencies": []
+}

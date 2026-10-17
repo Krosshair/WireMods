@@ -1,0 +1,3 @@
+﻿ServerSync configuration/version-sync code by blaxxun-boop is embedded in WiresMeisterhau.dll.
+ServerSync is distributed under the MIT-0 license.
+https://github.com/blaxxun-boop/ServerSync

@@ -1,0 +1,9 @@
+{
+  "name": "WiresLegacyRaids",
+  "description": "Brings retired progression raids back as bonus raid rolls for variety and materials.",
+  "version_number": "0.1.1",
+  "website_url": "",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2350"
+  ]
+}

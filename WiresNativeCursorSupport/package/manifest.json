@@ -1,0 +1,7 @@
+{
+    "name": "WiresNativeCursorSupport",
+    "description": "Uses native/system cursor states throughout Valheim's UI on Windows, macOS and Linux.",
+    "version_number": "0.3.2",
+    "website_url": "",
+    "dependencies": []
+}

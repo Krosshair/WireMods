@@ -1,0 +1,7 @@
+{
+    "name": "WiresSailingCamera",
+    "description": "Raises the sailing camera and extends third-person boat zoom.",
+    "version_number": "0.2.2",
+    "website_url": "",
+    "dependencies": []
+}

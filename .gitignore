@@ -1,0 +1,16 @@
+# Build output and local release artifacts
+bin/
+obj/
+_releases/
+*.zip
+*.user
+.vs/
+
+# Local backups made while patching (kept on this PC only)
+backup_*/
+
+# Built DLLs are produced by the build; releases carry them
+*/package/*.dll
+
+# Licensed third-party asset (Envato heartbeat sound): may not be redistributed as a raw file
+WiresHealthAwareness/src/heartbeat.wav

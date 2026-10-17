@@ -1,0 +1,7 @@
+{
+  "name": "WiresInstafill",
+  "description": "Shift + Use once to fill supported refillable objects.",
+  "version_number": "1.0.1",
+  "website_url": "",
+  "dependencies": ["denikson-BepInExPack_Valheim-5.4.2350"]
+}
