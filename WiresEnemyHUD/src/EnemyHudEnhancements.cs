@@ -70,30 +70,6 @@ namespace EnemyHudRework
                     ? CharacterAnimator(state.Character) : null;
             }
 
-            if (state.HasLevel2 && state.Level2 != null)
-            {
-                GameObject labelGo = new GameObject(
-                    "WireExtraStars", typeof(RectTransform), typeof(TextMeshProUGUI));
-                RectTransform rect = labelGo.GetComponent<RectTransform>();
-                rect.SetParent(state.Level2.parent, false);
-                rect.anchorMin = state.Level2.anchorMin;
-                rect.anchorMax = state.Level2.anchorMax;
-                rect.pivot = new Vector2(0f, 0.5f);
-                rect.sizeDelta = new Vector2(36f, 22f);
-                TMP_Text label = labelGo.GetComponent<TMP_Text>();
-                if (state.NameText != null)
-                {
-                    label.font = state.NameText.font;
-                    label.fontSharedMaterial = state.NameText.fontSharedMaterial;
-                    label.fontSize = state.NameText.fontSize;
-                }
-                label.enableAutoSizing = false;
-                label.alignment = TextAlignmentOptions.MidlineLeft;
-                label.color = new Color32(242, 202, 95, 255);
-                label.raycastTarget = false;
-                state.StarCountLabel = label;
-                labelGo.SetActive(false);
-            }
         }
 
         // The overlay covers exactly the window in which vanilla doubles damage:
@@ -248,8 +224,6 @@ namespace EnemyHudRework
             if (state == null || state.Kind != HudKind.Enemy ||
                 state.Character == null) return;
 
-            UpdateCompactStarCount(state);
-
             Image overlay = state.RecoveryOverlay;
             if (overlay == null) return;
             bool show = isEnemy && _staggerBarEnabled.Value &&
@@ -294,31 +268,9 @@ namespace EnemyHudRework
             state.StaggerChecked = now;
         }
 
-        private static void UpdateCompactStarCount(EnemyUiState state)
-        {
-            if (state.StarCountLabel == null || state.Level2 == null)
-                return;
-            // Vanilla level 1 = 0 stars, 2 = 1, 3 = 2.
-            int stars = Mathf.Max(0, state.Character.GetLevel() - 1);
-            bool compact = stars >= 3;
-            state.StarCountLabel.gameObject.SetActive(compact);
-            if (!compact) return;
-
-            state.Level2.gameObject.SetActive(true);
-            if (state.Level3 != null)
-                state.Level3.gameObject.SetActive(false);
-            state.StarCountLabel.text = stars.ToString();
-
-            RectTransform label = state.StarCountLabel.rectTransform;
-            label.anchoredPosition = state.Level2.anchoredPosition +
-                new Vector2(Mathf.Max(9f, state.Level2.rect.width * 0.5f + 3f), 0f);
-        }
-
         private static void DestroyEnhancedEffects(EnemyUiState state)
         {
             if (state == null) return;
-            if (state.StarCountLabel != null)
-                UnityEngine.Object.Destroy(state.StarCountLabel.gameObject);
             if (state.RecoveryOverlay != null)
                 UnityEngine.Object.Destroy(state.RecoveryOverlay.gameObject);
         }
