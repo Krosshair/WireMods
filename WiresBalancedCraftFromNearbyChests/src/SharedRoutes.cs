@@ -10,6 +10,8 @@ namespace WiresBalancedCraftFromNearbyChests
         internal string ConfigKey;
         internal string[] RouteIds;
         internal ConfigEntry<string>[] KeywordEntries;
+        // Optional: every station route this accepts, including ones found later.
+        internal Func<RouteDefinition, bool> Includes;
 
         internal string SyncId
         {
@@ -76,15 +78,17 @@ namespace WiresBalancedCraftFromNearbyChests
                 },
                 "Kitchen", "", "");
 
-            Seed(
-                "forging",
-                "Forging",
-                new[]
-                {
-                    "station:$piece_forge",
-                    "station:$piece_blackforge"
-                },
-                "Forging", "", "");
+            // Every station whose crafts raise the Crafting skill
+            // (workbench, forge, black forge, galdr table, stonecutter,
+            // artisan table, modded crafting stations), never Cooking.
+            // Replaces the 0.1.8 Forging group; "Forging" chests keep working.
+            SharedRouteGroup crafting = Seed(
+                "crafting",
+                "Crafting",
+                new string[0],
+                "Crafting", "Forging", "");
+            crafting.Includes = route => route.Kind == RouteKind.Station && route.CraftingSkill;
+            MigrateForgingKeywords(crafting);
 
             Seed(
                 "plainsprocessing",
@@ -117,7 +121,30 @@ namespace WiresBalancedCraftFromNearbyChests
                 "Siege", "", "");
         }
 
-        private static void Seed(
+        // Custom 0.1.8 Forging keywords move into free Crafting slots.
+        private static void MigrateForgingKeywords(SharedRouteGroup crafting)
+        {
+            var orphans = HarmonyLib.AccessTools.Property(typeof(ConfigFile), "OrphanedEntries")
+                ?.GetValue(ModConfig.File) as Dictionary<ConfigDefinition, string>;
+            if (orphans == null) return;
+            for (int i = 1; i <= 3; i++)
+            {
+                var old = new ConfigDefinition("Shared Keywords", "Forging " + i);
+                string value;
+                if (!orphans.TryGetValue(old, out value)) continue;
+                orphans.Remove(old);
+                value = (value ?? "").Trim();
+                if (value.Length == 0) continue;
+                bool present = false;
+                foreach (ConfigEntry<string> e in crafting.KeywordEntries)
+                    if (string.Equals((e.Value ?? "").Trim(), value, StringComparison.OrdinalIgnoreCase)) present = true;
+                if (present) continue;
+                foreach (ConfigEntry<string> e in crafting.KeywordEntries)
+                    if (string.IsNullOrEmpty((e.Value ?? "").Trim())) { e.Value = value; break; }
+            }
+        }
+
+        private static SharedRouteGroup Seed(
             string id,
             string configKey,
             string[] routeIds,
@@ -138,6 +165,7 @@ namespace WiresBalancedCraftFromNearbyChests
 
             Groups.Add(group);
             AttachKeywordHandlers(group);
+            return group;
         }
 
         internal static void AddMatchingRoutes(
@@ -181,6 +209,11 @@ namespace WiresBalancedCraftFromNearbyChests
                     if (RouteRegistry.Get(routeId) != null)
                         routeIds.Add(routeId);
                 }
+
+                if (group.Includes != null)
+                    foreach (RouteDefinition route in RouteRegistry.All)
+                        if (route != null && group.Includes(route))
+                            routeIds.Add(route.Id);
             }
         }
 

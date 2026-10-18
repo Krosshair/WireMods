@@ -18,6 +18,9 @@ namespace WiresBalancedCraftFromNearbyChests
         internal string ConfigKey;
         internal RouteKind Kind;
         internal ConfigEntry<string>[] KeywordEntries;
+        // The station's crafts raise the Crafting skill (not Cooking):
+        // part of the shared Crafting group.
+        internal bool CraftingSkill;
 
         internal string[] Keywords
         {
@@ -136,13 +139,19 @@ namespace WiresBalancedCraftFromNearbyChests
                 Id = id,
                 ConfigKey = configKey,
                 Kind = RouteKind.Station,
-                KeywordEntries = entries
+                KeywordEntries = entries,
+                CraftingSkill = !CookingStations.Contains(stationName)
             };
 
             Routes.Add(id, route);
             RouteOrder.Add(route);
             AttachKeywordHandlers(route);
         }
+
+        // Vanilla stations whose crafts raise Cooking instead of Crafting.
+        private static readonly HashSet<string> CookingStations =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "$piece_cauldron", "$piece_preptable", "$piece_meadcauldron" };
 
         private static void SeedTool(
             string prefabName,
@@ -235,13 +244,18 @@ namespace WiresBalancedCraftFromNearbyChests
                 Id = id,
                 ConfigKey = prefabName,
                 Kind = RouteKind.Station,
-                KeywordEntries = entries
+                KeywordEntries = entries,
+                // Same rule as the game: crafts here raise Crafting.
+                CraftingSkill = station.m_craftingSkill == Skills.SkillType.Crafting
             };
 
             Routes.Add(id, route);
             RouteOrder.Add(route);
             AttachKeywordHandlers(route);
             ValidateRouteAliases(route);
+            // Chests already tagged for the Crafting group now include it.
+            if (route.CraftingSkill)
+                ContainerRegistry.ReindexAll();
             return route;
         }
 

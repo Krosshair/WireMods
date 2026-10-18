@@ -21,7 +21,7 @@ Matching looks for keywords anywhere in a chest's name. Each station, build tool
 
 Supported routes cover all crafting stations; **Hammer, Hoe, Cultivator and Serving Tray**; and fuel or input for kilns, smelters, cooking stations, ovens, fermenters, refineries and other supported machines.
 
-**Shared keywords** serve several related routes: `Smelting`, `Kitchen`, `Forging`, `Plains Processing`, `Frost Processing` and `Siege`. See the config for every individual keyword. If multiple matching chests are available, chest-title sorting determines which is used first.
+**Shared keywords** serve several related routes: `Smelting`, `Kitchen`, `Crafting` (every station that raises the Crafting skill: workbench, forges, galdr table and more, never cooking), `Plains Processing`, `Frost Processing` and `Siege`. See the config for every individual keyword. If multiple matching chests are available, chest-title sorting determines which is used first.
 
 ## Multiplayer
 Installing on the **server is optional**. If installed there, the server's configured route keywords sync to clients.
