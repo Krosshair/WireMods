@@ -12,7 +12,7 @@ namespace WiresNotificationOverhaul
     {
         public const string PluginGuid = "wire.valheim.notificationoverhaul";
         public const string PluginName = "Wire's Notification Overhaul";
-        public const string PluginVersion = "1.1.6";
+        public const string PluginVersion = "1.1.7";
 
         internal enum Toggle
         {
@@ -59,6 +59,8 @@ namespace WiresNotificationOverhaul
         internal static ConfigEntry<Toggle> PreserveCenterMessageColor;
         internal static ConfigEntry<Toggle> XpGainNotifications;
         internal static ConfigEntry<Toggle> XpProgressNotifications;
+        internal static ConfigEntry<Toggle> InWorldXpPopups;
+        internal static ConfigEntry<Toggle> HideMovementXpPopups;
 
         private Harmony _harmony;
         private static bool _pendingPreviousPresetMigration;
@@ -197,17 +199,22 @@ namespace WiresNotificationOverhaul
                 Toggle.On,
                 "Keep the original yellow center-message color when those messages are moved into the left stack.");
 
-            XpGainNotifications = BindLocal(
-                "3- Notification Sources",
-                "XP Gain Notifications",
-                Toggle.Off,
-                "Show skill XP gains in the left notification stack, not only level-ups.");
+            const string Xp = "4- XP Notifications";
+            XpGainNotifications = BindOrdered(Xp, "XP Gain Notifications", Toggle.Off,
+                "Show skill XP gains in the notification stack, not only level-ups.", 400);
+            XpProgressNotifications = BindOrdered(Xp, "Show Current / Required XP", Toggle.Off,
+                "With XP Gain Notifications, show current XP toward the next level out of the XP required for that level.", 300);
+            InWorldXpPopups = BindOrdered(Xp, "In-World XP Popups", Toggle.Off,
+                "Show each XP gain as a popup on your character, in the same style as damage numbers. Works with or without XP Gain Notifications. Only you see them.", 200);
+            HideMovementXpPopups = BindOrdered(Xp, "No In-World Popups For Movement Skills", Toggle.On,
+                "Skip in-world popups for Run, Jump, Swim, Ride and Sneak, which gain XP about once a second while moving. The notification stack is unaffected.", 100);
 
-            XpProgressNotifications = BindLocal(
-                "3- Notification Sources",
-                "Show Current / Required XP",
-                Toggle.Off,
-                "When XP Gain Notifications are enabled, show current XP toward the next level out of the XP required for that level.");
+            // Moved from Notification Sources in 1.1.7: keep the old values.
+            string old;
+            if (TakeOrphan("3- Notification Sources", "XP Gain Notifications", out old))
+                XpGainNotifications.Value = ParseToggle(old, XpGainNotifications.Value);
+            if (TakeOrphan("3- Notification Sources", "Show Current / Required XP", out old))
+                XpProgressNotifications.Value = ParseToggle(old, XpProgressNotifications.Value);
 
             PickupNotificationsOnly.SettingChanged += OnPositionSettingChanged;
             NotificationsPosition.SettingChanged += OnPositionSettingChanged;
@@ -263,6 +270,29 @@ namespace WiresNotificationOverhaul
         private static void OnIconSettingChanged(object sender, EventArgs e)
         {
             NotificationSystem.UpdateEntryLayout();
+        }
+
+        private ConfigEntry<Toggle> BindOrdered(string section, string key, Toggle value, string description, int order)
+        {
+            return Config.Bind(section, key, value, new ConfigDescription(description, null,
+                new ConfigurationManagerAttributes { Order = order }));
+        }
+
+        private bool TakeOrphan(string section, string key, out string value)
+        {
+            value = null;
+            var orphans = AccessTools.Property(typeof(ConfigFile), "OrphanedEntries")
+                ?.GetValue(Config) as System.Collections.Generic.Dictionary<ConfigDefinition, string>;
+            var definition = new ConfigDefinition(section, key);
+            if (orphans == null || !orphans.TryGetValue(definition, out value)) return false;
+            orphans.Remove(definition);
+            return true;
+        }
+
+        private static Toggle ParseToggle(string raw, Toggle fallback)
+        {
+            Toggle parsed;
+            return Enum.TryParse(raw == null ? "" : raw.Trim(), true, out parsed) ? parsed : fallback;
         }
 
         // Personal look-and-feel settings: never synced or locked by a server.

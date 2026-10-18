@@ -396,10 +396,11 @@ namespace WiresNotificationOverhaul
             float factor,
             bool __state)
         {
-            if (!__state ||
-                WiresNotificationOverhaulPlugin
-                    .XpGainNotifications.Value !=
-                WiresNotificationOverhaulPlugin.Toggle.On)
+            bool stack = WiresNotificationOverhaulPlugin.XpGainNotifications.Value ==
+                WiresNotificationOverhaulPlugin.Toggle.On;
+            bool world = WiresNotificationOverhaulPlugin.InWorldXpPopups.Value ==
+                WiresNotificationOverhaulPlugin.Toggle.On;
+            if (!__state || (!stack && !world))
                 return;
 
             Skills.SkillDef definition = null;
@@ -428,6 +429,11 @@ namespace WiresNotificationOverhaul
                 Game.m_skillGainRate;
 
             if (gained <= 0f)
+                return;
+
+            if (world)
+                WorldXpPopups.Show(skillType, gained);
+            if (!stack)
                 return;
 
             float currentXp;
