@@ -137,7 +137,7 @@ namespace WiresAldr
                         Add(section, plant + " (extra yield)",
                             ForageRules.VeteranParts(resource, tier, defeated,
                                 Plugin.VeteranForage.Value,
-                                Plugin.SkippedFactor.Value / 100.0));
+                                Plugin.SkippedFactor.Value / 100.0, Plugin.LaterFactor.Value / 100.0));
                     }
                 }
 
@@ -170,7 +170,7 @@ namespace WiresAldr
                             BonusBreakdown.Veteran(tier, defeated,
                                 Plugin.MaterialBonus.Value,
                                 Plugin.VeteranMaterials.Value,
-                                Plugin.SkippedFactor.Value / 100.0);
+                                Plugin.SkippedFactor.Value / 100.0, Plugin.LaterFactor.Value / 100.0);
                         foreach (Material material in RegionalMaterials[tier])
                             Add(section, ItemName(material.Name, material.Token), native);
                     }

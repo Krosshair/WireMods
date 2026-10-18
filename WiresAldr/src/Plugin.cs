@@ -11,7 +11,7 @@ namespace WiresAldr
     {
         public const string Guid = "wire.valheim.heimvoxtr";
         public const string Name = "Wire's Aldr";
-        public const string Version = "1.0.1";
+        public const string Version = "1.0.2";
         private static readonly ConfigSync Sync = new ConfigSync(Guid)
         {
             DisplayName = Name,
@@ -152,8 +152,8 @@ namespace WiresAldr
                 "Added to the bonus harvest chance of that biome's wild plants.", 0, 100);
             ForageCap = Number(ForageSection, "Bonus harvest chance cap (%)", 80,
                 "Highest total bonus harvest chance, Farming skill included.", 0, 100);
-            VeteranForage = Number(ForageSection, "Yield per later Forsaken (%)", 40,
-                "Extra items per pick for each Forsaken killed after the plant's own.", 0, 200);
+            VeteranForage = Number(ForageSection, "Yield after later Forsaken (%)", 20,
+                "Extra items per pick from the first Forsaken killed after the plant's own; each further one adds the later share of the previous (20, 10, 5...: max about 40).", 0, 200);
             MushroomBlackForestPremium = Number(ForageSection, "Black Forest mushrooms (pp)", 8,
                 "Extra harvest chance after the Elder.", 0, 50);
             ThistleSwampElderPremium = Number(ForageSection, "Swamp thistle after the Elder (pp)", 10,
@@ -165,8 +165,8 @@ namespace WiresAldr
             const string MaterialSection = "09 - Natural Materials";
             MaterialBonus = Number(MaterialSection, "Regional yield after biome Forsaken (%)", 10,
                 "Copper, tin, iron, silver, obsidian, tar and other regional materials of that biome.", 0, 100);
-            VeteranMaterials = Number(MaterialSection, "Regional yield per later Forsaken (%)", 25,
-                "For each Forsaken killed after their biome's own.", 0, 200);
+            VeteranMaterials = Number(MaterialSection, "Regional yield after later Forsaken (%)", 25,
+                "From the first Forsaken killed after their biome's own; each further one adds the later share of the previous (25, 12.5...: max about 50).", 0, 200);
             WoodEikthyr = Number(MaterialSection, "Wood after Eikthyr (%)", 10, "Extra wood.", 0, 100);
             WoodElder = Number(MaterialSection, "Wood after the Elder (%)", 10, "Extra wood.", 0, 100);
             WoodLater = Number(MaterialSection, "Wood per later Forsaken (%)", 5, "For each Forsaken after the Elder.", 0, 100);
@@ -190,7 +190,7 @@ namespace WiresAldr
 
             const string ProgressSection = "11 - Forsaken Shares";
             LaterFactor = Number(ProgressSection, "Later Forsaken share (%)", 50,
-                "Stars, harvest chance and fishing: each later Forsaken adds this share of the previous one.", 0, 100);
+                "Stars, harvest chance, fishing and later-Forsaken yields: each later Forsaken adds this share of the previous one.", 0, 100);
             SkippedFactor = Number(ProgressSection, "Unconquered biome share (%)", 15,
                 "Share of later Forsaken bonuses a biome gets while its own Forsaken lives.", 0, 100);
 

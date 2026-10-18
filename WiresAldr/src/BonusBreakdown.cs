@@ -50,7 +50,7 @@ namespace WiresAldr
         // after the biome's own boss (no distance decay).
         internal static List<Portion> Veteran(
             int tier, bool[] defeated, double ownBonus, double perLater,
-            double skippedFraction)
+            double skippedFraction, double laterFraction)
         {
             var parts = new List<Portion>();
             if (defeated == null || defeated.Length != ProgressionMath.BiomeCount ||
@@ -59,9 +59,14 @@ namespace WiresAldr
             bool own = defeated[tier];
             if (own && ownBonus > 0) parts.Add(new Portion(tier, ownBonus));
             double scale = own ? 1 : Math.Max(0, Math.Min(1, skippedFraction));
+            // Tapers: each later Forsaken adds the later share of the previous one.
+            double step = perLater * scale, taper = Math.Max(0, Math.Min(1, laterFraction));
             for (int boss = tier + 1; boss < defeated.Length; boss++)
-                if (defeated[boss] && perLater > 0 && scale > 0)
-                    parts.Add(new Portion(boss, perLater * scale));
+                if (defeated[boss] && step > 0.0001)
+                {
+                    parts.Add(new Portion(boss, step));
+                    step *= taper;
+                }
             return parts;
         }
 

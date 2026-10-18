@@ -218,7 +218,7 @@ namespace WiresAldr
         // has progressed past a biome, the quicker its resources are to gather.
         internal static List<BonusBreakdown.Portion> VeteranParts(
             WildResource resource, int sourceBiome, bool[] defeated,
-            double perLaterBoss, double skippedFraction)
+            double perLaterBoss, double skippedFraction, double laterFraction)
         {
             var parts = new List<BonusBreakdown.Portion>();
             int home = HomeTier(resource);
@@ -226,9 +226,14 @@ namespace WiresAldr
                 defeated == null || defeated.Length != ProgressionMath.BiomeCount)
                 return parts;
             double scale = defeated[home] ? 1 : Math.Max(0, Math.Min(1, skippedFraction));
+            // Tapers: each later Forsaken adds the later share of the previous one.
+            double step = perLaterBoss * scale, taper = Math.Max(0, Math.Min(1, laterFraction));
             for (int i = home + 1; i < defeated.Length; ++i)
-                if (defeated[i] && scale > 0)
-                    parts.Add(new BonusBreakdown.Portion(i, perLaterBoss * scale));
+                if (defeated[i] && step > 0.0001)
+                {
+                    parts.Add(new BonusBreakdown.Portion(i, step));
+                    step *= taper;
+                }
             return parts;
         }
 

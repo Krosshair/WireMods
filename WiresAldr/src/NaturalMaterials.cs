@@ -45,7 +45,7 @@ namespace WiresAldr
                     percent = GlobalYieldRules.Total(BonusBreakdown.Veteran(
                         tier, defeated, Plugin.MaterialBonus.Value,
                         Plugin.VeteranMaterials.Value,
-                        Plugin.SkippedFactor.Value / 100.0));
+                        Plugin.SkippedFactor.Value / 100.0, Plugin.LaterFactor.Value / 100.0));
                 }
 
                 int extra = Mathf.Min(Mathf.RoundToInt(Plugin.MaterialMaxExtra.Value), ProgressionMath.ExtraCount(1,

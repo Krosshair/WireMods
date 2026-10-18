@@ -6,16 +6,16 @@ Every bonus is shown in the Compendium under **Aldr**, with where it comes from.
 
 ### World
 
-Each Forsaken defeated improves its own biome. For stars, harvest chance and fishing, later boss kills add 50% of the previous step each, and a biome whose Forsaken is still alive gets 15% of what later Forsaken would give.
+Each Forsaken defeated improves its own biome. For stars, harvest chance, fishing and later-Forsaken yields, later boss kills add 50% of the previous step each, and a biome whose Forsaken is still alive gets 15% of what later Forsaken would give.
 
 - **Creature stars:** +8 percentage points star chance for the biome's native creatures, scaled with world difficulty (relative to the 10% base). Max 95%.
-- **Wild foraging:** +25 percentage points bonus harvest chance for the biome's wild plants (total capped at 80%). Each Forsaken after the plant's own adds +40% items per pick.
+- **Wild foraging:** +25 percentage points bonus harvest chance for the biome's wild plants (total capped at 80%). Later Forsaken add items per pick: +20%, then half the previous step each (max about +40%).
   - Black Forest mushrooms: +8 after the Elder. Swamp thistle: +10 after the Elder, +7.5 after Bonemass.
 - **Natural materials:** extra drops from trees, rocks and deposits.
   - Wood: +10% Eikthyr, +10% Elder, +5% each later Forsaken.
   - Stone: +20% Elder, +5% each later Forsaken.
   - Core wood +20% Elder. Fine wood +10% Elder, +20% Yagluth. Ashwood +10% Fader.
-  - Regional materials (copper, tin, iron, silver, obsidian, tar, ...): +10% after their biome's Forsaken, +25% per later Forsaken.
+  - Regional materials (copper, tin, iron, silver, obsidian, tar, ...): +10% after their biome's Forsaken; later Forsaken add +25%, then half the previous step each (max about +50%).
 - **Wild fishing:** +15% chance of an extra fish per rod catch of the biome's fish. Their spawn chance, spawn rate and population rise by the same share, and quality rolls by 0.35 x that in percentage points.
 
 ### Experience

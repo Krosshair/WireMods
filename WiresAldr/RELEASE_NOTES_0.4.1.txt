@@ -120,3 +120,7 @@ Final pass for 1.0.0 (2026-10-18)
 - Nexus ID 4485; mods.json: Aldr publish=true, Thunderstore and Hexium on.
 - World half fully configurable: star chance cap, max extra forage items, max extra material drops, fish bonus cap, and separate toggles for extra fish per catch, more fish and better fish (quality factor 35%).
 - FIX: four config keys contained an apostrophe ("a biome's Forsaken"), which BepInEx rejects; Awake threw and Aldr did not load at all. Affects the 1.0.0 upload on Nexus. Keys now read "after biome Forsaken".
+
+1.0.2 (2026-10-18)
+- Later-Forsaken yields now taper by the later share (50%): foraging 20, 10, 5... (max ~40%, was flat 40% per boss = up to +240%), regional materials 25, 12.5... (max ~50%, was flat 25% per boss).
+- README / Nexus description updated. Build from a copy outside WireMods (NuGet restore can't delete its temp file there without delete permission).

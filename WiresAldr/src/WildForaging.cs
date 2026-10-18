@@ -78,7 +78,7 @@ namespace WiresAldr
                 double veteran = ForageRules.Total(ForageRules.VeteranParts(
                     resource, sourceBiome, defeated,
                     Plugin.VeteranForage.Value,
-                    Plugin.SkippedFactor.Value / 100.0));
+                    Plugin.SkippedFactor.Value / 100.0, Plugin.LaterFactor.Value / 100.0));
                 if (veteran > 0)
                     _veteranExtra = Mathf.Min(Mathf.RoundToInt(Plugin.ForageMaxExtra.Value), ProgressionMath.ExtraCount(
                         Mathf.Max(1, __instance.m_amount), veteran,
