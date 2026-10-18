@@ -10,6 +10,21 @@ namespace WiresAldr
     // Temporary values are restored even if the spawn routine throws.
     internal static class FishProgression
     {
+        // Spawn entries are scanned every few seconds per zone: remember
+        // which prefabs are fish instead of calling GetComponent each time.
+        private static readonly Dictionary<GameObject, bool> isFish = new Dictionary<GameObject, bool>();
+        internal static bool IsFish(GameObject prefab)
+        {
+            if (prefab == null) return false;
+            bool fish;
+            if (!isFish.TryGetValue(prefab, out fish))
+            {
+                if (isFish.Count > 1024) isFish.Clear();
+                isFish[prefab] = fish = prefab.GetComponent<Fish>() != null;
+            }
+            return fish;
+        }
+
         internal static bool Enabled => Plugin.Enabled != null &&
             Plugin.Enabled.Value && Plugin.FishYields.Value &&
             WorldProgress.Ready;
@@ -35,7 +50,7 @@ namespace WiresAldr
         {
             if (!Enabled || biome < 0) return 0f;
             return Mathf.Clamp(WorldProgress.GetBonus(biome,
-                Plugin.FishYieldBonus.Value), 0f, 80f);
+                Plugin.FishYieldBonus.Value), 0f, Plugin.FishBonusCap.Value);
         }
 
         internal struct Original
@@ -54,11 +69,10 @@ namespace WiresAldr
                 bool eventSpawners, out List<Original> __state)
             {
                 __state = null;
-                if (eventSpawners || spawners == null || !Enabled) return;
+                if (eventSpawners || spawners == null || !Enabled || !Plugin.FishSpawnBoost.Value) return;
                 foreach (var spawn in spawners)
                 {
-                    if (spawn == null || !spawn.m_enabled || spawn.m_prefab == null ||
-                        spawn.m_prefab.GetComponent<Fish>() == null ||
+                    if (spawn == null || !spawn.m_enabled || !IsFish(spawn.m_prefab) ||
                         spawn.m_spawnInterval <= 0f || spawn.m_maxSpawned <= 0) continue;
 
                     int biome = SingleBiome(spawn.m_biome);
@@ -113,8 +127,7 @@ namespace WiresAldr
         internal static float QualityChance(SpawnSystem.SpawnData spawn,
             float vanillaChance)
         {
-            if (!Enabled || spawn == null || spawn.m_prefab == null ||
-                spawn.m_prefab.GetComponent<Fish>() == null ||
+            if (!Enabled || !Plugin.FishQualityBoost.Value || spawn == null || !IsFish(spawn.m_prefab) ||
                 spawn.m_maxLevel <= 1) return vanillaChance;
             int biome = SingleBiome(spawn.m_biome);
             float progress = Growth(biome);
@@ -122,7 +135,7 @@ namespace WiresAldr
             // +5.25 percentage points with a 15% native-fish progression.
             // Never lower unusually high vanilla/world-difficulty rolls.
             return Mathf.Max(vanillaChance,
-                Mathf.Min(100f, vanillaChance + progress * 0.35f));
+                Mathf.Min(100f, vanillaChance + progress * Plugin.FishQualityFactor.Value / 100f));
         }
     }
 }

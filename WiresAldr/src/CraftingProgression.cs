@@ -35,7 +35,7 @@ namespace WiresAldr
             if (player == null || player != Player.m_localPlayer ||
                 __instance == null || Game.instance == null ||
                 Plugin.Enabled == null || !Plugin.Enabled.Value ||
-                !Plugin.XpEnabled.Value || !Plugin.XpChallenge.Value) return;
+                !Plugin.XpEnabled.Value || !Plugin.Rewards.Value) return;
             Recipe recipe = RecipeField(__instance);
             if (recipe == null || recipe.m_item == null ||
                 recipe.m_item.m_itemData == null ||

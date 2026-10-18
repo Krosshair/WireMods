@@ -58,6 +58,18 @@ namespace WiresAldr
             return __exception;
         }
 
+        // General natural rock/tree/mineral sources only. Other
+        // DropOnDestroyed users cannot get extra wood/ore merely
+        // because an unrelated prefab drops one of those items.
+        private static readonly string[] NaturalPrefixes =
+        {
+            "rock", "stone", "tree", "log", "mine", "ore",
+            "boulder", "copper", "tin", "silver", "obsidian",
+            "marble", "tar", "swamptree", "ancienttree",
+            "yggdrasil", "grausten", "flametal", "petrified",
+            "ashlandtree", "deeptree"
+        };
+
         private static bool IsNaturalObject(object value)
         {
             if (value is MineRock5 || value is MineRock ||
@@ -76,18 +88,7 @@ namespace WiresAldr
                 return false;
 
             string n = source.name.ToLowerInvariant();
-            // General natural rock/tree/mineral sources only. Other
-            // DropOnDestroyed users cannot get extra wood/ore merely
-            // because an unrelated prefab drops one of those items.
-            string[] prefixes =
-            {
-                "rock", "stone", "tree", "log", "mine", "ore",
-                "boulder", "copper", "tin", "silver", "obsidian",
-                "marble", "tar", "swamptree", "ancienttree",
-                "yggdrasil", "grausten", "flametal", "petrified",
-                "ashlandtree", "deeptree"
-            };
-            foreach (string prefix in prefixes)
+            foreach (string prefix in NaturalPrefixes)
                 if (n.StartsWith(prefix, StringComparison.Ordinal))
                     return true;
             return false;

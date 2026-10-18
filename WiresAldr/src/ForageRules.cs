@@ -9,7 +9,8 @@ namespace WiresAldr
     {
         None, Raspberry, Mushroom, Dandelion, Blueberry, Thistle,
         CarrotSeeds, TurnipSeeds, YellowMushroom, Cloudberry,
-        JotunPuffs, Magecap, Fiddlehead, Smokepuff, Lingonberry
+        JotunPuffs, Magecap, Fiddlehead, Smokepuff, Lingonberry,
+        OnionSeeds, Barley, Flax
     }
 
     internal static class ForageRules
@@ -36,6 +37,9 @@ namespace WiresAldr
                 case "fiddlehead": return WildResource.Fiddlehead;
                 case "smokepuff": return WildResource.Smokepuff;
                 case "lingonberry": case "lingonberries": return WildResource.Lingonberry;
+                case "onionseeds": return WildResource.OnionSeeds;
+                case "barley": return WildResource.Barley;
+                case "flax": return WildResource.Flax;
                 default: return WildResource.None;
             }
         }
@@ -56,22 +60,21 @@ namespace WiresAldr
             return WildResource.None;
         }
 
-        internal static WildResource[] ResourcesInBiome(int tier)
+        // Read-only, shared: never modify the returned array.
+        private static readonly WildResource[][] BiomeResources =
         {
-            switch (tier)
-            {
-                case 0: return new[] { WildResource.Raspberry, WildResource.Mushroom, WildResource.Dandelion };
-                case 1: return new[] { WildResource.Mushroom, WildResource.Blueberry,
-                    WildResource.Thistle, WildResource.CarrotSeeds, WildResource.YellowMushroom };
-                case 2: return new[] { WildResource.Thistle, WildResource.TurnipSeeds };
-                case 4: return new[] { WildResource.Cloudberry };
-                case 5: return new[] { WildResource.JotunPuffs, WildResource.Magecap };
-                case 6: return new[] { WildResource.Fiddlehead, WildResource.Smokepuff };
-                case 7: return new[] { WildResource.Lingonberry };
-                default: return Array.Empty<WildResource>();
-            }
-        }
-
+            new[] { WildResource.Raspberry, WildResource.Mushroom, WildResource.Dandelion },
+            new[] { WildResource.Mushroom, WildResource.Blueberry,
+                WildResource.Thistle, WildResource.CarrotSeeds, WildResource.YellowMushroom },
+            new[] { WildResource.Thistle, WildResource.TurnipSeeds },
+            new[] { WildResource.OnionSeeds },
+            new[] { WildResource.Cloudberry, WildResource.Barley, WildResource.Flax },
+            new[] { WildResource.JotunPuffs, WildResource.Magecap },
+            new[] { WildResource.Fiddlehead, WildResource.Smokepuff },
+            new[] { WildResource.Lingonberry }
+        };
+        internal static WildResource[] ResourcesInBiome(int tier) =>
+            tier >= 0 && tier < BiomeResources.Length ? BiomeResources[tier] : Array.Empty<WildResource>();
         internal static string Name(WildResource id)
         {
             switch (id)
@@ -90,6 +93,9 @@ namespace WiresAldr
                 case WildResource.Fiddlehead: return "Fiddleheads";
                 case WildResource.Smokepuff: return "Smokepuffs";
                 case WildResource.Lingonberry: return null; // shown by its localized name once discovered
+                case WildResource.OnionSeeds: return "Wild onion seeds";
+                case WildResource.Barley: return "Wild barley";
+                case WildResource.Flax: return "Wild flax";
                 default: return "";
             }
         }
@@ -113,6 +119,9 @@ namespace WiresAldr
                 case WildResource.Fiddlehead: return "$item_fiddleheadfern";
                 case WildResource.Smokepuff: return "$item_smokepuff";
                 case WildResource.Lingonberry: return "$item_lingonberries";
+                case WildResource.OnionSeeds: return "$item_onionseeds";
+                case WildResource.Barley: return "$item_barley";
+                case WildResource.Flax: return "$item_flax";
                 default: return null;
             }
         }
@@ -126,7 +135,8 @@ namespace WiresAldr
                 case WildResource.Blueberry: case WildResource.Thistle:
                 case WildResource.CarrotSeeds: case WildResource.YellowMushroom: return 1;
                 case WildResource.TurnipSeeds: return 2;
-                case WildResource.Cloudberry: return 4;
+                case WildResource.OnionSeeds: return 3;
+                case WildResource.Cloudberry: case WildResource.Barley: case WildResource.Flax: return 4;
                 case WildResource.JotunPuffs: case WildResource.Magecap: return 5;
                 case WildResource.Fiddlehead: case WildResource.Smokepuff: return 6;
                 case WildResource.Lingonberry: return 7;

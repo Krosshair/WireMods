@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using HarmonyLib;
+using UnityEngine;
 
 namespace WiresAldr
 {
@@ -75,7 +76,7 @@ namespace WiresAldr
             catch (Exception e)
             {
                 UnityEngine.Debug.LogWarning(
-                    "[Heimvöxtr] Compendium unavailable: " + e);
+                    "[Aldr] Compendium unavailable: " + e);
             }
         }
 
@@ -92,10 +93,10 @@ namespace WiresAldr
 
             Header(result, "Mod Status");
             Status(result, "Mod", enabled);
-            Status(result, "Creature difficulty", creatures);
+            Status(result, "Creature stars", creatures);
             Status(result, "Wild foraging", forage);
             Status(result, "Natural material yields", materials);
-            Status(result, "Fishing yields", fishing);
+            Status(result, "Wild fishing", fishing);
             Status(result, "Dynamic experience", experience);
 
 
@@ -177,20 +178,85 @@ namespace WiresAldr
                 Section(result, KnownBiome(tier, defeated) ? Biomes[tier] : Unknown, section);
             }
 
-            if (experience && Expedition.Enabled)
-            {
-                var expedition = new StringBuilder();
-                expedition.Append("Skill XP: <color=#DCEEF0>+")
-                    .Append(Num(Expedition.ActivePercent, 1)).Append("%</color>");
-                if (Expedition.AtBase && Expedition.StoredPercent > 0.05f)
-                    expedition.Append("  <color=#99A6AD><size=80%><i>+")
-                        .Append(Num(Expedition.StoredPercent, 1))
-                        .Append("% waiting, fading while at a base</i></size></color>");
-                expedition.AppendLine();
-                expedition.AppendLine("<color=#99A6AD><size=80%><i>Every XP gain away from a base extends your expedition (faster in more dangerous biomes). The longer it runs, the faster the bonus grows. No cap. Fades at a base (faster while resting), or after 90 s without XP (45 s while resting).</i></size></color>");
-                Section(result, "Expedition", expedition);
-            }
+            if (experience && Player.m_localPlayer != null)
+                Section(result, "Experience", ExperienceInfo(Player.m_localPlayer, defeated));
+
             return result.ToString();
+        }
+
+        // White: the value. Gray: where it comes from.
+        private static string Value(string v) => "<color=#DCEEF0>" + v + "</color>";
+        private static string Sub(string v) => "  <color=#99A6AD><size=80%><i>" + v + "</i></size></color>";
+
+        // XP rules that apply to several skills, for the player right now.
+        // Everything adds to the location bonus; only raids multiply.
+        private static StringBuilder ExperienceInfo(Player p, bool[] defeated)
+        {
+            var sb = new StringBuilder();
+            double location, history;
+            DynamicExperience.BiomeXpHere(p, out location, out history);
+            Heightmap.Biome here = p.GetCurrentBiome();
+            int hereIndex = BiomeCatalog.FromBiome(here);
+            string hereName = here == Heightmap.Biome.Ocean ? "Ocean"
+                : hereIndex >= 0 ? Biomes[hereIndex] : Unknown;
+            sb.Append("Location XP bonus: ").Append(Value("x" + Num(1 + location + history, 2)));
+            if (location + history > 0.0005)
+            {
+                string parts = "+" + Num(location * 100, 0) + "% " + hereName;
+                if (history > 0.0005) parts += ", +" + Num(history * 100, 0) + "% Forsaken";
+                sb.Append(Sub(parts));
+            }
+            sb.AppendLine();
+
+            // Catch-up and weapon transfer don't stack: the larger applies.
+            if (Plugin.XpCatchUpBonus.Value > 0f)
+            {
+                int tier = DynamicExperience.CatchUpTierOf(p);
+                if (tier > 1)
+                {
+                    int below = (int)Math.Round(ExperienceMath.CatchUpThreshold(tier, Plugin.XpCatchUpBase.Value, Plugin.XpCatchUpPerTier.Value));
+                    string cap = Num(Plugin.XpCatchUpBonus.Value, 0);
+                    sb.Append("XP bonus for skills below ").Append(below).Append(": ").Append(Value("<" + cap + "%"))
+                      .AppendLine(Sub(cap + "% x (" + below + " - skill) / " + below));
+                }
+            }
+            Skills.SkillType best; float level;
+            if (Plugin.XpWeaponTransfer.Value > 0f && DynamicExperience.BestWeapon(p, out best, out level))
+            {
+                string skill = Localization.instance != null
+                    ? Localization.instance.Localize("$skill_" + best.ToString().ToLowerInvariant()) : best.ToString();
+                string below = Num(Math.Floor(level * Plugin.XpTransferShare.Value / 100f), 0);
+                string cap = Num(Plugin.XpWeaponTransfer.Value, 0);
+                sb.Append("XP bonus for combat skills below ").Append(below).Append(": ").Append(Value("<" + cap + "%"))
+                  .AppendLine(Sub(cap + "% x (" + below + " - skill) / " + below + "; " + Num(Plugin.XpTransferShare.Value, 0) + "% of " + skill + " " +
+                      Num(Math.Floor(level), 0) + "; the larger of these two applies"));
+            }
+
+            if (Plugin.XpChallenge.Value)
+            {
+                sb.AppendLine();
+                sb.Append("Starred enemy bonus: ").Append(Value(Num(Plugin.XpStarBonus.Value, 1) + "% per star")).AppendLine(Sub("combat XP, additive"));
+                if (Plugin.RaidBonus.Value > 0f)
+                    sb.Append("Combat XP bonus during raids: ").Append(Value("x" + Num(1 + Plugin.RaidBonus.Value / 100f, 2)))
+                      .AppendLine(Sub("against raiders, multiplicative"));
+            }
+
+            if (Expedition.Enabled)
+            {
+                sb.AppendLine();
+                bool paused = Expedition.AtBase && Expedition.StoredPercent > 0.05f;
+                sb.Append("Expedition bonus: ").Append(Value(Num(Expedition.ActivePercent, 1, true) + "%"));
+                if (paused)
+                    sb.Append(Sub(Num(Expedition.StoredPercent, 1, true) + "% paused, decays at a base or when resting"));
+                else
+                {
+                    int minutes = Mathf.FloorToInt(Expedition.Minutes);
+                    sb.Append(Sub(minutes + (minutes == 1 ? " minute" : " minutes") +
+                        " out, increases with XP gain and time spent adventuring"));
+                }
+                sb.AppendLine();
+            }
+            return sb;
         }
 
         private const string Unknown = "???";
@@ -282,6 +348,13 @@ namespace WiresAldr
                     .Append(Contributors[parts[i].BossTier]);
             }
             sb.AppendLine("</i></size></color>");
+        }
+
+        // fixed: always show the decimals (3.0%, not 3%).
+        private static string Num(double n, int precision, bool fixedDecimals)
+        {
+            return n.ToString("0." + new string(fixedDecimals ? '0' : '#', precision),
+                CultureInfo.InvariantCulture);
         }
 
         private static string Num(double n, int precision)

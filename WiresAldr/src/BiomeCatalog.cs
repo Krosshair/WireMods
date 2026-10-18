@@ -105,9 +105,24 @@ namespace WiresAldr
                 ? drop.m_itemData.m_shared.m_name : null;
         }
 
+        // Item prefabs never change: classify each once (drops and every
+        // pickaxe hit ask again).
+        private static readonly System.Collections.Generic.Dictionary<GameObject, GlobalResource> sharedCache =
+            new System.Collections.Generic.Dictionary<GameObject, GlobalResource>();
+        private static readonly System.Collections.Generic.Dictionary<GameObject, int> regionalCache =
+            new System.Collections.Generic.Dictionary<GameObject, int>();
+
         internal static GlobalResource SharedMaterial(GameObject prefab)
         {
             if (prefab == null) return GlobalResource.None;
+            GlobalResource cached;
+            if (sharedCache.TryGetValue(prefab, out cached)) return cached;
+            if (sharedCache.Count > 512) sharedCache.Clear();
+            return sharedCache[prefab] = ClassifyShared(prefab);
+        }
+
+        private static GlobalResource ClassifyShared(GameObject prefab)
+        {
             switch (Token(prefab))
             {
                 case "$item_wood": return GlobalResource.Wood;
@@ -127,7 +142,16 @@ namespace WiresAldr
 
         internal static int RegionalMaterialTier(GameObject prefab)
         {
-            if (prefab == null || SharedMaterial(prefab) != GlobalResource.None)
+            if (prefab == null) return -1;
+            int cached;
+            if (regionalCache.TryGetValue(prefab, out cached)) return cached;
+            if (regionalCache.Count > 512) regionalCache.Clear();
+            return regionalCache[prefab] = ClassifyRegional(prefab);
+        }
+
+        private static int ClassifyRegional(GameObject prefab)
+        {
+            if (SharedMaterial(prefab) != GlobalResource.None)
                 return -1;
             // Vanilla shared item names (verified against game data).
             switch (Token(prefab))
@@ -141,10 +165,10 @@ namespace WiresAldr
                 case "$item_frostwood": case "$item_goldore": return 7;
             }
             string n = Normalize(prefab.name);
-            if (Has(n,"copperore","tinore","tin")) return 1;
+            if (Has(n,"copperore","tinore")) return 1;
             if (Has(n,"elderbark","ancientbark","ironscrap","ironore")) return 2;
             if (Has(n,"silverore","obsidian")) return 3;
-            if (Has(n,"tar")) return 4;
+            if (n == "tar") return 4;
             if (Has(n,"yggdrasilwood","blackmarble","softtissue")) return 5;
             if (Has(n,"grausten","flametalore")) return 6;
             // Later regional materials are recognized by item name above.

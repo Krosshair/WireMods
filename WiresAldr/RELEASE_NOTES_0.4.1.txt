@@ -53,7 +53,7 @@ Simplification (17 Oct, later):
 - CHANGE: Expedition "active" = earning any skill XP away from a base (within the last 15 s). No distance or movement checks anymore. +1% per active minute, cap 200%. No XP off-base for 90 s starts a slow fade; at a base it fades 1.25%/min; death ends it.
 
 Balance pass (17 Oct evening):
-- Tier: your tier = highest CONQUERED biome (or the biome you stand in, if higher). A biome you just beat counts as your own tier, not below you.
+- Tier: your tier = the biome after your last Forsaken (Bonemass -> Mountain). Creatures are judged against the biome you last conquered: it counts as full value, your unconquered frontier as +1 harder, one older biome reduced, older trivial.
 - "% of a level" rewards replaced by flat bonus XP (normal XP gains, scaled by biome/Expedition like everything else):
   kill 2.5 XP same tier, +1 per tier above (max +3), 1 one tier below, none older; +50%/star. Sneak-attack kill +3 Sneak.
   Kills, felled trees and emptied regional deposits are detected on the player's own game (hit within 6 s, target gone, player within 40 m): works in multiplayer, everyone who helped gets it.
@@ -62,3 +62,61 @@ Balance pass (17 Oct evening):
 - Multi-hit bonus (+3% per extra target) for all weapons. Bows/crossbows: +3% any hit, +8% moving target, + up to 12% by distance; ranged extras cap 25%.
 - Fishing reel speed/stamina buffs removed (vanilla reeling).
 - Expedition: up to 30 s credited per XP gain; sailing, riding or standing on a ship holds the bonus (no idle fade); status line in the log every 2 min.
+- Kills of older creatures are reduced, not removed: 1.25 / 0.6 / 0.3 XP (one/two/three+ older); kill range 120 m for long shots.
+- Kill window extends for damage over time and knockback: poison 15 s, fire/spirit 10 s, strong pushes 10 s.
+- Blood Magic summons' kills give Blood Magic XP (60% of a kill).
+- Stacking: biome and Expedition now ADD (not multiply); all action extras (threat, precision, multi-hit, combo, counter, crafting, sneak) share one pool capped at +60% (+75% ranged).
+
+- Regional ore deposits pay their bonus per chunk broken instead of only when fully mined out (same total).
+- Expedition: time spent at base no longer counts toward the clock after leaving.
+- Expedition is saved on the character: logging out keeps it, death still resets it.
+- Weapon experience transfer: a weapon or magic skill below 75% of your best weapon skill learns up to x2 as fast (config, default 100%), tapering as it catches up. Helps crossbows, magic and switching weapons. Adds to the biome bonus instead of multiplying it, and only boosts the skill's own actions (not kill, barrier or other flat rewards). Does not stack with the low skill catch-up bonus; both now add rather than multiply.
+- Blood Magic barriers: 4 XP per baseline (unskilled) barrier worth of hostile damage absorbed, paid per hit, so a stronger barrier is never worse (was 0.5 to 2 XP per hit with a 10 s cooldown).
+- Summon kills: a full kill's XP while you fight alongside your summons (attacked, cast or blocked in the last 20 s), otherwise 60% as before. XP your summons earn on their own doesn't advance Expedition.
+- Stacking: stars and action extras (threat, combo, precision, travel...) now ADD to the biome bonus instead of multiplying it; flat rewards (kills, trees, deposits, fish, crafts) get half the biome step since they already scale with the target; the high-level threat boost is halved. A 30-minute Ashlands frontier fight went from about 6x to about 4.4x vanilla.
+- Weapon transfer starts once your best weapon is 20+.
+- Sailing: a ship under way (2+ m/s) builds Expedition at a fifth of the normal pace; it still holds the bonus from fading.
+- Cleanup and performance: removed unused jump-landing tracking, recipe familiarity leftovers and diagnostics-only smelter hooks; biome lookup no longer converts to text on every XP gain; creature tiers cached per creature; boss progress read at most once per second; fish spawn checks cached; parry blocker lookup no longer uses reflection per block; building bonus kept separate from crafting.
+- Fishing: reeling a higher-quality fish adds +0.25 per quality level instead of multiplying.
+- Compendium: Expedition text mentions sailing.
+- Ore nodes: each chunk pays base / (2 x sqrt(chunks)), so bigger nodes are worth more in total; mining a node out completely pays the base (4 + tool tier) again as a completion bonus.
+- Audit fixes:
+  - Expedition only grows while you keep moving (20 m within 6 minutes; portals and sailing count). Camping one spot (AFK running into a wall, trapped-creature farms) no longer builds it; your existing bonus still applies there.
+  - The Expedition config value now scales the whole curve, not just the linear part.
+  - Creature difficulty is judged by progression only: biomes beyond your frontier now count as +2 and more instead of +1 when you visit them.
+  - Area damage (staff explosions, bombs, AoE spells) now counts like any other hit: kill rewards, stars and threat.
+  - Perfect dodges work in multiplayer when another player controls the attacker.
+  - Kill, tree and deposit rewards no longer miss a target that died just inside its window.
+  - Single-object deposits use the same per-chunk and mined-out rewards as multi-chunk ones.
+  - Wild onion seeds (Mountains) and wild barley and flax (Plains) now get foraging bonuses, confirmed as Farming pickables in the game data.
+  - Removed unused code.
+- Blocking: blocks earn more the more dangerous they were: the creature tier bonus (like weapon hits) plus up to +40% depending on how much of your stagger bar the blocked hit filled. Parries keep their larger vanilla XP and the risky-parry reward on top.
+- Parries that still stagger you (or empty your stamina) now count as the riskiest parry (full stagger bar) instead of earning no parry bonus.
+- Perfect dodges: the vanilla dodge XP now gets the dodged creature as context: stars, its tier, and up to +25% for big creatures (4x your health).
+- Cooking: better food gives more Cooking XP (taking dishes off a station and cauldron recipes): +0% for early dishes up to +50% for dishes worth 160+ (health + stamina + eitr, read from the item).
+- Riding: a moving mount builds Expedition at full pace, not just at a gallop.
+- Sneak: removed the escaped-detection reward (unreliable in multiplayer); sneaking near unaware enemies now gets +35% (was +12%).
+- Compendium: new Experience section with the skill XP multiplier where you stand (biome + Forsaken part), your frontier, the weapon learning threshold and what gives bonus XP.
+
+Optimization and fixes (2026-10-18)
+- Cooking stations: the food bonus now uses the dish vanilla actually hands you (the first finished slot). Burnt food and putting raw food on get no food bonus.
+- Kill and tree/deposit rewards update one entry per target instead of allocating a new one on every hit.
+- Creatures not found in any tier list are remembered, so later hits skip the name lookup.
+- Blocking without a known attacker no longer touches an outer combat context.
+- Forsaken progress is refreshed in place instead of allocating a new array each second.
+- Creature tier and dodge caches are cleared on world load.
+- Sneak: the +35% now reads vanilla's own 'near unaware enemies' check instead of the XP amount, so XP multipliers from other mods can't trigger it.
+- Compendium: Experience and Expedition sections rewritten as data (value in white, source in gray). Adds catch-up threshold, kill XP per known biome, star, extras and raid values. 'Weapon and magic' is now 'Offensive skills'.
+
+Final pass for 1.0.0 (2026-10-18)
+- Version 1.0.0 (plugin and manifest). GUID unchanged (wire.valheim.heimvoxtr).
+- Config: sections and keys renamed, descriptions shortened to numbers. Removed "Progression for all vanilla skills" (Location XP strength 0 does it) and "Perfect dodge streak bonus" (dodge strength 0 does it). Removed the old star-default migration.
+- Cached regional/shared material classification and the per-biome forage lists.
+- New README and 1.0.0 changelog in package; old ones saved as README.before_1.0.0.md / CHANGELOG.before_1.0.0.md.
+
+1.0.1 (2026-10-18)
+- Full config: every number a setting, toggles for Experience, Expedition, Challenge XP, Rewards and each world feature; 12 numbered sections, settings ordered as bound.
+- Older-creature kill XP halved per biome older; sneak kill likewise. Fish catch XP works without Wild fishing. Expedition curve no longer scaled by the linear value.
+- Nexus ID 4485; mods.json: Aldr publish=true, Thunderstore and Hexium on.
+- World half fully configurable: star chance cap, max extra forage items, max extra material drops, fish bonus cap, and separate toggles for extra fish per catch, more fish and better fish (quality factor 35%).
+- FIX: four config keys contained an apostrophe ("a biome's Forsaken"), which BepInEx rejects; Awake threw and Aldr did not load at all. Affects the 1.0.0 upload on Nexus. Keys now read "after biome Forsaken".

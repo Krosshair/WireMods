@@ -18,7 +18,7 @@ namespace WiresAldr
             if (!Enabled || biome < 0 || biome >= 8) return chance;
             float added = WorldProgress.GetBonus(biome, Plugin.StarBonus.Value);
             float revised = (float)ProgressionMath.StarChance(
-                chance, originalBase, added);
+                chance, originalBase, added, Plugin.StarCap.Value);
             if (AldrDiagnostics.Active) AldrDiagnostics.Sample("STAR_ROLL", "native_biome_tier=" + (biome + 1) +
                 " vanilla_chance=" + chance.ToString("0.##") +
                 " new_chance=" + revised.ToString("0.##") +
@@ -66,7 +66,7 @@ namespace WiresAldr
 
             // Native fish already get their ItemDrop quality from this
             // same vanilla roll. No custom species, item or rarity tags.
-            if (creature.m_prefab.GetComponent<Fish>() != null)
+            if (FishProgression.IsFish(creature.m_prefab))
             {
                 __result = FishProgression.QualityChance(creature, __result);
                 return;

@@ -20,16 +20,16 @@ namespace WiresAldr
                 "GetDropList", Type.EmptyTypes));
             CheckOne("Fishing rod catches", AccessTools.Method(typeof(FishingFloat), "Catch"));
             CheckOne("Native fish spawning", AccessTools.Method(typeof(SpawnSystem), "UpdateSpawnList"));
-            CheckOne("Fishing comfort", AccessTools.Method(typeof(FishingFloat), "Awake"));
             CheckOne("Verified parry stagger", AccessTools.Method(typeof(Character), "AddStaggerDamage"));
-            CheckOne("Cooking XP", AccessTools.Method(typeof(CookingStation), "OnInteract"));
+            CheckOne("First dish XP", AccessTools.Method(typeof(Player), nameof(Player.AddKnownItem)));
             CheckOne("Crafting XP", AccessTools.Method(typeof(InventoryGui), "DoCrafting"));
             CheckOne("Melee XP context", AccessTools.Method(typeof(Attack), "DoMeleeAttack"));
             CheckOne("Perfect dodge", AccessTools.Method(typeof(Player), "RPC_HitWhileDodging"));
             CheckOne("Parry XP", AccessTools.Method(typeof(Humanoid), "BlockAttack"));
             CheckOne("World spawn", AccessTools.Method(typeof(Player), "OnSpawned"));
-            CheckOne("Smelter batch", AccessTools.Method(typeof(Smelter), "QueueProcessed"));
-            CheckOne("Smelter output", AccessTools.Method(typeof(Smelter), "Spawn"));
+            CheckOne("Expedition save", AccessTools.Method(typeof(Player), nameof(Player.Save)));
+            CheckOne("Summon XP source", AccessTools.Method(typeof(Character), nameof(Character.RaiseSkill)));
+            CheckOne("Barrier XP", AccessTools.Method(typeof(SE_Shield), nameof(SE_Shield.OnDamaged)));
             int installed = 0;
             foreach (MethodBase method in Harmony.GetAllPatchedMethods())
             {
@@ -69,61 +69,6 @@ namespace WiresAldr
             {
                 AldrDiagnostics.Log("PATCH_ERROR", label + ": " + e.Message);
             }
-        }
-    }
-
-    // Observation-only: smelting does not itself grant XP or change metal yield.
-    [HarmonyPatch(typeof(Smelter), "QueueProcessed")]
-    internal static class AldrSmelterBatch
-    {
-        private static int count;
-        [HarmonyPostfix]
-        private static void Postfix(Smelter __instance, string ore)
-        {
-            if (!AldrDiagnostics.Active) return;
-            count++;
-            AldrDiagnostics.Sample("SMELTER_CONVERTED",
-                "station=" + __instance.m_name + " input=" + ore + " batch=1");
-            if (count == 1 || count == 5 || count % 10 == 0)
-            {
-                if (Player.m_localPlayer)
-                    AldrDiagnostics.World(Player.m_localPlayer, "smelter batch " + count);
-                AldrDiagnostics.Summary("smelter batch " + count);
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(Smelter), "Spawn")]
-    internal static class AldrSmelterOutput
-    {
-        [HarmonyPostfix]
-        private static void Postfix(Smelter __instance, string ore, int stack)
-        {
-            AldrDiagnostics.Sample("SMELTER_OUTPUT",
-                "station=" + __instance.m_name + " input=" + ore +
-                " spawned_stack=" + stack);
-        }
-    }
-
-    [HarmonyPatch(typeof(Smelter), "RPC_AddOre")]
-    internal static class AldrSmelterInput
-    {
-        [HarmonyPostfix]
-        private static void Postfix(Smelter __instance, string name)
-        {
-            AldrDiagnostics.Sample("SMELTER_QUEUED",
-                "station=" + __instance.m_name + " material=" + name);
-        }
-    }
-
-    [HarmonyPatch(typeof(Smelter), "RPC_AddFuel")]
-    internal static class AldrSmelterFuel
-    {
-        [HarmonyPostfix]
-        private static void Postfix(Smelter __instance)
-        {
-            AldrDiagnostics.Sample("SMELTER_FUEL",
-                "station=" + __instance.m_name + " fuel added");
         }
     }
 

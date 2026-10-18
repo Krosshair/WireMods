@@ -40,7 +40,6 @@ namespace WiresAldr
                 Log("SESSION", "======= " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
                     " Aldr " + Plugin.Version + " =======");
                 Log("EXPLANATION", "PATCH_OK means installed, not tested. EVENT means actual gameplay trigger.");
-                Log("EXPLANATION", "Smelter events are diagnostics ONLY. Aldr does not change smelter output or grant smelting XP.");
                 logger.LogInfo("Aldr diagnostics: " + FilePath);
             }
             catch (Exception e)
@@ -104,7 +103,7 @@ namespace WiresAldr
                     }
                 int local = DynamicExperience.BiomeTier(player.GetCurrentBiome());
                 double xp = ExperienceMath.BiomeAndProgress(local, tier,
-                    Plugin.XpProgressionStrength.Value);
+                    Plugin.XpProgressionStrength.Value, Plugin.XpProgressShare.Value / 100.0);
                 Log("WORLD_READY", "source=" + origin +
                     " biome=" + player.GetCurrentBiome() +
                     " biomeTier=" + local + " bossTier=" + tier +
@@ -122,9 +121,11 @@ namespace WiresAldr
                 " materials=" + Plugin.Materials.Value +
                 " fishing=" + Plugin.FishYields.Value +
                 " xp=" + Plugin.XpEnabled.Value +
-                " challenge=" + Plugin.XpChallenge.Value);
+                " challenge=" + Plugin.XpChallenge.Value + " rewards=" + Plugin.Rewards.Value +
+                " expedition=" + Plugin.ExpeditionEnabled.Value);
             Log("CONFIG", "biomeXp=" + Plugin.XpProgressionStrength.Value +
                 "% catchUp=" + Plugin.XpCatchUpBonus.Value +
+                "% weaponTransfer=" + Plugin.XpWeaponTransfer.Value +
                 "% combat=" + Plugin.XpCombatStrength.Value +
                 "% parry=" + Plugin.XpParryStrength.Value +
                 "% dodge=" + Plugin.XpDodgeStrength.Value +

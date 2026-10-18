@@ -18,11 +18,24 @@ namespace WiresAldr
                 ZoneSystem.instance.GetGlobalKey(GlobalKeys.PlayerEvents);
         }
 
+        // Read-only snapshot, refreshed at most once per second: callers
+        // (drops, picks, fish spawns, every XP gain) must not modify or keep it.
+        private static bool[] cached = new bool[ProgressionMath.BiomeCount];
+        private static float cachedAt = -999f;
+        private static ZoneSystem cachedZone;
+        private static Player cachedPlayer;
+
         internal static bool[] ReadKeys()
         {
-            var result = new bool[ProgressionMath.BiomeCount];
             ZoneSystem zone = ZoneSystem.instance;
-            if (zone == null) return result;
+            float now = Time.unscaledTime;
+            if (zone != null && zone == cachedZone && Player.m_localPlayer == cachedPlayer &&
+                now - cachedAt < 1f)
+                return cached;
+            // Refreshed in place: every caller reads it immediately.
+            bool[] result = cached;
+            cachedAt = now; cachedZone = zone; cachedPlayer = Player.m_localPlayer;
+            if (zone == null) { Array.Clear(result, 0, result.Length); return result; }
             bool playerBased = IsPlayerBased();
             Player player = Player.m_localPlayer;
             for (int i = 0; i < result.Length; ++i)

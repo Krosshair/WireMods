@@ -9,24 +9,18 @@ namespace WiresAldr
     internal static class SkillSpecific
     {
         [ThreadStatic] private static Attack activeAttack;
-        
         [ThreadStatic] private static Recipe activeRecipe;
-        [ThreadStatic] private static bool upgradingRecipe;
         [ThreadStatic] private static float craftModifier;
         [ThreadStatic] private static float forageModifier;
         [ThreadStatic] private static bool building;
+        [ThreadStatic] private static float buildModifier;
+        [ThreadStatic] private static float cookingFood;   // food value of the dish being made
         private static float lastDefense = -999f;
-        [ThreadStatic] private static float resourceBonus;
         private static float buildTime;
         private static readonly AccessTools.FieldRef<Attack,int> ChainIndex = AccessTools.FieldRefAccess<Attack,int>("m_currentAttackCainLevel");
-        private static readonly AccessTools.FieldRef<Humanoid,bool> Secondary = AccessTools.FieldRefAccess<Humanoid,bool>("m_currentAttackIsSecondary");
         private static readonly AccessTools.FieldRef<Attack,Humanoid> AttackOwner = AccessTools.FieldRefAccess<Attack,Humanoid>("m_character");
         private static readonly AccessTools.FieldRef<InventoryGui,Recipe> CraftRecipe = AccessTools.FieldRefAccess<InventoryGui,Recipe>("m_craftRecipe");
         private static readonly AccessTools.FieldRef<InventoryGui,ItemDrop.ItemData> UpgradeItem = AccessTools.FieldRefAccess<InventoryGui,ItemDrop.ItemData>("m_craftUpgradeItem");
-        private static readonly Dictionary<long, JumpRecord> jumps = new Dictionary<long, JumpRecord>();
-        private static readonly HashSet<int> jumpLandings = new HashSet<int>();
-        private static readonly HashSet<int> registeredLand = new HashSet<int>();
-        private struct JumpRecord { internal Vector3 From; internal float Started; }
         private static int IngredientTypes(Piece.Requirement[] ingredients)
         {
             if (ingredients == null) return 0;
@@ -69,10 +63,10 @@ namespace WiresAldr
             float extra = 0f;
             // 2nd landed step +12%, 3rd +24%, longer chains up to +36%.
             if (attackConnected && comboStreak > 1)
-                extra += Mathf.Min(3, comboStreak - 1) * 0.12f;
+                extra += Mathf.Min(3, comboStreak - 1) * Plugin.XpComboStep.Value / 100f;
             if (Time.time - lastDefense < 2.25f)
             {
-                extra += 0.06f; // one successful counter, not each hit of a combo
+                extra += Plugin.XpCounterBonus.Value / 100f; // one successful counter, not each hit of a combo
                 lastDefense = -999f;
             }
             return extra;
@@ -85,54 +79,13 @@ namespace WiresAldr
         }
         private static float ProductionModifier(Player player, Skills.SkillType skill)
         {
-            if (activeRecipe != null &&
-                (skill == Skills.SkillType.Crafting || skill == Skills.SkillType.Cooking))
-            {
-                float familiarity = 0f;
-                // Valheim already maintains persistent per-item craft counts
-                // on the character's PlayerProfile. Its count is incremented
-                // AFTER the crafting-skill XP award, so it is the precise
-                // previous-craft count while this method runs.
-                // Don't give a new-item bonus if the profile isn't ready.
-                // Upgrades have their own complexity modifier. Their
-                // existing vanilla craft count must not be treated as
-                // first-craft familiarity on every quality increase.
-                if (!upgradingRecipe && player != null && activeRecipe.m_item != null &&
-                    activeRecipe.m_item.m_itemData != null &&
-                    activeRecipe.m_item.m_itemData.m_shared != null &&
-                    Game.instance != null)
-                {
-                    PlayerProfile profile = Game.instance.GetPlayerProfile();
-                    if (profile != null && profile.m_playerStats != null &&
-                        profile.m_playerStats.Length > 0 &&
-                        profile.m_playerStats[0] != null &&
-                        profile.m_playerStats[0].m_itemCraftStats != null)
-                    {
-                        float previousCount;
-                        string itemName =
-                            activeRecipe.m_item.m_itemData.m_shared.m_name;
-                        // Same key as vanilla InventoryGui.DoCrafting ->
-                        // PlayerProfile.IncrementStatItemCraft.
-                        profile.m_playerStats[0].m_itemCraftStats
-                            .TryGetValue(itemName, out previousCount);
-                        if (previousCount < 3f)
-                        {
-                            int prior = Mathf.Max(0,
-                                Mathf.FloorToInt(previousCount));
-                            familiarity = 0f; // first crafts are rewarded by CraftingProgression
-                            if (AldrDiagnostics.Active)
-                                AldrDiagnostics.Sample("RECIPE_XP",
-                                    "recipe=" +
-                                    activeRecipe.m_item.gameObject.name +
-                                    " prior_times_crafted=" + prior +
-                                    " familiarity_bonus=" +
-                                    familiarity.ToString("0.##"));
-                        }
-                    }
-                }                return craftModifier + familiarity;
-            }
+            // Recipe complexity: +2.5% per ingredient type (max 12%), +3.5% for
+            // upgrades. First crafts are rewarded by CraftingProgression.
+            if (skill == Skills.SkillType.Cooking)
+                return (activeRecipe != null ? craftModifier : 0f) + FoodBonus(cookingFood);
+            if (activeRecipe != null && skill == Skills.SkillType.Crafting)
+                return craftModifier;
             if (skill == Skills.SkillType.Farming) return forageModifier;
-            
             return 0f;
         }
         internal static float Multiplier(Player player, Skills.SkillType skill)
@@ -147,9 +100,62 @@ namespace WiresAldr
             }
             bonus += HitTechniqueBonus(skill);
             bonus += TravelBonus(player, skill);
-            return Mathf.Clamp(bonus, 0f, 0.4f);
+            return Mathf.Clamp(bonus, 0f, Mathf.Max(0.4f, Plugin.XpTravelBonus.Value / 100f));
         }
-        internal static float SneakBonus(float baseFactor) => baseFactor >= 0.9f ? 0.12f : 0f;
+        // Sneaking in range of unaware hostiles (vanilla's full-XP case).
+        // Read from vanilla's own check, made right before it raises Sneak,
+        // so XP multipliers from other mods can't fake it. No extra scan.
+        private static int stealthFrame = -1;
+        [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.InStealthRange))]
+        private static class StealthRangeResult
+        {
+            private static void Postfix(Character me, bool __result)
+            {
+                if (__result && me != null && me == Player.m_localPlayer) stealthFrame = Time.frameCount;
+            }
+        }
+        internal static float SneakBonus() => stealthFrame == Time.frameCount ? Plugin.XpSneakBonus.Value / 100f : 0f;
+
+        // ---- Cooking: better food, more XP ----
+        // Food value = health + stamina + eitr of the dish, straight from the
+        // item. Early dishes (about 40) get nothing extra, up to +50% for
+        // dishes worth 160 or more.
+        private static float FoodValue(ItemDrop.ItemData.SharedData shared) =>
+            shared == null ? 0f : shared.m_food + shared.m_foodStamina + shared.m_foodEitr;
+        internal static float FoodBonus(float value) => Plugin.XpCookingFood.Value / 100f * Mathf.Clamp01((value - 40f) / 120f);
+
+        // Taking a finished dish off a cooking station (vanilla raises Cooking
+        // here): the dish vanilla is about to hand you, i.e. the first done
+        // slot. Burnt food and putting raw food on earn no food bonus.
+        private static readonly string[] SlotKeys = { "slot0", "slot1", "slot2", "slot3", "slot4", "slot5", "slot6", "slot7" };
+        [HarmonyPatch(typeof(CookingStation), "OnInteract")]
+        private static class CookingStationScope
+        {
+            private static void Prefix(CookingStation __instance, out float __state)
+            {
+                __state = cookingFood;
+                cookingFood = 0f;
+                ZNetView view = __instance != null ? __instance.GetComponent<ZNetView>() : null;
+                if (view == null || !view.IsValid() || __instance.m_slots == null ||
+                    __instance.m_conversion == null || ObjectDB.instance == null) return;
+                ZDO zdo = view.GetZDO();
+                string burnt = __instance.m_overCookedItem != null ? __instance.m_overCookedItem.name : null;
+                for (int i = 0; i < __instance.m_slots.Length; i++)
+                {
+                    string name = zdo.GetString(i < SlotKeys.Length ? SlotKeys[i] : "slot" + i);
+                    if (string.IsNullOrEmpty(name)) continue;
+                    if (name == burnt) return; // vanilla removes this one: no bonus
+                    foreach (var c in __instance.m_conversion)
+                    {
+                        if (c == null || c.m_to == null || c.m_to.name != name) continue;
+                        cookingFood = FoodValue(c.m_to.m_itemData.m_shared);
+                        return;
+                    }
+                }
+            }
+            private static void Postfix(float __state) { cookingFood = __state; }
+            private static Exception Finalizer(Exception __exception, float __state) { cookingFood = __state; return __exception; }
+        }
 
         // ---- Movement skills: real ground covered ----
         // Vanilla raises Run/Swim about once per second while moving. The
@@ -191,7 +197,7 @@ namespace WiresAldr
             Vector2 a = new Vector2(h[oldest].x, h[oldest].z), b = new Vector2(pos.x, pos.z);
             float progress = Vector2.Distance(a, b) / (seconds * speed);
             // Up to +40% at full speed in a steady direction.
-            return 0.4f * Mathf.Clamp01((progress - 0.25f) / 0.75f);
+            return Plugin.XpTravelBonus.Value / 100f * Mathf.Clamp01((progress - 0.25f) / 0.75f);
         }
 
         // Both the skill-technique and dodge systems use the same short-lived
@@ -202,7 +208,6 @@ namespace WiresAldr
         {
             internal Attack PreviousAttack;
             internal Character PreviousDodgeAttacker;
-            internal float PreviousResourceBonus;
             internal bool PreviousConnected;
         }
 
@@ -212,13 +217,11 @@ namespace WiresAldr
             {
                 PreviousAttack = activeAttack,
                 PreviousDodgeAttacker = DodgeAttacker,
-                PreviousResourceBonus = resourceBonus,
                 PreviousConnected = attackConnected
             };
             activeAttack = attack;
             attackConnected = false;
             DodgeAttacker = AttackOwner(attack);
-            resourceBonus = 0f;
             return state;
         }
 
@@ -230,7 +233,6 @@ namespace WiresAldr
             attackConnected = state.PreviousConnected;
             activeAttack = state.PreviousAttack;
             DodgeAttacker = state.PreviousDodgeAttacker;
-            resourceBonus = state.PreviousResourceBonus;
         }
 
         [HarmonyPatch(typeof(Attack), "DoMeleeAttack")]
@@ -261,21 +263,22 @@ namespace WiresAldr
         [HarmonyPatch(typeof(InventoryGui), "DoCrafting")]
         private static class CraftingScope
         {
-            private struct Prev { internal Recipe Recipe; internal float Modifier; internal bool Upgrading; }
+            private struct Prev { internal Recipe Recipe; internal float Modifier; internal float Food; }
             private static void Prefix(InventoryGui __instance, ref Prev __state)
             {
-                __state = new Prev { Recipe = activeRecipe, Modifier = craftModifier, Upgrading = upgradingRecipe };
+                __state = new Prev { Recipe = activeRecipe, Modifier = craftModifier, Food = cookingFood };
                 activeRecipe = CraftRecipe(__instance);
-                upgradingRecipe = UpgradeItem(__instance) != null;
+                cookingFood = activeRecipe != null && activeRecipe.m_item != null
+                    ? FoodValue(activeRecipe.m_item.m_itemData.m_shared) : 0f;
                 craftModifier = activeRecipe == null ? 0f :
-                    Mathf.Clamp(IngredientTypes(activeRecipe.m_resources) * 0.025f, 0f, 0.12f);
+                    Mathf.Clamp(IngredientTypes(activeRecipe.m_resources) * Plugin.XpRecipeIngredient.Value / 100f, 0f, 0.12f);
                 if (activeRecipe != null &&
                     UpgradeItem(__instance) != null)
                     craftModifier += 0.035f;
             }
-            private static void Postfix(Prev __state) { activeRecipe = __state.Recipe; craftModifier = __state.Modifier; upgradingRecipe = __state.Upgrading; }
+            private static void Postfix(Prev __state) { activeRecipe = __state.Recipe; craftModifier = __state.Modifier; cookingFood = __state.Food; }
             private static Exception Finalizer(Exception __exception, Prev __state)
-            { activeRecipe = __state.Recipe; craftModifier = __state.Modifier; upgradingRecipe = __state.Upgrading; return __exception; }
+            { activeRecipe = __state.Recipe; craftModifier = __state.Modifier; cookingFood = __state.Food; return __exception; }
         }
         [HarmonyPatch(typeof(Pickable), nameof(Pickable.Interact))]
         private static class FarmingHarvestScope
@@ -301,48 +304,16 @@ namespace WiresAldr
                 if (__instance != Player.m_localPlayer || !__result || piece == null || Plugin.Enabled == null || !Plugin.Enabled.Value || !Plugin.XpEnabled.Value || !Plugin.XpChallenge.Value) return;
                 // Consumed only on the immediately following skill award.
                 building = true; buildTime = Time.time;
-                craftModifier = Mathf.Min(0.12f, IngredientTypes(piece.m_resources) * 0.025f);
+                buildModifier = Mathf.Min(0.12f, IngredientTypes(piece.m_resources) * Plugin.XpRecipeIngredient.Value / 100f);
             }
         }
         internal static float ConsumeBuildBonus(Skills.SkillType skill)
         {
             if ((skill != Skills.SkillType.Crafting && skill != Skills.SkillType.Farming) || !building) return 0f;
-            if (Time.time - buildTime > 0.25f) { building = false; craftModifier = 0f; return 0f; }
             building = false;
-            float v = craftModifier; craftModifier = 0;
+            float v = Time.time - buildTime > 0.25f ? 0f : buildModifier;
+            buildModifier = 0f;
             return v;
-        }
-        [HarmonyPatch(typeof(Player), "OnJump")]
-        private static class JumpStart
-        {
-            private static void Postfix(Player __instance)
-            {
-                if (__instance != Player.m_localPlayer) return;
-                long id = __instance.GetPlayerID();
-                jumps[id] = new JumpRecord { From = __instance.transform.position, Started = Time.time };
-                if (registeredLand.Add(__instance.GetInstanceID()))
-                    __instance.m_onLand += point => Land(__instance, point);
-            }
-        }
-        private static void Land(Player p, Vector3 location)
-        {
-            if (!p || p != Player.m_localPlayer || p.IsDead() || Plugin.Enabled == null || !Plugin.Enabled.Value || !Plugin.XpEnabled.Value || !Plugin.XpChallenge.Value) return;
-            JumpRecord jump;
-            if (!jumps.TryGetValue(p.GetPlayerID(), out jump)) return;
-            jumps.Remove(p.GetPlayerID());
-            if (Time.time - jump.Started > 2.5f || Time.time - jump.Started < 0.25f) return;
-            float rise = location.y - jump.From.y;
-            float horizontal = Vector2.Distance(new Vector2(location.x,location.z),
-                new Vector2(jump.From.x,jump.From.z));
-            if (rise < 0.8f || horizontal < 0.75f) return;
-            // Each approximate landing zone only qualifies once per session;
-            // repeated jumping onto the same ledge does not produce bonus XP.
-            int x = Mathf.FloorToInt(location.x / 3f);
-            int y = Mathf.FloorToInt(location.y / 2f);
-            int z = Mathf.FloorToInt(location.z / 3f);
-            int key = unchecked(x * 73856093 ^ y * 19349663 ^ z * 83492791);
-            if (jumpLandings.Count >= 2048 || !jumpLandings.Add(key)) return;
-            // Ledge-landing rewards were removed in 0.4.1.
         }
     }
 }

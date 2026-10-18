@@ -37,13 +37,13 @@ namespace WiresAldr
             return full + (random < amount - full ? 1 : 0);
         }
 
-        internal static double StarChance(double vanillaChance, double vanillaBase, double extraPP)
+        internal static double StarChance(double vanillaChance, double vanillaBase, double extraPP, double cap = 95)
         {
             // Difficulty modifiers have already affected vanillaChance.
             if (vanillaChance <= 0 || vanillaBase <= 0 || extraPP <= 0)
                 return vanillaChance;
             return Clamp(vanillaChance +
-                extraPP * (vanillaChance / vanillaBase), 0, 95);
+                extraPP * (vanillaChance / vanillaBase), 0, Math.Max(vanillaChance, cap));
         }
 
         private static double Clamp(double v, double lo, double hi)

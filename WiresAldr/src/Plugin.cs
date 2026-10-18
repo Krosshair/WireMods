@@ -11,7 +11,7 @@ namespace WiresAldr
     {
         public const string Guid = "wire.valheim.heimvoxtr";
         public const string Name = "Wire's Aldr";
-        public const string Version = "0.4.1";
+        public const string Version = "1.0.1";
         private static readonly ConfigSync Sync = new ConfigSync(Guid)
         {
             DisplayName = Name,
@@ -19,137 +19,183 @@ namespace WiresAldr
             MinimumRequiredVersion = Version,
             ModRequired = true
         };
-        internal static ConfigEntry<bool> Enabled, Stars, Forage, Materials, Lock,
-            FishYields, XpEnabled, XpAllSkills, XpChallenge, XpDodgeStreaks, Diagnostics;
-        internal static ConfigEntry<float> StarBonus, ForageBonus, ForageCap,
-                        MaterialBonus, StoneBonus, VeteranForage, VeteranMaterials, VenturePerKm, RaidBonus, LaterFactor, SkippedFactor,
-            WoodEikthyr, WoodElder, WoodLater, StoneLater,
-            CoreWoodElder, FineWoodElder, FineWoodYagluth, AshwoodFader,
-            MushroomBlackForestPremium, ThistleSwampElderPremium,
-            ThistleSwampBonemassPremium,
-            FishYieldBonus, XpProgressionStrength, XpCatchUpBonus,
-            XpCombatStrength, XpParryStrength, XpDodgeStrength;
+        internal static ConfigEntry<bool> Enabled, Lock, Stars, Forage, Materials, FishYields,
+            XpEnabled, ExpeditionEnabled, XpChallenge, Rewards, Diagnostics,
+            FishExtraCatch, FishSpawnBoost, FishQualityBoost;
+        internal static ConfigEntry<float>
+            // World
+            StarBonus, ForageBonus, ForageCap, VeteranForage,
+            MushroomBlackForestPremium, ThistleSwampElderPremium, ThistleSwampBonemassPremium,
+            MaterialBonus, VeteranMaterials, StoneBonus, StoneLater,
+            WoodEikthyr, WoodElder, WoodLater, CoreWoodElder, FineWoodElder, FineWoodYagluth, AshwoodFader,
+            FishYieldBonus, LaterFactor, SkippedFactor,
+            StarCap, ForageMaxExtra, MaterialMaxExtra, FishQualityFactor, FishBonusCap,
+            // Location and catch-up
+            XpProgressionStrength, XpProgressShare, XpRewardLocationShare,
+            XpCatchUpBonus, XpCatchUpBase, XpCatchUpPerTier,
+            XpWeaponTransfer, XpTransferShare, XpTransferMinimum,
+            // Expedition
+            VenturePerKm, ExpeditionCurve, ExpeditionCredit, ExpeditionRoamRadius, ExpeditionRoamMinutes,
+            ExpeditionSailShare, ExpeditionBaseDecay, ExpeditionIdleDecay, ExpeditionIdleGrace,
+            // Challenge
+            XpStarBonus, RaidBonus, XpExtrasCap, XpExtrasCapRanged, XpCombatStrength,
+            XpComboStep, XpCounterBonus, XpBlockStagger, XpSneakBonus, XpCookingFood,
+            XpTravelBonus, XpRecipeIngredient,
+            // Rewards
+            KillXp, KillXpPerBiome, SneakKillXp, SummonKillShare, TreeXp, DepositXp,
+            FishXp, FishXpPerQuality, XpParryStrength, XpDodgeStrength, BarrierXp,
+            FirstDishXp, CropXp;
         private Harmony _harmony;
 
         private void Awake()
         {
             Config.SaveOnConfigSet = false;
-            Enabled = Bind("01 - Global Toggles", "Enable Heimvöxtr", true,
-                "Master switch. Off restores vanilla progression.");
-            Stars = Bind("01 - Global Toggles", "Creature difficulty", true,
-                "Boost eligible native creature star rolls. Respects vanilla world difficulty and per-spawn star limits.");
-            Forage = Bind("01 - Global Toggles", "Wild foraging", true,
-                "Add extra-harvest probability to eligible wild pickables only.");
-            Materials = Bind("01 - Global Toggles", "Natural material yields", true,
-                "Slightly increase natural wood, stone, and ore yields through existing drop tables.");
-            FishYields = Bind("01 - Global Toggles", "Wild fishing yields", true,
-                "After each biome's Forsaken: more and better native fish, a chance of an extra fish per rod catch, and catch XP. Reeling itself stays vanilla.");
-            XpEnabled = Bind("01 - Global Toggles", "Dynamic experience", true,
-                "Strong progression XP for all vanilla skills with optional contextual combat bonuses.");
-            Lock = Bind("01 - Global Toggles", "Lock server configuration", true,
-                "When on, connected clients use the server's settings, editable by server administrators.");
+
+            const string General = "01 - General";
+            Enabled = Toggle(General, "Enable Aldr", true, "Master switch.");
+            Lock = Toggle(General, "Lock server configuration", true, "Clients use the server's settings.");
             Sync.AddLockingConfigEntry(Lock);
-            StarBonus = Percent("02 - Creature Difficulty",
-                "Own-boss star roll bonus (pp)", 8,
-                "Bonus percentage points at normal world difficulty. Scales with vanilla star-chance modifiers.", 0, 40);
-            // Existing installations have 4 stored as the old default.
-            // Migrate once to the more noticeable 8-point default,
-            // while preserving custom values other than 4.
-            var starMigration = Config.Bind("Internal",
-                "Star bonus defaults migrated to 0.1.4", false,
-                new ConfigDescription("Internal version migration flag.",
-                    null, new ConfigurationManagerAttributes { Browsable = false }));
-            if (!starMigration.Value)
-            {
-                if (Math.Abs(StarBonus.Value - 4f) < 0.0001f)
-                    StarBonus.Value = 8f;
-                starMigration.Value = true;
-            }
+            XpEnabled = Toggle(General, "Experience", true, "All experience changes (sections 02 to 06).");
+            Stars = Toggle(General, "Creature stars", true, "Section 07.");
+            Forage = Toggle(General, "Wild foraging", true, "Section 08.");
+            Materials = Toggle(General, "Natural materials", true, "Section 09.");
+            FishYields = Toggle(General, "Wild fishing", true, "Section 10.");
 
-            ForageBonus = Percent("03 - Foraging",
-                "Own-boss extra harvest chance (pp)", 25,
-                "Additional chance to obtain one extra item, added to the vanilla Farming bonus.", 0, 100);
-            ForageCap = Percent("03 - Foraging",
-                "Total bonus harvest chance cap (%)", 80,
-                "Upper cap on Farming + Heimvöxtr bonus-harvest probability.", 0, 100);
-            VeteranForage = Percent("03 - Foraging",
-                "Veteran yield per later Forsaken (%)", 40,
-                "Each Forsaken defeated after a wild resource's own biome boss adds this much extra yield per pick, as extra native items. Makes quick gathering trips to earlier biomes worthwhile.", 0, 200);
-            MushroomBlackForestPremium = Percent("03 - Foraging",
-                "Forest mushroom difficulty bonus (%)", 8,
-                "Additional mushroom harvest chance in Black Forest from defeating Elder, followed by diminishing later Forsaken contributions.", 0, 50);
-            ThistleSwampElderPremium = Percent("03 - Foraging",
-                "Swamp thistle early risk bonus (%)", 10,
-                "Extra Swamp thistle harvest chance from Elder, even before Bonemass. Applies only when harvesting in Swamp.", 0, 50);
-            ThistleSwampBonemassPremium = Percent("03 - Foraging",
-                "Swamp thistle later risk bonus (%)", 7.5f,
-                "Further Swamp thistle bonus from Bonemass and diminishing later Forsaken defeats.", 0, 50);
+            const string Location = "02 - Location XP";
+            XpProgressionStrength = Number(Location, "Location bonus strength (%)", 100,
+                "Scales the biome bonus: Meadows +0%, Black Forest +10%, Swamp/Ocean +25%, Mountains +45%, Plains +70%, Mistlands +100%, Ashlands +135%.", 0, 300);
+            XpProgressShare = Number(Location, "Progress biome share (%)", 20,
+                "Share of your progress biome's bonus (the biome after your last Forsaken) you get everywhere.", 0, 100);
+            XpRewardLocationShare = Number(Location, "Reward location share (%)", 50,
+                "Share of the location bonus that flat rewards get.", 0, 100);
 
-            MaterialBonus = Percent("04 - Natural Materials",
-                "Own-boss yield improvement (%)", 10,
-                "Average increase per natural resource. Uses extra probabilistic native item drops.", 0, 100);
-            VeteranMaterials = Percent("04 - Natural Materials",
-                "Regional veteran yield per later Forsaken (%)", 25,
-                "Biome-exclusive materials (copper, tin, iron scrap, silver, tar etc.) gain this much extra yield for each Forsaken defeated after their own biome boss. Wood and stone are unaffected.", 0, 200);
-            StoneBonus = Percent("04 - Natural Materials",
-                "Stone base yield improvement (%)", 20,
-                "Special stone progression starts after the Elder.", 0, 100);
-            WoodEikthyr = Percent("04 - Natural Materials",
-                "Normal wood - Eikthyr (%)", 10,
-                "Additional normal wood yield when the first Forsaken is defeated.", 0, 100);
-            WoodElder = Percent("04 - Natural Materials",
-                "Normal wood - Elder (%)", 10,
-                "Additional normal wood yield from defeating the Black Forest Forsaken.", 0, 100);
-            WoodLater = Percent("04 - Natural Materials",
-                "Normal wood - each subsequent boss (%)", 5,
-                "Additional normal wood yield from each distinct boss after the Elder.", 0, 100);
-            StoneLater = Percent("04 - Natural Materials",
-                "Stone - each boss after Elder (%)", 5,
-                "Additional stone yield from each distinct boss after the Elder.", 0, 100);
-            CoreWoodElder = Percent("04 - Natural Materials",
-                "Core wood - Elder (%)", 20,
-                "Core wood receives this single bonus from the Elder, not later bosses.", 0, 100);
-            FineWoodElder = Percent("04 - Natural Materials",
-                "Fine wood - Elder (%)", 10,
-                "Fine wood yield bonus unlocked after the Elder.", 0, 100);
-            FineWoodYagluth = Percent("04 - Natural Materials",
-                "Fine wood - Yagluth (%)", 20,
-                "Additional fine wood yield bonus unlocked after Yagluth.", 0, 100);
-            AshwoodFader = Percent("04 - Natural Materials",
-                "Ashwood - Fader (%)", 10,
-                "Ashwood yield bonus unlocked after Fader.", 0, 100);
+            const string CatchUp = "03 - Catch-up";
+            XpCatchUpBonus = Number(CatchUp, "Catch-up bonus (%)", 15,
+                "Skills below the threshold: bonus x (threshold - skill) / threshold.", 0, 100);
+            XpCatchUpBase = Number(CatchUp, "Threshold base", 8,
+                "Threshold = base + per tier x tier (Meadows 1, Black Forest 2, ...).", 0, 100);
+            XpCatchUpPerTier = Number(CatchUp, "Threshold per tier", 6,
+                "See threshold base.", 0, 20);
+            XpWeaponTransfer = Number(CatchUp, "Combat transfer bonus (%)", 100,
+                "Combat skills below the transfer threshold: bonus x (threshold - skill) / threshold. The larger of this and catch-up applies.", 0, 300);
+            XpTransferShare = Number(CatchUp, "Transfer threshold (% of best)", 75,
+                "Threshold = this share of your best combat skill.", 0, 100);
+            XpTransferMinimum = Number(CatchUp, "Transfer minimum best skill", 20,
+                "Transfer starts once your best combat skill reaches this.", 0, 100);
 
-            FishYieldBonus = Percent("06 - Fishing", "Native biome fish yield bonus (%)", 15,
-                "Existing native rod-catch yield bonus; also drives fish spawn abundance and higher-quality spawn rolls after the native biome Forsaken. Does not affect unhooked fish pickups.", 0, 100);
-            XpAllSkills = Bind("07 - Experience", "Progression for all vanilla skills", true,
-                "Scale every vanilla skill via the current biome and existing Forsaken progression. Makes new weapon types viable late in a world.");
-            XpProgressionStrength = Percent("07 - Experience", "Biome XP growth strength (%)", 100,
-                "100% = the designed curve: 1x in Meadows up to 2.7x in Deep North (Mistlands 2x). 0% means normal XP, without disabling action bonuses.", 0, 300);
-            XpCatchUpBonus = Percent("07 - Experience", "Low skill catch-up bonus cap (%)", 15,
-                "Small optional extra for skills below expected world progression, on top of the strong tier multiplier.", 0, 50);
-            VenturePerKm = Percent("07 - Experience", "Expedition base growth per minute (%)", 0.3f,
-                "Expedition: every XP gain away from a base advances an expedition clock (faster in more dangerous biomes). The XP bonus grows with the clock and accelerates the longer the expedition lasts (about +20% after 30 active minutes in the Swamp). No cap. Fades at a base, or after 90 s without XP (45 s while resting). 0 disables Expedition.", 0, 5);
-            XpChallenge = Bind("08 - Experience challenge", "Challenge XP", true,
-                "Extra XP for genuine combat threats, good parries and confirmed perfect dodge streaks. No boss challenge bonuses.");
-            XpCombatStrength = Percent("08 - Experience challenge", "Enemy challenge bonus strength (%)", 100,
-                "100% = mild contextual threat and moving-target bonuses; 0% disables those extras.", 0, 300);
-            XpParryStrength = Percent("08 - Experience challenge", "Parry risk bonus strength (%)", 100,
-                "100% = the designed risk curve; near-stagger parries multiply only their small EXTRA bonus.", 0, 300);
-            XpDodgeStrength = Percent("08 - Experience challenge", "Perfect dodge bonus strength (%)", 100,
-                "100% = growing capped success streak bonuses.", 0, 300);
-            RaidBonus = Percent("08 - Experience challenge", "Raid defense bonus (%)", 50,
-                "Extra combat XP for fighting raid creatures while you are inside an active raid.", 0, 300);
-            XpDodgeStreaks = Bind("08 - Experience challenge", "Perfect dodge streak bonus", true,
-                "Only successful dodge-hit events earn the additional streak bonus.");
+            const string Expedition = "04 - Expedition";
+            ExpeditionEnabled = Toggle(Expedition, "Expedition", true, "Bonus that grows while you adventure away from bases.");
+            VenturePerKm = Number(Expedition, "Linear growth (% per minute)", 0.3f,
+                "Bonus = linear x T + curve x T^1.5, T = expedition minutes.", 0, 5);
+            ExpeditionCurve = Number(Expedition, "Curve growth (% per minute^1.5)", 0.067f,
+                "See linear growth.", 0, 1);
+            ExpeditionCredit = Number(Expedition, "Credit per XP gain (s)", 30,
+                "Each XP gain adds the time since the previous one, up to this.", 1, 120);
+            ExpeditionRoamRadius = Number(Expedition, "Roam distance (m)", 20,
+                "Grows only while you move this far within the roam time.", 0, 200);
+            ExpeditionRoamMinutes = Number(Expedition, "Roam time (min)", 6,
+                "See roam distance.", 1, 30);
+            ExpeditionSailShare = Number(Expedition, "Sailing pace (%)", 20,
+                "Growth while sailing at 2 m/s or more, relative to normal.", 0, 100);
+            ExpeditionBaseDecay = Number(Expedition, "Decay at a base (min per min)", 2,
+                "Expedition minutes lost per minute at a base. Resting doubles it.", 0, 20);
+            ExpeditionIdleDecay = Number(Expedition, "Idle decay (min per min)", 0.5f,
+                "Expedition minutes lost per minute away from bases without XP. Resting doubles it.", 0, 20);
+            ExpeditionIdleGrace = Number(Expedition, "Idle grace (s)", 90,
+                "Time without XP before idle decay starts. Halved while resting.", 0, 600);
 
-            LaterFactor = Percent("05 - Progression",
-                "Later-boss contribution (%)", 50,
-                "Each later biome contributes this proportion of the preceding biome-step bonus.", 0, 100);
-            SkippedFactor = Percent("05 - Progression",
-                "Unconquered biome contribution (%)", 15,
-                "Contribution from later bosses when the biome's own boss is still undefeated.", 0, 100);
-            Diagnostics = Config.Bind("09 - Diagnostics", "Enable diagnostics", false,
-                "Write a bounded, event-driven session log to BepInEx/Aldr-Diagnostics.log. Disable after validation. Local setting, never server-synchronized.");
+            const string Challenge = "05 - Challenge XP";
+            XpChallenge = Toggle(Challenge, "Challenge XP", true, "Star, raid and action bonuses. Never against bosses.");
+            XpStarBonus = Number(Challenge, "Star bonus (% per star)", 25, "Combat and dodge XP per star.", 0, 200);
+            RaidBonus = Number(Challenge, "Raid bonus (%)", 50, "Combat XP multiplier against raiders while you're inside the raid.", 0, 300);
+            XpExtrasCap = Number(Challenge, "Extras cap (%)", 60, "Cap for all action extras together.", 0, 300);
+            XpExtrasCapRanged = Number(Challenge, "Extras cap, ranged (%)", 75, "Cap for bows and crossbows.", 0, 300);
+            XpCombatStrength = Number(Challenge, "Danger and aim strength (%)", 100,
+                "Scales danger (+10% same biome as your last conquered, +4% per biome beyond, max 18%) and aim bonuses.", 0, 300);
+            XpComboStep = Number(Challenge, "Combo bonus (% per step)", 12, "Per landed chain step, up to 3 steps.", 0, 50);
+            XpCounterBonus = Number(Challenge, "Counter bonus (%)", 6, "First hit within 2.25 s of a parry or perfect dodge.", 0, 50);
+            XpBlockStagger = Number(Challenge, "Block stagger bonus (%)", 40, "Times the share of your stagger bar the blocked hit filled.", 0, 100);
+            XpSneakBonus = Number(Challenge, "Sneak bonus (%)", 35, "Sneaking near unaware enemies.", 0, 100);
+            XpCookingFood = Number(Challenge, "Cooking food bonus (%)", 50,
+                "Times (health + stamina + eitr - 40) / 120 of the dish, max 1.", 0, 100);
+            XpTravelBonus = Number(Challenge, "Travel bonus (%)", 40, "Run, Swim and Ride at steady straight-line progress.", 0, 100);
+            XpRecipeIngredient = Number(Challenge, "Recipe bonus (% per ingredient type)", 2.5f,
+                "Crafting, cooking and placing pieces, max 12%. Upgrades +3.5%.", 0, 10);
+
+            const string RewardsSection = "06 - Rewards";
+            Rewards = Toggle(RewardsSection, "Rewards", true, "Flat XP for accomplishments. Never for bosses.");
+            KillXp = Number(RewardsSection, "Kill XP", 2.5f,
+                "Creature of your last conquered biome. Halved per biome older; +1 per biome beyond (max +3). +50% per star.", 0, 20);
+            KillXpPerBiome = Number(RewardsSection, "Kill XP per biome beyond", 1, "See kill XP.", 0, 10);
+            SneakKillXp = Number(RewardsSection, "Sneak attack kill XP", 3, "Sneak XP, crouched against an unaware target. Halved per biome older.", 0, 20);
+            SummonKillShare = Number(RewardsSection, "Summon kill share (%)", 60, "Of a kill; full if you fought in the last 20 s.", 0, 100);
+            TreeXp = Number(RewardsSection, "Tree felled XP", 2, "Plus the tool tier the tree needs.", 0, 20);
+            DepositXp = Number(RewardsSection, "Deposit XP", 4,
+                "Regional deposits: plus tool tier. Per chunk: this / (2 x sqrt(chunks)); mined out: this again.", 0, 20);
+            FishXp = Number(RewardsSection, "Fish caught XP", 3, "Rod catches.", 0, 20);
+            FishXpPerQuality = Number(RewardsSection, "Fish XP per quality", 1.5f, "Per quality level above 1.", 0, 10);
+            XpParryStrength = Number(RewardsSection, "Parry XP strength (%)", 100,
+                "Parry XP = 0.15 x (1 + 9 x stagger^4) x (0.2 + 0.8 x hit size) x this.", 0, 300);
+            XpDodgeStrength = Number(RewardsSection, "Perfect dodge XP strength (%)", 100,
+                "Streak XP = 0.05 per dodge in the streak (max 0.3) x this.", 0, 300);
+            BarrierXp = Number(RewardsSection, "Barrier XP", 4, "Blood Magic, per unskilled barrier's worth of damage absorbed.", 0, 20);
+            FirstDishXp = Number(RewardsSection, "First station dish XP", 2, "Cooking.", 0, 20);
+            CropXp = Number(RewardsSection, "Crop harvested XP", 0.5f, "Farming.", 0, 10);
+
+            const string StarsSection = "07 - Creature Stars";
+            StarBonus = Number(StarsSection, "Star chance after biome Forsaken (pp)", 8,
+                "Added to the star chance of that biome's creatures, scaled with world difficulty: chance + this x chance / 10%.", 0, 40);
+            StarCap = Number(StarsSection, "Star chance cap (%)", 95, "Highest star chance after the bonus.", 0, 100);
+
+            const string ForageSection = "08 - Foraging";
+            ForageBonus = Number(ForageSection, "Harvest chance after biome Forsaken (pp)", 25,
+                "Added to the bonus harvest chance of that biome's wild plants.", 0, 100);
+            ForageCap = Number(ForageSection, "Bonus harvest chance cap (%)", 80,
+                "Highest total bonus harvest chance, Farming skill included.", 0, 100);
+            VeteranForage = Number(ForageSection, "Yield per later Forsaken (%)", 40,
+                "Extra items per pick for each Forsaken killed after the plant's own.", 0, 200);
+            MushroomBlackForestPremium = Number(ForageSection, "Black Forest mushrooms (pp)", 8,
+                "Extra harvest chance after the Elder.", 0, 50);
+            ThistleSwampElderPremium = Number(ForageSection, "Swamp thistle after the Elder (pp)", 10,
+                "Extra harvest chance for thistle picked in the Swamp.", 0, 50);
+            ThistleSwampBonemassPremium = Number(ForageSection, "Swamp thistle after Bonemass (pp)", 7.5f,
+                "Further Swamp thistle harvest chance.", 0, 50);
+            ForageMaxExtra = Number(ForageSection, "Max extra items per pick", 12, "Cap for the later-Forsaken yield.", 0, 50);
+
+            const string MaterialSection = "09 - Natural Materials";
+            MaterialBonus = Number(MaterialSection, "Regional yield after biome Forsaken (%)", 10,
+                "Copper, tin, iron, silver, obsidian, tar and other regional materials of that biome.", 0, 100);
+            VeteranMaterials = Number(MaterialSection, "Regional yield per later Forsaken (%)", 25,
+                "For each Forsaken killed after their biome's own.", 0, 200);
+            WoodEikthyr = Number(MaterialSection, "Wood after Eikthyr (%)", 10, "Extra wood.", 0, 100);
+            WoodElder = Number(MaterialSection, "Wood after the Elder (%)", 10, "Extra wood.", 0, 100);
+            WoodLater = Number(MaterialSection, "Wood per later Forsaken (%)", 5, "For each Forsaken after the Elder.", 0, 100);
+            StoneBonus = Number(MaterialSection, "Stone after the Elder (%)", 20, "Extra stone.", 0, 100);
+            StoneLater = Number(MaterialSection, "Stone per later Forsaken (%)", 5, "For each Forsaken after the Elder.", 0, 100);
+            CoreWoodElder = Number(MaterialSection, "Core wood after the Elder (%)", 20, "Extra core wood.", 0, 100);
+            FineWoodElder = Number(MaterialSection, "Fine wood after the Elder (%)", 10, "Extra fine wood.", 0, 100);
+            FineWoodYagluth = Number(MaterialSection, "Fine wood after Yagluth (%)", 20, "On top of the Elder's.", 0, 100);
+            AshwoodFader = Number(MaterialSection, "Ashwood after Fader (%)", 10, "Extra ashwood.", 0, 100);
+            MaterialMaxExtra = Number(MaterialSection, "Max extra drops per item", 4,
+                "Each dropped item rolls bonus % / 100 extra copies (the fraction as a chance), up to this.", 0, 20);
+
+            const string FishSection = "10 - Fishing";
+            FishYieldBonus = Number(FishSection, "Fish bonus after biome Forsaken (%)", 15,
+                "Bonus for that biome's native fish. Later Forsaken add their share (section 11).", 0, 100);
+            FishBonusCap = Number(FishSection, "Fish bonus cap (%)", 80, "Highest total fish bonus.", 0, 200);
+            FishExtraCatch = Toggle(FishSection, "Extra fish per catch", true, "Rod catch: bonus % chance of one more fish of the same quality.");
+            FishSpawnBoost = Toggle(FishSection, "More fish", true, "Spawn chance and spawn rate x (1 + bonus); population cap + bonus % (at least +1).");
+            FishQualityBoost = Toggle(FishSection, "Better fish", true, "Higher-quality roll chance + quality factor x bonus (percentage points).");
+            FishQualityFactor = Number(FishSection, "Quality factor (%)", 35, "See Better fish.", 0, 200);
+
+            const string ProgressSection = "11 - Forsaken Shares";
+            LaterFactor = Number(ProgressSection, "Later Forsaken share (%)", 50,
+                "Stars, harvest chance and fishing: each later Forsaken adds this share of the previous one.", 0, 100);
+            SkippedFactor = Number(ProgressSection, "Unconquered biome share (%)", 15,
+                "Share of later Forsaken bonuses a biome gets while its own Forsaken lives.", 0, 100);
+
+            Diagnostics = Config.Bind("12 - Diagnostics", "Enable diagnostics", false,
+                "Writes BepInEx/Aldr-Diagnostics.log. Local, not synced.");
             Config.Save();
             AldrDiagnostics.Start(Logger);
             _harmony = new Harmony(Guid);
@@ -168,23 +214,28 @@ namespace WiresAldr
             Logger.LogInfo(Name + " " + Version + " loaded. Diagnostic file in BepInEx.");
         }
 
-        private ConfigEntry<T> Bind<T>(string section, string label,
-            T value, string description)
+        // ConfigurationManager lists higher Order first: settings appear
+        // in the order they are bound, section by section.
+        private string orderSection;
+        private int order;
+        private int NextOrder(string section)
         {
-            var entry = Config.Bind(section, label, value,
-                new ConfigDescription(description,
-                    null, new ConfigurationManagerAttributes { Order = 100, DispName = label == "Enable Heimvöxtr" ? "Enable Aldr" : label }));
+            if (section != orderSection) { orderSection = section; order = 1000; }
+            return order--;
+        }
+        private ConfigEntry<bool> Toggle(string section, string label, bool value, string description)
+        {
+            var entry = Config.Bind(section, label, value, new ConfigDescription(description, null,
+                new ConfigurationManagerAttributes { Order = NextOrder(section) }));
             Sync.AddConfigEntry(entry).SynchronizedConfig = true;
             return entry;
         }
-        private ConfigEntry<float> Percent(string section, string label,
+        private ConfigEntry<float> Number(string section, string label,
             float value, string description, float min, float max)
         {
-            var entry = Config.Bind(section, label, value,
-                new ConfigDescription(description,
-                    new AcceptableValueRange<float>(min,max),
-                    new ConfigurationManagerAttributes { Order = 10,
-                        DispName = label.Replace("(pp)", "(%)") }));
+            var entry = Config.Bind(section, label, value, new ConfigDescription(description,
+                new AcceptableValueRange<float>(min, max),
+                new ConfigurationManagerAttributes { Order = NextOrder(section) }));
             Sync.AddConfigEntry(entry).SynchronizedConfig = true;
             return entry;
         }

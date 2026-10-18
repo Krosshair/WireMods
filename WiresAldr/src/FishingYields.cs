@@ -49,18 +49,21 @@ namespace WiresAldr
         internal static void Register(Fish fish, Character catcher)
         {
             if (!fish || !fish.IsHooked() ||
-                Plugin.Enabled == null || !Plugin.Enabled.Value ||
-                !Plugin.FishYields.Value || !WorldProgress.Ready)
+                Plugin.Enabled == null || !Plugin.Enabled.Value || !WorldProgress.Ready)
                 return;
+            // Extra fish (Wild fishing) and catch XP (Rewards) are separate.
+            bool yields = Plugin.FishYields.Value;
+            if (!yields && !(Plugin.XpEnabled.Value && Plugin.Rewards.Value)) return;
             Player player = catcher as Player;
             if (!player || player != Player.m_localPlayer) return;
 
             int tier = CatchBiome(fish);
             if (tier < 0) return;
-            double percent = PercentForBiome(tier,
+            double percent = !yields || !Plugin.FishExtraCatch.Value ? 0 : PercentForBiome(tier,
                 WorldProgress.ReadKeys(), Plugin.FishYieldBonus.Value,
                 Plugin.LaterFactor.Value / 100.0,
                 Plugin.SkippedFactor.Value / 100.0);
+            percent = Math.Min(percent, Plugin.FishBonusCap.Value);
             // All successful rod catches can earn completion XP, even before
             // biome progression grants an extra fish yield.
 
@@ -126,7 +129,7 @@ namespace WiresAldr
             // Catch bonus: 3 XP, +1.5 per quality level above 1.
             DynamicExperience.WithFishCompletion(player, reward.FishXpTier, () =>
                 SkillReward.Grant(player, Skills.SkillType.Fishing,
-                    3f + 1.5f * (quality - 1f), "fish_caught_quality_" + reward.FishQuality));
+                    Plugin.FishXp.Value + Plugin.FishXpPerQuality.Value * (quality - 1f), "fish_caught_quality_" + reward.FishQuality));
 
             int extra = ProgressionMath.ExtraCount(1, reward.Percent, UnityEngine.Random.value);
             if (AldrDiagnostics.Active) AldrDiagnostics.Sample("FISH_CAUGHT", "rod pickup confirmed, extra_fish=" +
@@ -146,7 +149,7 @@ namespace WiresAldr
                 catch (Exception e)
                 {
                     // An optional extra must never break vanilla's successful pickup.
-                    Debug.LogWarning("[Heimvöxtr] Could not award extra fish: " + e.Message);
+                    Debug.LogWarning("[Aldr] Could not award extra fish: " + e.Message);
                 }
             }
         }

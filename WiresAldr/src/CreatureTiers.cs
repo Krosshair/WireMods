@@ -13,6 +13,7 @@ namespace WiresAldr
     {
         private static Dictionary<string, int> map;
         private static float nextAttempt = -999f;
+        internal static bool Loaded => map != null;
 
         private static string Key(string prefabName)
         {
@@ -94,6 +95,6 @@ namespace WiresAldr
     [HarmonyLib.HarmonyPatch(typeof(Game), "Start")]
     internal static class CreatureTiersReset
     {
-        private static void Postfix() => CreatureTiers.Reset();
+        private static void Postfix() { CreatureTiers.Reset(); DynamicExperience.ResetWorld(); }
     }
 }

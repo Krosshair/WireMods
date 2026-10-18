@@ -80,7 +80,7 @@ namespace WiresAldr
                     Plugin.VeteranForage.Value,
                     Plugin.SkippedFactor.Value / 100.0));
                 if (veteran > 0)
-                    _veteranExtra = Mathf.Min(12, ProgressionMath.ExtraCount(
+                    _veteranExtra = Mathf.Min(Mathf.RoundToInt(Plugin.ForageMaxExtra.Value), ProgressionMath.ExtraCount(
                         Mathf.Max(1, __instance.m_amount), veteran,
                         UnityEngine.Random.value));
             }

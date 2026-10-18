@@ -4,13 +4,18 @@
   "community": "valheim",
   "mods": {
     "WiresAldr": {
-      "thunderstore": false,
-      "thunderstore_categories": [],
-      "hexium": false,
-      "nexus_mod_id": null,
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "server-side",
+        "mods",
+        "tweaks"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 4485,
       "nexus_file_id": null,
-      "publish": false,
-      "note": "Unpublished, mid-development. DLL 0.4.1 vs manifest 0.3.2 on purpose. Set publish=true when ready."
+      "publish": true
     },
     "WiresAltBiomeInfo": {
       "thunderstore": true,

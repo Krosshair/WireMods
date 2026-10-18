@@ -48,7 +48,7 @@ namespace WiresAldr
                         Plugin.SkippedFactor.Value / 100.0));
                 }
 
-                int extra = Mathf.Min(4, ProgressionMath.ExtraCount(1,
+                int extra = Mathf.Min(Mathf.RoundToInt(Plugin.MaterialMaxExtra.Value), ProgressionMath.ExtraCount(1,
                     percent, UnityEngine.Random.value));
                 if (extra > 0)
                 {
