@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.5
+
+* Sorting your inventory now slides items to their new slots like containers do. Items that get moved again mid-slide keep gliding from where they are instead of jumping.
+* Item animations do less work each frame.
+
 ## 0.5.4
 
 * Fixed a visual issue with the health bar when fading

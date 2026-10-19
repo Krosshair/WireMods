@@ -15,9 +15,12 @@ namespace WiresSmoothUI
             public int GetHashCode(T obj) => RuntimeHelpers.GetHashCode(obj);
         }
 
+        private enum PartKind { Other, Icon, Amount, EquipMarker, QueueMarker }
+
         private sealed class PartState
         {
             internal Transform Transform;
+            internal PartKind Kind;
             internal Vector3 BasePosition;
             internal Vector3 BaseScale;
             internal Quaternion BaseRotation;
@@ -62,10 +65,17 @@ namespace WiresSmoothUI
             internal int Generation;
         }
 
+        // Where an item was last shown: its grid and slot, plus the world
+        // position at that time as a fallback. Move animations start from
+        // the old slot's live position, so a panel that moved since (the
+        // inventory opening or sliding in) can't make items fly in from a
+        // stale spot.
         private sealed class PositionRecord
         {
             internal Vector3 World;
             internal float LastSeen;
+            internal InventoryGrid Grid;
+            internal int Index = -1;
         }
 
         private static readonly AccessTools.FieldRef<InventoryGrid, List<InventoryElement>> Elements =
@@ -84,6 +94,10 @@ namespace WiresSmoothUI
             new Dictionary<ItemDrop.ItemData, ItemState>(RefComparer<ItemDrop.ItemData>.Instance);
 
         private static readonly List<ItemState> Active = new List<ItemState>();
+        // Items still gliding when their inventory changes again, with the
+        // spot they are drawn at right now.
+        private static readonly Dictionary<ItemDrop.ItemData, Vector3> InFlight =
+            new Dictionary<ItemDrop.ItemData, Vector3>(RefComparer<ItemDrop.ItemData>.Instance);
         private static readonly HashSet<ItemState> QueuedStates = new HashSet<ItemState>();
         private static readonly List<ItemDrop.ItemData> DeadItems = new List<ItemDrop.ItemData>();
 
@@ -213,6 +227,20 @@ namespace WiresSmoothUI
                 return;
 
             int generation = ++context.Generation;
+            // Some inventories change twice in a row (the player inventory
+            // does on sort). Items already gliding continue from where they
+            // are drawn, instead of jumping to the in-between slot.
+            InFlight.Clear();
+            float moveDuration = Mathf.Max(0.01f, WiresSmoothUIPlugin.ItemMoveDuration.Value);
+            for (int i = 0; i < context.Occupied.Count; i++)
+            {
+                ItemState moving = context.Occupied[i];
+                if (moving == null || moving.Item == null || moving.Element == null || moving.MoveTimer >= moveDuration)
+                    continue;
+                float t = WiresSmoothUIPlugin.EaseOutCubic(Mathf.Clamp01(moving.MoveTimer / moveDuration));
+                Vector3 rest = GetPrimaryWorld(moving);
+                InFlight[moving.Item] = rest + (moving.MoveFromWorld - rest) * (1f - t);
+            }
             int width = Mathf.Max(1, inventory.GetWidth());
             float now = Time.unscaledTime;
             List<ItemDrop.ItemData> items = inventory.GetAllItems();
@@ -240,7 +268,7 @@ namespace WiresSmoothUI
 
                 state.Generation = generation;
                 state.Grid = context.Grid;
-                UpdateItemState(state, element, item, now);
+                UpdateItemState(state, element, item, now, context.Grid, index);
             }
 
             for (int i = context.Occupied.Count - 1; i >= 0; i--)
@@ -257,7 +285,9 @@ namespace WiresSmoothUI
             ItemState state,
             InventoryElement element,
             ItemDrop.ItemData item,
-            float now)
+            float now,
+            InventoryGrid grid,
+            int index)
         {
             int stack = item.m_stack;
 
@@ -288,11 +318,30 @@ namespace WiresSmoothUI
                 state.HasStatusSnapshot = true;
 
                 Vector3 currentWorld = GetPrimaryWorld(state);
-                if (LastPositions.TryGetValue(item, out PositionRecord previous)
-                    && now - previous.LastSeen < 300f
-                    && (previous.World - currentWorld).sqrMagnitude > 1f)
+                Vector3 fromWorld = Vector3.zero;
+                bool moved = false;
+                // No age limit: a grid only refreshes when its inventory
+                // changes, so the record always holds where the item was last
+                // shown, even if nothing changed for a long time. (A time
+                // limit here made items in an untouched player inventory pop
+                // in instead of sliding when sorted.)
+                if (LastPositions.TryGetValue(item, out PositionRecord previous))
                 {
-                    state.MoveFromWorld = previous.World;
+                    fromWorld = previous.World;
+                    if (TryGetSlotWorld(previous.Grid, previous.Index, out Vector3 live))
+                        fromWorld = live;
+                    moved = (fromWorld - currentWorld).sqrMagnitude > 1f;
+                }
+
+                if (InFlight.TryGetValue(item, out Vector3 drawn))
+                {
+                    fromWorld = drawn;
+                    moved = (fromWorld - currentWorld).sqrMagnitude > 1f;
+                }
+
+                if (moved)
+                {
+                    state.MoveFromWorld = fromWorld;
                     state.MoveTimer = 0f;
                     state.AppearTimer = 999f;
                 }
@@ -346,6 +395,48 @@ namespace WiresSmoothUI
 
             record.World = GetPrimaryWorld(state);
             record.LastSeen = now;
+            record.Grid = grid;
+            record.Index = index;
+        }
+
+        // The current on-screen position of a slot's icon, if that grid and
+        // slot still exist and are shown.
+        private static bool TryGetSlotWorld(InventoryGrid grid, int index, out Vector3 world)
+        {
+            world = Vector3.zero;
+            if (grid == null || index < 0 || !grid.gameObject.activeInHierarchy)
+                return false;
+
+            List<InventoryElement> elements;
+            try
+            {
+                elements = Elements(grid);
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (elements == null || index >= elements.Count)
+                return false;
+
+            InventoryElement element = elements[index];
+            if (element == null || !element.gameObject.activeInHierarchy)
+                return false;
+
+            // A slot whose icon is mid-animation reports its resting spot.
+            if (States.TryGetValue(element, out ItemState other) && other.Parts.Count > 0
+                && element.m_icon != null && other.Parts[0].Transform == element.m_icon.transform)
+            {
+                Transform icon = element.m_icon.transform;
+                world = icon.parent != null
+                    ? icon.parent.TransformPoint(other.Parts[0].BasePosition)
+                    : icon.position;
+                return true;
+            }
+
+            world = element.m_icon != null ? element.m_icon.transform.position : element.transform.position;
+            return true;
         }
 
         private static void EnsureOccupied(ItemState state)
@@ -461,19 +552,19 @@ namespace WiresSmoothUI
                 Element = element
             };
 
-            AddPart(state, element.m_icon != null ? element.m_icon.transform : null);
-            AddPart(state, element.m_amount != null ? element.m_amount.transform : null);
-            AddPart(state, element.m_quality != null ? element.m_quality.transform : null);
-            AddPart(state, element.m_equiped != null ? element.m_equiped.transform : null);
-            AddPart(state, element.m_queued != null ? element.m_queued.transform : null);
-            AddPart(state, element.m_noteleport != null ? element.m_noteleport.transform : null);
-            AddPart(state, element.m_food != null ? element.m_food.transform : null);
-            AddPart(state, element.m_durability != null ? element.m_durability.transform : null);
+            AddPart(state, element.m_icon != null ? element.m_icon.transform : null, PartKind.Icon);
+            AddPart(state, element.m_amount != null ? element.m_amount.transform : null, PartKind.Amount);
+            AddPart(state, element.m_quality != null ? element.m_quality.transform : null, PartKind.Other);
+            AddPart(state, element.m_equiped != null ? element.m_equiped.transform : null, PartKind.EquipMarker);
+            AddPart(state, element.m_queued != null ? element.m_queued.transform : null, PartKind.QueueMarker);
+            AddPart(state, element.m_noteleport != null ? element.m_noteleport.transform : null, PartKind.Other);
+            AddPart(state, element.m_food != null ? element.m_food.transform : null, PartKind.Other);
+            AddPart(state, element.m_durability != null ? element.m_durability.transform : null, PartKind.Other);
             CaptureBaselines(state);
             return state;
         }
 
-        private static void AddPart(ItemState state, Transform transform)
+        private static void AddPart(ItemState state, Transform transform, PartKind kind)
         {
             if (transform == null)
                 return;
@@ -481,6 +572,7 @@ namespace WiresSmoothUI
             state.Parts.Add(new PartState
             {
                 Transform = transform,
+                Kind = kind,
                 BasePosition = transform.localPosition,
                 BaseScale = transform.localScale,
                 BaseRotation = transform.localRotation
@@ -517,6 +609,9 @@ namespace WiresSmoothUI
                 return;
 
             float dt = WiresSmoothUIPlugin.Dt;
+            float appearDuration = Mathf.Max(0.01f, WiresSmoothUIPlugin.ItemAppearDuration.Value);
+            float moveDuration = Mathf.Max(0.01f, WiresSmoothUIPlugin.ItemMoveDuration.Value);
+            float stackPulseScale = Mathf.Max(1f, WiresSmoothUIPlugin.StackPulseScale.Value) - 1f;
             for (int i = Active.Count - 1; i >= 0; i--)
             {
                 ItemState state = Active[i];
@@ -543,7 +638,6 @@ namespace WiresSmoothUI
                 float queueMarkerScale = 1f;
                 float iconRotation = 0f;
 
-                float appearDuration = Mathf.Max(0.01f, WiresSmoothUIPlugin.ItemAppearDuration.Value);
                 if (state.AppearTimer < appearDuration)
                 {
                     float t = state.AppearTimer / appearDuration;
@@ -555,7 +649,7 @@ namespace WiresSmoothUI
                 {
                     float t = Mathf.Clamp01(state.PulseTimer / pulseDuration);
                     float pulse = Mathf.Sin(t * Mathf.PI);
-                    scale *= 1f + (Mathf.Max(1f, WiresSmoothUIPlugin.StackPulseScale.Value) - 1f) * pulse;
+                    scale *= 1f + stackPulseScale * pulse;
 
                     if (state.StackDirection < 0)
                         amountScale *= 1f - 0.08f * pulse;
@@ -584,7 +678,6 @@ namespace WiresSmoothUI
                 }
 
                 Vector3 worldMove = Vector3.zero;
-                float moveDuration = Mathf.Max(0.01f, WiresSmoothUIPlugin.ItemMoveDuration.Value);
                 if (state.MoveTimer < moveDuration)
                 {
                     float rawT = Mathf.Clamp01(state.MoveTimer / moveDuration);
@@ -634,6 +727,9 @@ namespace WiresSmoothUI
             float iconRotation,
             Vector3 worldMove)
         {
+            bool hasMove = worldMove.sqrMagnitude > 0f;
+            Transform lastParent = null;
+            Vector3 lastLocalMove = Vector3.zero;
             for (int i = 0; i < state.Parts.Count; i++)
             {
                 PartState part = state.Parts[i];
@@ -641,37 +737,35 @@ namespace WiresSmoothUI
                 if (transform == null)
                     continue;
 
-                Vector3 localMove = transform.parent != null
-                    ? transform.parent.InverseTransformVector(worldMove)
-                    : worldMove;
-
-                bool isIcon = state.Element != null
-                    && state.Element.m_icon != null
-                    && transform == state.Element.m_icon.transform;
-                bool isAmount = state.Element != null
-                    && state.Element.m_amount != null
-                    && transform == state.Element.m_amount.transform;
-                bool isEquipMarker = state.Element != null
-                    && state.Element.m_equiped != null
-                    && transform == state.Element.m_equiped.transform;
-                bool isQueueMarker = state.Element != null
-                    && state.Element.m_queued != null
-                    && transform == state.Element.m_queued.transform;
+                // Parts of one slot share a parent, so the world to local
+                // conversion is done once per parent, not per part.
+                Vector3 localMove = Vector3.zero;
+                if (hasMove)
+                {
+                    Transform parent = transform.parent;
+                    if (!ReferenceEquals(parent, lastParent))
+                    {
+                        lastParent = parent;
+                        lastLocalMove = parent != null ? parent.InverseTransformVector(worldMove) : worldMove;
+                    }
+                    localMove = lastLocalMove;
+                }
 
                 float partScale = scale;
-                if (isAmount)
-                    partScale *= amountScale;
-                if (isEquipMarker)
-                    partScale *= equipMarkerScale;
-                if (isQueueMarker)
-                    partScale *= queueMarkerScale;
-
-                float appliedRotation = isIcon ? iconRotation : 0f;
+                float appliedRotation = 0f;
+                switch (part.Kind)
+                {
+                    case PartKind.Icon: appliedRotation = iconRotation; break;
+                    case PartKind.Amount: partScale *= amountScale; break;
+                    case PartKind.EquipMarker: partScale *= equipMarkerScale; break;
+                    case PartKind.QueueMarker: partScale *= queueMarkerScale; break;
+                }
 
                 transform.localPosition = part.BasePosition + localMove;
                 transform.localScale = part.BaseScale * partScale;
-                transform.localRotation =
-                    part.BaseRotation * Quaternion.Euler(0f, 0f, appliedRotation);
+                transform.localRotation = appliedRotation != 0f
+                    ? part.BaseRotation * Quaternion.Euler(0f, 0f, appliedRotation)
+                    : part.BaseRotation;
 
                 part.AppliedPosition = localMove;
                 part.AppliedScale = partScale;
@@ -820,6 +914,9 @@ namespace WiresSmoothUI
             DeadItems.Clear();
             foreach (KeyValuePair<ItemDrop.ItemData, PositionRecord> pair in LastPositions)
             {
+                // Items still shown in some grid keep their record.
+                if (pair.Key != null && ItemStates.ContainsKey(pair.Key))
+                    continue;
                 if (pair.Key == null || now - pair.Value.LastSeen > 300f)
                     DeadItems.Add(pair.Key);
             }
@@ -865,6 +962,7 @@ namespace WiresSmoothUI
             ItemStates.Clear();
             QueuedStates.Clear();
             LastPositions.Clear();
+            InFlight.Clear();
             DeadItems.Clear();
         }
     }
