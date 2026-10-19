@@ -112,7 +112,7 @@ namespace EnemyHudRework
                 _cDamage[i] = HexEntry(SecIconColors, names[i] + " weakness",
                     names[i] + " weakness icon. Default #" + ColorUtility.ToHtmlStringRGB(DamageTint[i]) + ".");
             _cResist = HexEntry(SecIconColors, "Resistances",
-                "All resistance icons. Default #99999973 (gray, 45% opacity).");
+                "All resistance icons. Default #7C7C7C99 (gray, 60% opacity).");
             _cIconOutline = HexEntry(SecIconColors, "Icon outlines",
                 "The dark edge around weakness and resistance icons. Default #000000.");
         }

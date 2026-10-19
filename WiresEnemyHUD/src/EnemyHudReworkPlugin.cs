@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.7.2";
+        public const string PluginVersion = "0.7.3";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -89,6 +89,8 @@ namespace EnemyHudRework
 
         private sealed class EnemyUiState
         {
+            public WeaknessUi Weakness;
+            public float LastStarY = float.NaN;
             public Character Character;
             public BaseAI Ai;
             public GameObject Gui;
@@ -394,10 +396,9 @@ namespace EnemyHudRework
             if (state.NameText != null)
             {
                 string source = state.OriginalNameText ?? state.NameText.text ?? "";
-                state.NameText.text =
-                    _uppercaseNames.Value
-                        ? source.ToUpperInvariant()
-                        : source;
+                string wanted = _uppercaseNames.Value ? source.ToUpperInvariant() : source;
+                if (!string.Equals(state.NameText.text, wanted, System.StringComparison.Ordinal))
+                    state.NameText.text = wanted;
             }
 
             if (state.NameGraphic == null)
@@ -1092,6 +1093,12 @@ namespace EnemyHudRework
                 GetExtraHealthHeight(state) -
                 (active ? Mathf.Abs(_staggerVerticalOffset.Value) : 0f);
 
+            if (state.Weakness != null && !(state.LastStarY == y))
+            {
+                state.LastStarY = y;
+                state.Weakness.Dirty = true;
+            }
+
             if (state.HasLevel2 &&
                 state.Level2 != null)
             {
@@ -1452,6 +1459,7 @@ namespace EnemyHudRework
             UpdateNativePalette(_debugBossState, false);
             UpdateBarBackground(_debugBossState);
             UpdateHealthValue(_debugBossState);
+            if (_debugBossState.Weakness != null) _debugBossState.Weakness.Dirty = true; // debug name changes
             UpdateWeaknessIcons(_debugBossState, true);
             UpdateBossDps(_debugBossState);
         }

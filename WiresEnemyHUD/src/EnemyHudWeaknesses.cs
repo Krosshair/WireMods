@@ -20,6 +20,96 @@ namespace EnemyHudRework
         private ConfigEntry<bool> _resistanceIcons;
         private ConfigEntry<bool> _bossWeaknessIcons;
         private ConfigEntry<bool> _bossResistanceIcons;
+        private ConfigEntry<bool> _limitedMode;
+
+        // Limited mode: which damage types the weapon in hand (plus its
+        // ammo) can deal. Worked out only when equipment changes; a type you
+        // switch away from stays shown for a second, then a single timer
+        // drops it.
+        private ConfigEntry<float> _limitedDelay;
+        private int _limitedNow;
+        private int _limitedShown;
+        private static readonly HarmonyLib.AccessTools.FieldRef<Humanoid, ItemDrop> UnarmedWeapon =
+            HarmonyLib.AccessTools.FieldRefAccess<Humanoid, ItemDrop>("m_unarmedWeapon");
+
+        private static int DealableMask(Player local)
+        {
+            if (local == null) return 0;
+            ItemDrop.ItemData weapon = local.GetCurrentWeapon();
+            ItemDrop unarmed = UnarmedWeapon(local);
+            if (weapon == null || (unarmed != null && ReferenceEquals(weapon, unarmed.m_itemData))) return 0;
+
+            int mask = MaskOf(weapon.GetDamage());
+            string ammoType = weapon.m_shared.m_ammoType;
+            ItemDrop.ItemData ammo = local.GetAmmoItem();
+            if (!string.IsNullOrEmpty(ammoType) && ammo != null && ammo.m_shared.m_ammoType == ammoType &&
+                local.GetInventory() != null && local.GetInventory().ContainsItem(ammo))
+                mask |= MaskOf(ammo.GetDamage());
+            return mask;
+        }
+
+        private static int MaskOf(HitData.DamageTypes d)
+        {
+            int m = 0;
+            if (d.m_blunt > 0f) m |= 1 << (int)DamageKind.Blunt;
+            if (d.m_slash > 0f) m |= 1 << (int)DamageKind.Slash;
+            if (d.m_pierce > 0f) m |= 1 << (int)DamageKind.Pierce;
+            if (d.m_fire > 0f) m |= 1 << (int)DamageKind.Fire;
+            if (d.m_frost > 0f) m |= 1 << (int)DamageKind.Frost;
+            if (d.m_lightning > 0f) m |= 1 << (int)DamageKind.Lightning;
+            if (d.m_poison > 0f) m |= 1 << (int)DamageKind.Poison;
+            if (d.m_spirit > 0f) m |= 1 << (int)DamageKind.Spirit;
+            if (d.m_pickaxe > 0f) m |= 1 << (int)DamageKind.Pickaxe;
+            if (d.m_chop > 0f) m |= 1 << (int)DamageKind.Chop;
+            return m;
+        }
+
+        // Called from equipment events of the local player.
+        internal void OnLocalEquipmentChanged()
+        {
+            if (_limitedMode == null || !_limitedMode.Value) return;
+            int now = DealableMask(Player.m_localPlayer);
+            if (now == _limitedNow) return;
+            _limitedNow = now;
+            float delay = _limitedDelay != null ? _limitedDelay.Value : 0f;
+            int shown = delay > 0f ? _limitedShown | now : now;
+            CancelInvoke(nameof(ExpireLimited));
+            if ((shown & ~now) != 0)
+                Invoke(nameof(ExpireLimited), delay);
+            if (shown != _limitedShown)
+            {
+                _limitedShown = shown;
+                MarkAllWeaknessDirty();
+            }
+        }
+
+        private void ExpireLimited()
+        {
+            int now = DealableMask(Player.m_localPlayer);
+            _limitedNow = now;
+            if (_limitedShown == now) return;
+            _limitedShown = now;
+            MarkAllWeaknessDirty();
+        }
+
+        private void OnLimitedModeChanged()
+        {
+            CancelInvoke(nameof(ExpireLimited));
+            _limitedNow = _limitedShown = DealableMask(Player.m_localPlayer);
+            MarkAllWeaknessDirty();
+        }
+
+        private bool KindAllowed(int kind)
+        {
+            return !_limitedMode.Value || (_limitedShown & (1 << kind)) != 0;
+        }
+
+        private void MarkAllWeaknessDirty()
+        {
+            foreach (KeyValuePair<EnemyUiState, WeaknessUi> pair in _weaknessUi)
+                pair.Value.Dirty = true;
+        }
+
         private ConfigEntry<int> _iconsPerRow;
         private ConfigEntry<float> _iconScale;
         private ConfigEntry<float> _bossIconHeight;
@@ -46,8 +136,9 @@ namespace EnemyHudRework
             new Color32(80, 68, 98, 255),    // pickaxe: very dark violet gray
             new Color32(80, 68, 98, 255)     // chop: same as pickaxe, axe head pointing right
         };
-        // Vanilla's resisted-hit gray, at 45% so weaknesses stand out.
-        private static readonly Color ResistTint = new Color(0.6f, 0.6f, 0.6f, 0.45f);
+        // Resistances: a darker take on vanilla's resisted-hit gray, at 60%:
+        // readable, but quieter than the colored weaknesses.
+        private static readonly Color ResistTint = new Color32(124, 124, 124, 153); // gray, 60% opacity
         // Capital height of the boss name font, and icon size relative to it.
         private const float BossCapHeight = 0.7f;
         private const float BossIconToCap = 0.8f;
@@ -65,7 +156,9 @@ namespace EnemyHudRework
             public Image[] Fills = new Image[DamageKinds];
             public int[] Kind = new int[DamageKinds];
             public bool[] Show = new bool[DamageKinds];
-            public float NextCheck;
+            public bool KindsReady;
+            public bool Dirty = true;
+            public int LastKey = -1;
         }
 
         private readonly Dictionary<EnemyUiState, WeaknessUi> _weaknessUi = new Dictionary<EnemyUiState, WeaknessUi>();
@@ -183,6 +276,7 @@ namespace EnemyHudRework
             }
             root.SetActive(false);
             _weaknessUi[state] = ui;
+            state.Weakness = ui;
         }
 
         private static RectTransform StarRect(EnemyUiState state)
@@ -206,20 +300,30 @@ namespace EnemyHudRework
             if (ui.Root.gameObject.activeSelf) ui.Root.gameObject.SetActive(false);
         }
 
+        // A creature's modifiers don't change on their own: read once.
         private static void RefreshWeaknessKinds(WeaknessUi ui, Character character)
         {
-            float now = Time.unscaledTime;
-            if (now < ui.NextCheck) return;
-            ui.NextCheck = now + 0.5f;
+            if (ui.KindsReady) return;
+            ui.KindsReady = true;
             HitData.DamageModifiers mods = character.GetDamageModifiers();
             for (int i = 0; i < DamageKinds; i++)
                 ui.Kind[i] = Classify(Modifier(mods, (DamageKind)i));
         }
 
+        // Laid out only when something changes: the icons are children of
+        // the HUD, so they follow it on their own. Changes are config edits,
+        // limited mode equipment changes, the star row moving, and the
+        // enemy turning friendly or hostile.
         private void UpdateWeaknessIcons(EnemyUiState state, bool isEnemy)
         {
-            WeaknessUi ui;
-            if (state == null || !_weaknessUi.TryGetValue(state, out ui) || ui.Root == null) return;
+            WeaknessUi ui = state != null ? state.Weakness : null;
+            if (ui == null || ui.Root == null) return;
+            int key = state.Kind == HudKind.Boss
+                ? (state.NameText != null && state.NameText.gameObject.activeInHierarchy ? 1 : 0)
+                : (isEnemy ? 1 : 0);
+            if (!ui.Dirty && key == ui.LastKey) return;
+            ui.LastKey = key;
+            ui.Dirty = false;
             if (state.Kind == HudKind.Boss) UpdateBossWeaknessIcons(state, ui);
             else UpdateEnemyWeaknessIcons(state, ui, isEnemy);
         }
@@ -267,12 +371,12 @@ namespace EnemyHudRework
                 if (want != Weak && !_resistanceIcons.Value) break;
                 for (int i = 0; i < DamageKinds; i++)
                 {
-                    if (ui.Kind[i] != want) continue;
+                    if (ui.Kind[i] != want || !KindAllowed(i)) continue;
                     int perRow = Mathf.Max(1, _iconsPerRow.Value);
                     float x = right - (n % perRow) * step;
                     float y = -(n / perRow) * step;
                     Color tint = IconTint(i, want == Weak);
-                    show[i] = Place(ui, i, x, y, size, fillRatio, tint, _cIconOutline.Or(Color.black));
+                    show[i] = Place(ui, i, x, y, size, fillRatio, tint, _cIconOutline.Or(Color.black), false);
                     if (show[i]) n++;
                 }
             }
@@ -297,6 +401,7 @@ namespace EnemyHudRework
             if (b.size.x <= 0.01f)
             {
                 HideWeaknessIcons(ui);
+                ui.Dirty = true; // text not laid out yet, try next frame
                 return;
             }
             LoadDamageSprites();
@@ -328,10 +433,10 @@ namespace EnemyHudRework
                 if (want == Weak ? !weak : !resist) continue;
                 for (int i = 0; i < DamageKinds; i++)
                 {
-                    if (ui.Kind[i] != want) continue;
+                    if (ui.Kind[i] != want || !KindAllowed(i)) continue;
                     float x = want == Weak ? -(edge + left * step) : edge + right * step;
                     Color tint = IconTint(i, want == Weak);
-                    show[i] = Place(ui, i, x, iconY, size, 12f / 15f, tint, _cIconOutline.Or(Color.black));
+                    show[i] = Place(ui, i, x, iconY, size, 12f / 15f, tint, _cIconOutline.Or(Color.black), false);
                     if (!show[i]) continue;
                     if (want == Weak) left++; else right++;
                 }
@@ -350,7 +455,8 @@ namespace EnemyHudRework
         }
 
         // The outline fades with the icon, so faint icons stay faint.
-        private static bool Place(WeaknessUi ui, int kind, float x, float y, float size, float fillRatio, Color color, Color outline)
+        // A silhouette is the outlined shape in one flat color, no inner fill.
+        private static bool Place(WeaknessUi ui, int kind, float x, float y, float size, float fillRatio, Color color, Color outline, bool silhouette)
         {
             Sprite back = DamageBack[kind], fill = DamageFill[kind];
             if (back == null || fill == null) return false;
@@ -363,6 +469,13 @@ namespace EnemyHudRework
             if (r.anchoredPosition != pos) r.anchoredPosition = pos;
             Vector2 fsz = sz * fillRatio;
             if (f.rectTransform.sizeDelta != fsz) f.rectTransform.sizeDelta = fsz;
+            if (silhouette)
+            {
+                if (img.color != color) img.color = color;
+                if (f.enabled) f.enabled = false;
+                return true;
+            }
+            if (!f.enabled) f.enabled = true;
             outline.a *= color.a;
             if (img.color != outline) img.color = outline;
             if (f.color != color) f.color = color;
@@ -380,6 +493,44 @@ namespace EnemyHudRework
             if (state == null || !_weaknessUi.TryGetValue(state, out ui)) return;
             if (ui.Root != null) Destroy(ui.Root.gameObject);
             _weaknessUi.Remove(state);
+            state.Weakness = null;
+        }
+    }
+
+    // Equipment events that can change what the local player can deal.
+    internal static class LimitedModePatches
+    {
+        private static void Notify(object who)
+        {
+            if (EnemyHudReworkPlugin.Instance != null && who != null && ReferenceEquals(who, Player.m_localPlayer))
+                EnemyHudReworkPlugin.Instance.OnLocalEquipmentChanged();
+        }
+
+        [HarmonyLib.HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
+        private static class Equip { private static void Postfix(Humanoid __instance) { Notify(__instance); } }
+
+        [HarmonyLib.HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UnequipItem))]
+        private static class Unequip { private static void Postfix(Humanoid __instance) { Notify(__instance); } }
+
+        [HarmonyLib.HarmonyPatch(typeof(Humanoid), nameof(Humanoid.HideHandItems))]
+        private static class Hide { private static void Postfix(Humanoid __instance) { Notify(__instance); } }
+
+        [HarmonyLib.HarmonyPatch(typeof(Humanoid), "ShowHandItems")]
+        private static class Show { private static void Postfix(Humanoid __instance) { Notify(__instance); } }
+
+        [HarmonyLib.HarmonyPatch(typeof(Player), nameof(Player.OnSpawned))]
+        private static class Spawned { private static void Postfix(Player __instance) { Notify(__instance); } }
+
+        // Running out of ammo removes it from the inventory.
+        [HarmonyLib.HarmonyPatch(typeof(Inventory), "Changed")]
+        private static class InventoryChanged
+        {
+            private static void Postfix(Inventory __instance)
+            {
+                Player local = Player.m_localPlayer;
+                if (local != null && ReferenceEquals(local.GetInventory(), __instance))
+                    Notify(local);
+            }
         }
     }
 }

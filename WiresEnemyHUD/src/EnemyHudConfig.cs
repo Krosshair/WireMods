@@ -45,6 +45,7 @@ namespace EnemyHudRework
                 new AcceptableValueList<string>("Author's Choice", "Vanilla"), null,
                 "General", "Preset");
             Config.SettingChanged += OnPresetSettingChanged;
+            Config.SettingChanged += (s, e) => MarkAllWeaknessDirty();
 
             // ---- 02 Enemy bars ----
             _order = 1000;
@@ -95,6 +96,13 @@ namespace EnemyHudRework
             _bossResistanceIcons = Bind(SecWeak, "Boss resistances", true,
                 "Faint gray icons for what a boss resists, right of its name.",
                 null, null);
+            _limitedMode = Bind(SecWeak, "Limited mode", false,
+                "Only show icons for the damage types you can deal right now: your weapon in hand, plus its ammo.",
+                null, null);
+            _limitedMode.SettingChanged += (s, e) => OnLimitedModeChanged();
+            _limitedDelay = Bind(SecWeak, "Limited mode delay", 0f,
+                "Limited mode: how many seconds icons for a weapon you switched away from stay shown. 0 hides them right away.",
+                new AcceptableValueRange<float>(0f, 2f), null);
             _iconScale = Bind(SecWeak, "Icon size", 1f,
                 "Size of the damage type icons, relative to the level stars. 1.0 is exactly star size.",
                 new AcceptableValueRange<float>(0.5f, 2f), null);
