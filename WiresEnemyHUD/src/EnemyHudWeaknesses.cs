@@ -21,6 +21,7 @@ namespace EnemyHudRework
         private ConfigEntry<bool> _bossWeaknessIcons;
         private ConfigEntry<bool> _bossResistanceIcons;
         private ConfigEntry<int> _iconsPerRow;
+        private ConfigEntry<float> _iconScale;
         private ConfigEntry<float> _bossIconHeight;
         private ConfigEntry<float> _bossIconSpacing;
 
@@ -34,12 +35,12 @@ namespace EnemyHudRework
         // Tints, multiplied over the gray shapes (as the game tints stars).
         private static readonly Color[] DamageTint =
         {
-            new Color32(165, 105, 60, 255),  // blunt: umber, clubs, hammers and stone
-            new Color32(235, 70, 60, 255),   // slash: red
-            new Color32(250, 210, 50, 255),  // pierce: yellow
+            new Color32(232, 232, 232, 255), // blunt: physical, near white
+            new Color32(232, 232, 232, 255), // slash: physical, near white
+            new Color32(232, 232, 232, 255), // pierce: physical, near white
             new Color32(255, 140, 40, 255),  // fire: orange
             new Color32(80, 155, 255, 255),  // frost: blue
-            new Color32(120, 205, 255, 255), // lightning: light blue (tall rhombus)
+            new Color32(165, 225, 255, 255), // lightning: pale sky blue (slanted rhombus)
             new Color32(120, 210, 70, 255),  // poison: green
             new Color32(90, 255, 200, 255),  // spirit: aqua green
             new Color32(80, 68, 98, 255),    // pickaxe: very dark violet gray
@@ -239,7 +240,7 @@ namespace EnemyHudRework
             // and spacing, read from the HUD's own star.
             if (!ui.Root.gameObject.activeSelf) ui.Root.gameObject.SetActive(true);
             float rootScale = Mathf.Max(0.0001f, ui.Root.lossyScale.y);
-            float size = star.rect.height * star.lossyScale.y / rootScale;
+            float size = star.rect.height * star.lossyScale.y / rootScale * _iconScale.Value;
             float fillRatio = 12f / 15f;
             if (star.childCount > 0)
             {
@@ -312,7 +313,7 @@ namespace EnemyHudRework
             Vector3 foot = nr.TransformPoint(new Vector3(b.center.x, baseline, 0f));
             ui.Root.position = new Vector3(foot.x, foot.y, ui.Root.position.z);
 
-            float size = capHeight * BossIconToCap * sy;
+            float size = capHeight * BossIconToCap * sy * _iconScale.Value;
             float step = size * 16f / 15f;
             // Spacing pushes both sides outward, mirrored.
             float edge = b.extents.x * sx + size * 0.5f + size * 0.6f + _bossIconSpacing.Value;

@@ -95,6 +95,9 @@ namespace EnemyHudRework
             _bossResistanceIcons = Bind(SecWeak, "Boss resistances", true,
                 "Faint gray icons for what a boss resists, right of its name.",
                 null, null);
+            _iconScale = Bind(SecWeak, "Icon size", 1f,
+                "Size of the damage type icons, relative to the level stars. 1.0 is exactly star size.",
+                new AcceptableValueRange<float>(0.5f, 2f), null);
             _iconsPerRow = Bind(SecWeak, "Icons per row", 4,
                 "How many icons fit in an enemy's star row before the next row starts below.",
                 new AcceptableValueRange<int>(1, 9), null);
