@@ -27,6 +27,46 @@ namespace WiresWeaponMaster
         private static readonly Dictionary<VisEquipment, VisualState> States =
             new Dictionary<VisEquipment, VisualState>();
 
+        // Main menu character previews have no network data, so their
+        // holsters come from the saved list instead.
+        private static readonly Dictionary<VisEquipment, HolsterSelection[]> Previews =
+            new Dictionary<VisEquipment, HolsterSelection[]>();
+
+        private static readonly AccessTools.FieldRef<VisEquipment, int> CurrentLeftBack =
+            AccessTools.FieldRefAccess<VisEquipment, int>("m_currentLeftBackItemHash");
+        private static readonly AccessTools.FieldRef<VisEquipment, int> CurrentRightBack =
+            AccessTools.FieldRefAccess<VisEquipment, int>("m_currentRightBackItemHash");
+
+        internal static void SetMenuPreview(Player preview, HolsterSelection[] selections)
+        {
+            VisEquipment vis = GetVisEquipment(preview);
+            if (vis == null)
+                return;
+
+            if (selections == null)
+            {
+                Previews.Remove(vis);
+                Unregister(vis);
+                return;
+            }
+
+            Previews[vis] = selections;
+            ApplySelections(vis, selections);
+        }
+
+        private static void GetVanillaBack(VisEquipment vis, ZDO zdo, out int left, out int right)
+        {
+            if (zdo != null)
+            {
+                left = zdo.GetInt(ZDOVars.s_leftBackItem);
+                right = zdo.GetInt(ZDOVars.s_rightBackItem);
+                return;
+            }
+
+            left = CurrentLeftBack(vis);
+            right = CurrentRightBack(vis);
+        }
+
         internal static VisEquipment GetVisEquipment(Humanoid humanoid)
         {
             return humanoid == null || VisEquipmentField == null
@@ -101,6 +141,13 @@ namespace WiresWeaponMaster
                 vis.m_isArmorStand)
                 return;
 
+            HolsterSelection[] preview;
+            if (Previews.Count > 0 && Previews.TryGetValue(vis, out preview))
+            {
+                ApplySelections(vis, preview);
+                return;
+            }
+
             VisualState state = GetOrCreateState(vis);
             ZDO zdo = MultiplayerSync.GetZdo(vis);
             int vanillaLeftBack =
@@ -132,10 +179,9 @@ namespace WiresWeaponMaster
 
             VisualState state = GetOrCreateState(vis);
             ZDO zdo = MultiplayerSync.GetZdo(vis);
-            int vanillaLeftBack =
-                zdo != null ? zdo.GetInt(ZDOVars.s_leftBackItem) : 0;
-            int vanillaRightBack =
-                zdo != null ? zdo.GetInt(ZDOVars.s_rightBackItem) : 0;
+            int vanillaLeftBack;
+            int vanillaRightBack;
+            GetVanillaBack(vis, zdo, out vanillaLeftBack, out vanillaRightBack);
 
             for (int laneValue = 1;
                  laneValue < LaneCount;
@@ -252,6 +298,7 @@ namespace WiresWeaponMaster
             if (vis == null)
                 return;
 
+            Previews.Remove(vis);
             VisualState state;
             if (!States.TryGetValue(vis, out state))
                 return;
@@ -273,6 +320,7 @@ namespace WiresWeaponMaster
             }
 
             States.Clear();
+            Previews.Clear();
         }
     }
 }

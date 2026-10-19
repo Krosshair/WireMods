@@ -15,6 +15,7 @@ namespace WiresWeaponMaster
                     return;
 
                 WeaponMasterController.Reset();
+                SavedWeaponStates.Restore(__instance);
                 WeaponMasterController.SeedCurrentState(__instance);
             }
         }

@@ -41,6 +41,28 @@ namespace WiresWeaponMaster
             WeaponVisuals.RefreshLocal();
         }
 
+        internal static List<ItemDrop.ItemData> GetHistory(HolsterLane lane)
+        {
+            int index = (int)lane;
+            return index > 0 && index < LaneCount ? History[index] : null;
+        }
+
+        // Adds a remembered item at the end of its lane, keeping saved order.
+        internal static void RestoreToLane(ItemDrop.ItemData item, HolsterLane lane)
+        {
+            int index = (int)lane;
+            if (item == null || index <= 0 || index >= LaneCount)
+                return;
+
+            for (int i = 1; i < LaneCount; i++)
+            {
+                if (History[i].Contains(item))
+                    return;
+            }
+
+            History[index].Add(item);
+        }
+
         internal static void SeedCurrentState(Player player)
         {
             if (player == null)

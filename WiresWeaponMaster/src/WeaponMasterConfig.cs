@@ -5,6 +5,7 @@ namespace WiresWeaponMaster
     internal static class WeaponMasterConfig
     {
         internal static ConfigEntry<bool> Enabled;
+        internal static ConfigEntry<bool> RememberShownEntry;
         internal static ConfigEntry<bool> BackShield;
         internal static ConfigEntry<bool> BackTool;
         internal static ConfigEntry<bool> BackMelee;
@@ -19,6 +20,12 @@ namespace WiresWeaponMaster
                 "Enabled",
                 true,
                 "Enable Wire's Weapon Master.");
+
+            RememberShownEntry = file.Bind(
+                "General",
+                "Remember between sessions",
+                true,
+                "Keep the weapons and tools shown on your character between logouts and game restarts, per character. Stored in BepInEx/config/wire.valheim.weaponmaster.shown.txt, written when your character saves. Turn off to start every session with only what you hold.");
 
             BackShield = BindCategory(
                 file,
@@ -67,6 +74,11 @@ namespace WiresWeaponMaster
                 HoldRController.ResetTracking();
 
             WeaponVisuals.RefreshConfig();
+        }
+
+        internal static bool RememberShown
+        {
+            get { return RememberShownEntry == null || RememberShownEntry.Value; }
         }
 
         internal static bool IsEnabled

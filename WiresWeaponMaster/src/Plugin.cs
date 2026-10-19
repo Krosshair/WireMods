@@ -10,7 +10,7 @@ namespace WiresWeaponMaster
     {
         public const string Guid = "wire.valheim.weaponmaster";
         public const string Name = "Wire's Weapon Master";
-        public const string Version = "0.2.1";
+        public const string Version = "0.3.0";
 
         internal static Plugin Instance;
         private Harmony _harmony;
