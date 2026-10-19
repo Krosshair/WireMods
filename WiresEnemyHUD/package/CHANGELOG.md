@@ -1,3 +1,7 @@
+## 0.7.4
+
+Fixed level stars sometimes showing on normal creatures, when their health bar first appeared from being hit instead of looked at.
+
 ## 0.7.3
 
 Added Limited mode (off by default): damage type icons only show for what you can deal right now, your weapon in hand plus its ammo. Optional delay before icons of a weapon you switched away from disappear (0 to 2 seconds, default 0).

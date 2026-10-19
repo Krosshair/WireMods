@@ -505,7 +505,10 @@ namespace EnemyHudRework
             if (damageReveal ||
                 (_keepNameplatesOnScreen.Value &&
                  outside && ordinaryHover))
+            {
+                if (!state.Gui.activeSelf) ApplyLevelStars(state, state.Character);
                 state.Gui.SetActive(true);
+            }
 
             if (!state.Gui.activeSelf)
                 return;
@@ -617,6 +620,7 @@ namespace EnemyHudRework
                 if (state.Kind != HudKind.Enemy)
                     continue;
 
+                if (!state.Gui.activeSelf) ApplyLevelStars(state, state.Character);
                 state.Gui.SetActive(true);
                 UpdateViewportVisibility(state);
             }

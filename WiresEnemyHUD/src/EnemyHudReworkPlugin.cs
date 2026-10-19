@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.7.3";
+        public const string PluginVersion = "0.7.4";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -300,6 +300,13 @@ namespace EnemyHudRework
                     state.Level3.anchoredPosition;
             }
 
+            // Both star groups start switched on in the game's HUD prefab, and
+            // the game only sorts them out while it is showing the HUD on
+            // hover. A HUD this mod shows first (on damage, kept on screen)
+            // would show stars on a normal creature. The level never changes,
+            // so set the right ones once here.
+            ApplyLevelStars(state, character);
+
             if (state.Kind == HudKind.Enemy || state.Kind == HudKind.Player)
                 CreateStaggerBar(state);
 
@@ -318,6 +325,16 @@ namespace EnemyHudRework
             SetupBossDps(state);
 
             _states[character] = state;
+        }
+
+        private static void ApplyLevelStars(EnemyUiState state, Character character)
+        {
+            if (state == null || character == null) return;
+            int level = character.GetLevel();
+            if (state.Level2 != null && state.Level2.gameObject.activeSelf != (level == 2))
+                state.Level2.gameObject.SetActive(level == 2);
+            if (state.Level3 != null && state.Level3.gameObject.activeSelf != (level == 3))
+                state.Level3.gameObject.SetActive(level == 3);
         }
 
         internal void UpdateEnemyHuds(
