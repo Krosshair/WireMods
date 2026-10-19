@@ -12,7 +12,7 @@ namespace WiresHoodToggle
     {
         public const string Guid = "wire.valheim.hoodtoggle";
         public const string Name = "Wire's Helmet Hider";
-        public const string Version = "0.2.4";
+        public const string Version = "0.2.5";
 
         internal static ConfigEntry<KeyboardShortcut> CustomToggleKey;
         internal static ConfigEntry<float> DoubleTapWindow;

@@ -14,6 +14,13 @@ namespace WiresHoodToggle
 
         internal static bool Pending => _pending;
 
+        // Sitting in a chair or throne attaches the player, which turns off
+        // ground contact. Count that as standing still so the pose still plays.
+        private static bool IsGrounded(Player player)
+        {
+            return player.IsOnGround() || player.IsAttached();
+        }
+
         internal static void Start(Player player, bool desiredHidden)
         {
             Cancel(commit: true);
@@ -23,7 +30,7 @@ namespace WiresHoodToggle
             if (player == null || _sync == null ||
                 !Plugin.PlayEquipAnimation.Value ||
                 player.GetActionQueueCount() != 0 ||
-                player.InAttack() || player.IsDead() || player.IsStaggering() || !player.IsOnGround())
+                player.InAttack() || player.IsDead() || player.IsStaggering() || !IsGrounded(player))
             {
                 HoodVisuals.CommitToggle(player, desiredHidden);
                 return;
@@ -43,7 +50,7 @@ namespace WiresHoodToggle
             bool interrupted =
                 player == null || player != _player ||
                 player.IsDead() || player.InAttack() || player.IsStaggering() ||
-                !player.IsOnGround() ||
+                !IsGrounded(player) ||
                 player.GetActionQueueCount() > 0 ||
                 !Plugin.PlayEquipAnimation.Value;
 

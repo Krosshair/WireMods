@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.5
+
+* The toggle animation now also plays while sitting in a chair or throne.
+
 ## 0.2.4
 
 * Fixed a console spam, oopsies
