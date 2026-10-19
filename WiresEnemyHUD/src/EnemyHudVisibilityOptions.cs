@@ -82,6 +82,7 @@ namespace EnemyHudRework
             _bossWeaknessIcons.Value = enabled;
             _bossResistanceIcons.Value = enabled;
             _hpFontScale.Value = 1f;
+            _dpsFontScale.Value = 1f;
         }
 
         private static bool IsOrdinaryEnemy(Character c)

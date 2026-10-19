@@ -15,6 +15,7 @@ namespace EnemyHudRework
         private const float DpsNormalizeAfterSeconds = 3f;
 
         private ConfigEntry<string> _bossDpsMode;
+        private ConfigEntry<float> _dpsFontScale;
 
         private sealed class DpsUiState
         {
@@ -208,7 +209,7 @@ namespace EnemyHudRework
             if (state.HealthRect == null) return;
 
             dps.Rect.localScale = Vector3.one;
-            dps.Text.fontSize = dps.BaseFontSize * 0.738f;
+            dps.Text.fontSize = dps.BaseFontSize * 0.738f * _dpsFontScale.Value;
 
             float textWidth = Mathf.Max(80f, dps.Text.preferredWidth + 12f);
             float textHeight = Mathf.Max(dps.Text.preferredHeight, dps.Text.fontSize * 1.2f);

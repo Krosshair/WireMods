@@ -162,6 +162,9 @@ namespace EnemyHudRework
                 "Scale of the HP and percentage text on all bars. 1.0 is the original size.",
                 new AcceptableValueRange<float>(.5f, 2.5f), null,
                 "Text", "HP and percent font size");
+            _dpsFontScale = Bind(SecLook, "Boss DPS text size", 1.267f,
+                "Scale of the boss DPS counter. 1.0 is the original size.",
+                new AcceptableValueRange<float>(.5f, 2.5f), null);
 
             // ---- 08-10 Colors ----
             BindColorSections();

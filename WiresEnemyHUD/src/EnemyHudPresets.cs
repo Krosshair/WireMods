@@ -56,6 +56,7 @@ namespace EnemyHudRework
                         _hideForNonStaggerable.Value = true;
                         ApplyVisibilityPreset(true);
                         _hpFontScale.Value = 1.267f;
+                        _dpsFontScale.Value = 1.267f;
                         _playerNameplateAimFade.Value = true;
                         _debugSeeOwnHealthBar.Value = false;
                         _debugBossHealthBar.Value = false;
