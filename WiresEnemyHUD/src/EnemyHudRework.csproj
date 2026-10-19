@@ -63,4 +63,7 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\*.png" LogicalName="EnemyHudRework.Assets.%(Filename).png" />
+  </ItemGroup>
 </Project>

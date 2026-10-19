@@ -8,18 +8,6 @@ namespace EnemyHudRework
     {
         private ConfigEntry<bool> _playerNameplateAimFade;
 
-        private void BindPlayerFocusConfig()
-        {
-            _playerNameplateAimFade = Config.Bind(
-                "Player Health Bar",
-                "Fade unfocused player nameplates",
-                true,
-                new ConfigDescription(
-                    "Fade other player nameplates to 25% opacity until your crosshair aims directly at that player; the targeted player stays fully visible.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 90 }));
-        }
-
         private static Player GetCrosshairPlayer(Player localPlayer)
         {
             if (localPlayer == null || GameCamera.instance == null)

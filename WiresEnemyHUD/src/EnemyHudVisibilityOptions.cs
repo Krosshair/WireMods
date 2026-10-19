@@ -11,7 +11,7 @@ using UnityEngine.UI;
 namespace EnemyHudRework
 {
     // Isolated, opt-in additions to the exact 0.5.0 HUD implementation.
-    // No changes to the layout, stagger logic, DPS calculation or player HUD.
+    // No changes to the layout, stagger logic or player HUD.
     public sealed partial class EnemyHudReworkPlugin
     {
         private const float DamageShowSeconds = 3f;
@@ -19,41 +19,24 @@ namespace EnemyHudRework
         private bool _reportedHitReveal;
         private bool _reportedViewportClamp;
         private bool _reportedHpFont;
-        private bool _reportedDpsFont;
 
-        private void ReportFontIfAdjusted(
-            TMP_Text label, bool dps)
+        private void ReportFontIfAdjusted(TMP_Text label)
         {
-            if (label == null) return;
-            float scale = dps
-                ? _dpsFontScale.Value : _hpFontScale.Value;
+            if (label == null || _reportedHpFont) return;
+            float scale = _hpFontScale.Value;
             if (Mathf.Abs(scale - 1f) < .01f)
                 return;
-            if (dps)
-            {
-                if (_reportedDpsFont) return;
-                _reportedDpsFont = true;
-            }
-            else
-            {
-                if (_reportedHpFont) return;
-                _reportedHpFont = true;
-            }
+            _reportedHpFont = true;
             Logger.LogInfo(
-                "Font scale applied: " +
-                (dps ? "DPS" : "HP") +
-                " x" + scale.ToString("0.##") +
-                ", actual size " +
-                label.fontSize.ToString("0.##") +
-                ", auto sizing " +
-                label.enableAutoSizing);
+                "Font scale applied: HP x" + scale.ToString("0.##") +
+                ", actual size " + label.fontSize.ToString("0.##") +
+                ", auto sizing " + label.enableAutoSizing);
         }
 
         private ConfigEntry<bool> _showOnDamage;
         private ConfigEntry<bool> _keepNameplatesOnScreen;
         private ConfigEntry<bool> _criticalHitFlash;
         private ConfigEntry<float> _hpFontScale;
-        private ConfigEntry<float> _dpsFontScale;
 
         private sealed class HealthSample
         {
@@ -89,53 +72,16 @@ namespace EnemyHudRework
                 ? AccessTools.Field(HudDataType, "m_hoverTimer")
                 : null;
 
-        private void BindVisibilityOptions()
-        {
-            _keepNameplatesOnScreen = Config.Bind(
-                "Enemy Health Bar", "Keep bars on screen", true,
-                new ConfigDescription(
-                    "Keep visible enemy nameplates within the screen edges. Nameplates above the screen track horizontally along the top edge.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 90 }));
-
-            _showOnDamage = Config.Bind(
-                "Enemy Health Bar", "Show on damage", true,
-                new ConfigDescription(
-                    "Reveal an enemy health bar for 3 seconds after you successfully damage it. Each additional hit from you restarts the timer. Killing blows leave the current visibility unchanged.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 80 }));
-
-            _criticalHitFlash = Config.Bind(
-                "Enemy Health Bar", "Critical hit flash", true,
-                new ConfigDescription(
-                    "Show a brief white outline flash on an enemy HP bar when a backstab or stagger-critical lands.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 70 }));
-
-            _hpFontScale = Config.Bind(
-                "Text", "HP and percent font size", 1.267f,
-                new ConfigDescription(
-                    "Scale HP and percentage text on health bars. 1.0 uses the original size; higher numbers make text larger.",
-                    new AcceptableValueRange<float>(.5f, 2.5f),
-                    new ConfigurationManagerAttributes { Order = 200 }));
-
-            // Only the original DPS mode remains. The 0.6.x
-            // saved value is migrated into this key at install.
-            _dpsFontScale = Config.Bind(
-                "Text", "DPS font size", 1f,
-                new ConfigDescription(
-                    "Scale DPS counter text. 1.0 uses the original size; higher numbers make text larger.",
-                    new AcceptableValueRange<float>(.5f, 2.5f),
-                    new ConfigurationManagerAttributes { Order = 100 }));
-        }
-
         private void ApplyVisibilityPreset(bool enabled)
         {
             _keepNameplatesOnScreen.Value = enabled;
             _showOnDamage.Value = enabled;
             _criticalHitFlash.Value = enabled;
+            _weaknessIcons.Value = enabled;
+            _resistanceIcons.Value = enabled;
+            _bossWeaknessIcons.Value = enabled;
+            _bossResistanceIcons.Value = enabled;
             _hpFontScale.Value = 1f;
-            _dpsFontScale.Value = 1f;
         }
 
         private static bool IsOrdinaryEnemy(Character c)
@@ -469,7 +415,8 @@ namespace EnemyHudRework
                 NativeFrameFlash.Fit(state.HealthRect,
                     outline.Border[0], outline.Border[1],
                     outline.Border[2], outline.Border[3]);
-            Color borderColor = new Color(1f, 1f, 1f, alpha);
+            Color borderColor = _critFlashBase;
+            borderColor.a *= alpha;
             foreach (Image piece in outline.Border)
                 if (piece != null)
                     piece.color = borderColor;

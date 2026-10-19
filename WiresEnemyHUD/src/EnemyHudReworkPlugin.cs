@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.6.4";
+        public const string PluginVersion = "0.6.5";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -57,7 +57,7 @@ namespace EnemyHudRework
 
         private ConfigEntry<bool> _staggerBarEnabled;
         private ConfigEntry<float> _staggerVerticalOffset;
-        private ConfigEntry<float> _starVerticalOffset;
+        private ConfigEntry<float> _starRowHeight;
         private ConfigEntry<bool> _hideForNonStaggerable;
 
         private ConfigEntry<bool> _syncStaggerForMultiplayer;
@@ -176,230 +176,14 @@ namespace EnemyHudRework
         private void OnDestroy()
         {
             DestroyDebugBossHud();
-            OnDpsPresetDestroy();
+            OnPresetDestroy();
+            DestroyAllBossDps();
             DestroyVisibilityOptions();
 
             if (_harmony != null)
                 _harmony.UnpatchSelf();
 
             Instance = null;
-        }
-
-        private void BindConfig()
-        {
-            Config.Remove(new ConfigDefinition("General", "Enabled"));
-            Config.Remove(new ConfigDefinition("Features", "HealthNumberMode"));
-            Config.Remove(new ConfigDefinition("Features", "ShowMaxHealth"));
-            Config.Remove(new ConfigDefinition("Features", "DoubleHealthBarThickness"));
-            Config.Remove(new ConfigDefinition("Features", "HealthDisplay"));
-            Config.Remove(new ConfigDefinition("Status Effects", "Enabled"));
-            Config.Remove(new ConfigDefinition("Stagger Bar", "Color"));
-            Config.Remove(new ConfigDefinition("Stagger Bar", "Show recovery overlay"));
-
-            // The declaration order here is intentional: shudnal's
-            // Configuration Manager preserves the author's category order.
-            // Preset first, normal gameplay settings next, debug last.
-            BindPresetConfig();
-
-            _enemyHealthDisplayMode = Config.Bind<string>(
-                "Enemy Health Bar",
-                "Health display",
-                "Current HP",
-                new ConfigDescription(
-                    "Choose enemy HP text: current HP, current/max HP, percentage, or None to hide the counter.",
-                    new AcceptableValueList<string>(
-                        new[] { "Current HP", "Current HP/Max HP", "Percentage", "None" }),
-                    new ConfigurationManagerAttributes { Order = 200 }));
-
-            _doubleEnemyHealthBar = Config.Bind(
-                "Enemy Health Bar",
-                "Double size",
-                true,
-                new ConfigDescription(
-                    "Doubles the thickness of enemy HP bars while keeping their width.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 100 }));
-
-            _bossHealthDisplayMode = Config.Bind<string>(
-                "Boss Health Bar",
-                "Health display",
-                "Current HP/Max HP",
-                new ConfigDescription(
-                    "Choose boss HP text: current HP, current/max HP, percentage, or None to hide the counter.",
-                    new AcceptableValueList<string>(
-                        new[] { "Current HP", "Current HP/Max HP", "Percentage", "None" }),
-                    new ConfigurationManagerAttributes { Order = 300 }));
-
-            Config.Remove(new ConfigDefinition("Boss Health Bar", "Double size"));
-
-            _bossHealthTextPosition = Config.Bind(
-                "Boss Health Bar",
-                "Health counter position",
-                BossHealthTextPosition.Tracked,
-                new ConfigDescription(
-                    "Tracked follows the right edge of the boss health fill. Centered places HP and DPS text in the middle of the boss bar.",
-                    null,
-                    new ConfigurationManagerAttributes
-                    {
-                        Order = 200,
-                        ReadOnlyProvider = () =>
-                            _bossHealthDisplayMode != null &&
-                            _bossHealthDisplayMode.Value == "None" &&
-                            (_bossDpsMode == null ||
-                             _bossDpsMode.Value == "Off")
-                    }));
-
-            _bossNameColorMode = Config.Bind(
-                "Boss Health Bar",
-                "Boss name color",
-                BossNameColorMode.White,
-                new ConfigDescription(
-                    "Choose the boss name color: Pastel uses soft pink, Vanilla uses Valheim red, and White uses white.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 100 }));
-
-            _playerHealthDisplayMode = Config.Bind<string>(
-                "Player Health Bar",
-                "Health display",
-                "Current HP/Max HP",
-                new ConfigDescription(
-                    "Choose the text above other players: current HP, current/max HP, percentage, or None to hide the counter.",
-                    new AcceptableValueList<string>(
-                        new[] { "Current HP", "Current HP/Max HP", "Percentage", "None" }),
-                    new ConfigurationManagerAttributes { Order = 200 }));
-
-            _doublePlayerHealthBar = Config.Bind(
-                "Player Health Bar",
-                "Double size",
-                true,
-                new ConfigDescription(
-                    "Doubles the thickness of multiplayer player HP bars while keeping their width.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 100 }));
-
-            BindDpsConfig();
-            BindVisibilityOptions();
-            BindPlayerFocusConfig();
-
-            _staggerBarEnabled = Config.Bind(
-                "Stagger Bar",
-                "Enabled",
-                true,
-                new ConfigDescription(
-                    "Show a stagger meter beneath enemy HP bars. The meter fills as enemies take stagger damage.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 500 }));
-
-            _staggerVerticalOffset = Config.Bind(
-                "Stagger Bar",
-                "VerticalOffset",
-                8f,
-                new ConfigDescription(
-                    "Adjust the vertical gap between enemy HP and stagger bars. Higher values move stagger bars lower.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 300 }));
-
-            _starVerticalOffset = Config.Bind(
-                "Stagger Bar",
-                "StarVerticalOffset",
-                8f,
-                new ConfigDescription(
-                    "Adjust how far star icons move down when the stagger bar appears. Higher values add more space.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 200 }));
-
-            _hideForNonStaggerable = Config.Bind(
-                "Stagger Bar",
-                "HideForNonStaggerableEnemies",
-                true,
-                new ConfigDescription(
-                    "Automatically hide the stagger meter on enemies with no stagger threshold.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 100 }));
-
-            BindEnhancedOptions();
-
-            _nameColorMode = Config.Bind(
-                "Enemy Health Bar",
-                "Awareness display",
-                NameColorMode.Pastel,
-                new ConfigDescription(
-                    "How an enemy shows that it noticed you. Pastel: soft name colors. Normal: stronger Valheim name colors. Icons: the vanilla awareness icons. None: no awareness display at all.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 60 }));
-
-            _uppercaseNames = Config.Bind(
-                "Enemy Health Bar",
-                "Uppercase names",
-                false,
-                new ConfigDescription(
-                    "Display ordinary enemy names in uppercase letters.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 55 }));
-
-            // Settings from the old "Features" section carry over once.
-            string old;
-            if (TakeOrphan("Features", "NameAwarenessColors", out old))
-                _nameColorMode.Value =
-                    old == "Normal" ? NameColorMode.Normal :
-                    old == "Pastel" ? NameColorMode.Pastel : NameColorMode.Icons;
-            if (TakeOrphan("Features", "UppercaseEnemyNames", out old))
-                _uppercaseNames.Value = string.Equals(old, "true", StringComparison.OrdinalIgnoreCase);
-
-            _syncStaggerForMultiplayer = Config.Bind(
-                "Multiplayer",
-                "SyncStaggerPercentage",
-                true,
-                new ConfigDescription(
-                    "Synchronize enemy stagger-meter progress between players through Valheim network data.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 300 }));
-
-            _syncInterval = Config.Bind(
-                "Multiplayer",
-                "SyncIntervalSeconds",
-                0.10f,
-                new ConfigDescription(
-                    "Minimum number of seconds between multiplayer stagger updates per enemy. Lower values update more frequently.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 200 }));
-
-            _syncMinimumDelta = Config.Bind(
-                "Multiplayer",
-                "SyncMinimumDelta",
-                0.01f,
-                new ConfigDescription(
-                    "Minimum change in stagger-meter progress (0 to 1) before sending another multiplayer update. Smaller values capture finer changes.",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 100 }));
-
-            BindColorConfig();
-
-            _debugBossHealthBar = Config.Bind(
-                "Debug",
-                "(Debug) Player boss health bar",
-                false,
-                new ConfigDescription(
-                    "Show a test boss health bar using the current and maximum HP of your character.",
-                    null,
-                    new ConfigurationManagerAttributes
-                    {
-                        Order = 200,
-                        Category = "Troubleshooting / Debug"
-                    }));
-
-            _debugSeeOwnHealthBar = Config.Bind(
-                "Debug",
-                "See your own nameplate",
-                false,
-                new ConfigDescription(
-                    "Display your own multiplayer nameplate above your character for testing.",
-                    null,
-                    new ConfigurationManagerAttributes
-                    {
-                        Order = 100,
-                        Category = "Troubleshooting / Debug"
-                    }));
         }
 
         internal void SetupHud(
@@ -519,6 +303,7 @@ namespace EnemyHudRework
 
             CreateHealthValue(state);
             SetupCriticalOutline(state);
+            SetupWeaknessIcons(state);
             SetupEnhancedEffects(state);
             CaptureNativePalette(state);
 
@@ -528,7 +313,7 @@ namespace EnemyHudRework
             if (state.Kind == HudKind.Boss)
                 ApplyBossNameColor(state);
             UpdateHealthValue(state);
-            SetupDpsUi(state);
+            SetupBossDps(state);
 
             _states[character] = state;
         }
@@ -576,8 +361,9 @@ namespace EnemyHudRework
                 }
 
                 UpdateHealthValue(state);
-                UpdateDpsUi(state, dt);
                 UpdateCriticalOutline(state);
+                UpdateWeaknessIcons(state, isEnemy);
+                UpdateBossDps(state);
                 UpdateEnhancedEffects(state, isEnemy);
                 UpdateNativePalette(state, isEnemy);
                 UpdateViewportVisibility(state);
@@ -621,7 +407,7 @@ namespace EnemyHudRework
             if (state.Ai == null ||
                 _nameColorMode.Value == NameColorMode.Icons)
             {
-                state.NameGraphic.color = state.NormalNameColor;
+                state.NameGraphic.color = _cEnemyName.Or(state.NormalNameColor);
                 return;
             }
 
@@ -633,7 +419,7 @@ namespace EnemyHudRework
 
             if (_nameColorMode.Value == NameColorMode.None)
             {
-                state.NameGraphic.color = state.NormalNameColor;
+                state.NameGraphic.color = _cEnemyName.Or(state.NormalNameColor);
                 return;
             }
 
@@ -643,21 +429,21 @@ namespace EnemyHudRework
 
             if (isEnemy)
             {
-                alertedColor = pastel
+                alertedColor = _cEnemyAlerted.Or(pastel
                     ? new Color32(0xFF, 0x7A, 0x76, 255)
-                    : new Color32(0xF2, 0x10, 0x0C, 255);
-                awareColor = pastel
+                    : new Color32(0xF2, 0x10, 0x0C, 255));
+                awareColor = _cEnemyAware.Or(pastel
                     ? new Color32(0xFF, 0xE5, 0x80, 255)
-                    : new Color32(0xFE, 0xDB, 0x00, 255);
+                    : new Color32(0xFE, 0xDB, 0x00, 255));
             }
             else
             {
-                alertedColor = pastel
+                alertedColor = _cFriendlyAlerted.Or(pastel
                     ? new Color32(0x83, 0xE5, 0xA7, 255)
-                    : new Color32(0x18, 0xC9, 0x62, 255);
-                awareColor = pastel
+                    : new Color32(0x18, 0xC9, 0x62, 255));
+                awareColor = _cFriendlyAware.Or(pastel
                     ? new Color32(0x86, 0xBE, 0xFF, 255)
-                    : new Color32(0x1E, 0x86, 0xFF, 255);
+                    : new Color32(0x1E, 0x86, 0xFF, 255));
             }
 
             if (state.Ai.IsAlerted())
@@ -665,27 +451,23 @@ namespace EnemyHudRework
             else if (state.Ai.HaveTarget())
                 state.NameGraphic.color = awareColor;
             else
-                state.NameGraphic.color = state.NormalNameColor;
+                state.NameGraphic.color = _cEnemyName.Or(state.NormalNameColor);
         }
 
         // A setting from an older config layout, read once and removed.
-        private bool TakeOrphan(string section, string key, out string value)
-        {
-            value = null;
-            var orphans = AccessTools.Property(typeof(BepInEx.Configuration.ConfigFile), "OrphanedEntries")
-                ?.GetValue(Config) as System.Collections.Generic.Dictionary<BepInEx.Configuration.ConfigDefinition, string>;
-            var definition = new BepInEx.Configuration.ConfigDefinition(section, key);
-            if (orphans == null || !orphans.TryGetValue(definition, out value)) return false;
-            orphans.Remove(definition);
-            return true;
-        }
-
         private void ApplyBossNameColor(EnemyUiState state)
         {
             if (state == null ||
                 state.Kind != HudKind.Boss ||
                 state.NameGraphic == null)
                 return;
+
+            if (_cBossName.Has)
+            {
+                if (state.NameGraphic.color != _cBossName.Value)
+                    state.NameGraphic.color = _cBossName.Value;
+                return;
+            }
 
             switch (_bossNameColorMode.Value)
             {
@@ -765,7 +547,7 @@ namespace EnemyHudRework
             if (state.HealthValueText != null)
             {
                 state.HealthValueText.text = "";
-                state.HealthValueText.color = Color.white;
+                state.HealthValueText.color = HpTextColor();
                 state.HealthValueText.alignment =
                     TextAlignmentOptions.Center;
                 // The Name prefab uses TMP automatic font sizing.
@@ -866,7 +648,7 @@ namespace EnemyHudRework
             }
 
             state.HealthValueObject.SetActive(true);
-            state.HealthValueText.color = Color.white;
+            state.HealthValueText.color = HpTextColor();
 
             if (state.Kind == HudKind.Boss && state.HealthRect != null)
             {
@@ -886,7 +668,7 @@ namespace EnemyHudRework
                 state.HealthValueRect.sizeDelta = state.HealthRect.sizeDelta;
                 state.HealthValueRect.localScale = Vector3.one;
                 state.HealthValueText.fontSize = state.HealthValueBaseFontSize * 0.648f * _hpFontScale.Value;
-                ReportFontIfAdjusted(state.HealthValueText, false);
+                ReportFontIfAdjusted(state.HealthValueText);
                 state.HealthValueText.alignment = TextAlignmentOptions.Center;
             }
             else if (state.NameRect != null)
@@ -897,7 +679,7 @@ namespace EnemyHudRework
                 state.HealthValueRect.sizeDelta = state.NameRect.sizeDelta;
                 state.HealthValueRect.localScale = Vector3.one;
                 state.HealthValueText.fontSize = state.HealthValueBaseFontSize * 0.738f * _hpFontScale.Value;
-                ReportFontIfAdjusted(state.HealthValueText, false);
+                ReportFontIfAdjusted(state.HealthValueText);
                 state.HealthValueText.alignment = TextAlignmentOptions.Center;
 
                 float gap = 5f;
@@ -929,7 +711,7 @@ namespace EnemyHudRework
 
             state.HealthValueRect.localScale = Vector3.one;
             state.HealthValueText.fontSize = state.HealthValueBaseFontSize * 0.738f * _hpFontScale.Value;
-                ReportFontIfAdjusted(state.HealthValueText, false);
+                ReportFontIfAdjusted(state.HealthValueText);
 
             float textWidth = Mathf.Max(
                 80f,
@@ -970,6 +752,10 @@ namespace EnemyHudRework
                         barRect.xMax,
                         Mathf.Clamp01(healthPercentage));
                 }
+
+                // Never let the number run past the bar's left end.
+                localX = Mathf.Max(localX, barRect.xMin + TextWidthIn(
+                    state.HealthValueText, state.HealthValueRect, state.HealthRect));
             }
 
             float localY =
@@ -992,6 +778,13 @@ namespace EnemyHudRework
                     new Vector3(localX, localY, 0f));
 
             state.HealthValueRect.position = worldPoint;
+        }
+
+        // A text's visible width, in another rect's local units.
+        private static float TextWidthIn(TMP_Text text, RectTransform textRect, RectTransform space)
+        {
+            return text.preferredWidth * Mathf.Abs(textRect.lossyScale.x) /
+                Mathf.Max(0.0001f, Mathf.Abs(space.lossyScale.x));
         }
 
         private static void CaptureHealthFill(
@@ -1291,12 +1084,13 @@ namespace EnemyHudRework
             if (state.StaggerRoot != null)
                 state.StaggerRoot.SetActive(active);
 
+            // The chosen star row height, below the double-height health
+            // bar's extra height, and below the stagger bar while it shows
+            // (moving with its gap setting).
             float y =
-                active
-                    ? -(
-                        Mathf.Abs(_starVerticalOffset.Value) +
-                        GetExtraHealthHeight(state))
-                    : 0f;
+                _starRowHeight.Value -
+                GetExtraHealthHeight(state) -
+                (active ? Mathf.Abs(_staggerVerticalOffset.Value) : 0f);
 
             if (state.HasLevel2 &&
                 state.Level2 != null)
@@ -1433,8 +1227,8 @@ namespace EnemyHudRework
             if (state == null)
                 return;
 
-            Color color = new Color(
-                1f, 1f, 1f, Mathf.Clamp01(alpha));
+            Color color = _staggerFlashBase;
+            color.a *= Mathf.Clamp01(alpha);
 
             if (state.FlashTop != null)
                 state.FlashTop.color = color;
@@ -1556,7 +1350,8 @@ namespace EnemyHudRework
                 return;
 
             Player localPlayer = Player.m_localPlayer;
-            if (_debugSeeOwnHealthBar.Value && localPlayer != null)
+            // Like vanilla shows you to other players: hidden while sneaking.
+            if (_debugSeeOwnHealthBar.Value && localPlayer != null && !localPlayer.IsCrouching())
             {
                 if (EnemyHudShowHudMethod != null)
                     EnemyHudShowHudMethod.Invoke(enemyHud, new object[] { localPlayer, false });
@@ -1568,7 +1363,9 @@ namespace EnemyHudRework
                 {
                     // EnemyHud.UpdateHuds positions player HUDs using the game's
                     // normal multiplayer head-point logic. We only keep it visible.
-                    ownState.Gui.SetActive(true);
+                    // The vanilla update already ran this frame, so a hud
+                    // made just now gets placed and filled here, the same way.
+                    PlaceOwnNameplate(ownState, localPlayer);
                     ApplyHealthBarScale(ownState);
                     UpdateHealthValue(ownState);
                 }
@@ -1586,6 +1383,28 @@ namespace EnemyHudRework
             }
 
             UpdateDebugBossHud(enemyHud);
+        }
+
+        private static void PlaceOwnNameplate(EnemyUiState state, Player player)
+        {
+            Camera camera = Utils.GetMainCamera();
+            if (camera == null) return;
+            Vector3 position = camera.WorldToScreenPointScaled(
+                player.GetHeadPoint() + Vector3.up * 0.3f);
+            bool visible = position.z > 0f;
+            if (state.Gui.activeSelf != visible) state.Gui.SetActive(visible);
+            if (!visible) return;
+            state.Gui.transform.position = position;
+
+            float health = player.GetHealthPercentage();
+            Transform t = state.Gui.transform;
+            GuiBar bar;
+            Transform fast = t.Find("Health/health_fast");
+            if (fast != null && (bar = fast.GetComponent<GuiBar>()) != null) bar.SetValue(health);
+            Transform slow = t.Find("Health/health_slow");
+            if (slow != null && (bar = slow.GetComponent<GuiBar>()) != null) bar.SetValue(health);
+            Transform friendly = t.Find("Health/health_fast_friendly");
+            if (friendly != null && (bar = friendly.GetComponent<GuiBar>()) != null) bar.SetValue(health);
         }
 
         private void UpdateDebugBossHud(EnemyHud enemyHud)
@@ -1633,7 +1452,8 @@ namespace EnemyHudRework
             UpdateNativePalette(_debugBossState, false);
             UpdateBarBackground(_debugBossState);
             UpdateHealthValue(_debugBossState);
-            UpdateDpsUi(_debugBossState, 0f);
+            UpdateWeaknessIcons(_debugBossState, true);
+            UpdateBossDps(_debugBossState);
         }
 
         private void CreateDebugBossHud(EnemyHud enemyHud, Player localPlayer)
@@ -1697,15 +1517,16 @@ namespace EnemyHudRework
             ApplyHealthBarScale(state);
             ApplyBossNameColor(state);
             UpdateHealthValue(state);
-            SetupDpsUi(state);
-            UpdateDpsUi(state, 0f);
+            SetupWeaknessIcons(state);
+            SetupBossDps(state);
         }
 
         private void DestroyDebugBossHud()
         {
             if (_debugBossState != null)
             {
-                DestroyDpsUi(_debugBossState);
+                DestroyWeaknessIcons(_debugBossState);
+                DestroyBossDps(_debugBossState);
                 ForgetNativePalette(_debugBossState);
                 if (_debugBossState.HealthValueObject != null)
                     Destroy(_debugBossState.HealthValueObject);
@@ -1762,8 +1583,9 @@ namespace EnemyHudRework
                 return;
 
             RestorePlayerNameplateOpacity(state);
-            DestroyDpsUi(state);
             DestroyCriticalOutline(state);
+            DestroyWeaknessIcons(state);
+            DestroyBossDps(state);
             DestroyEnhancedEffects(state);
             ForgetNativePalette(state);
 

@@ -14,24 +14,6 @@ namespace EnemyHudRework
         // Same see-through black as the player's own HUD bars.
         private static readonly Color TransparentBackground = new Color32(0, 0, 0, 123);
 
-        private void BindEnhancedOptions()
-        {
-            _transparentBackground = Config.Bind(
-                "Bars", "Transparent bar background", true,
-                new ConfigDescription(
-                    "Make the solid gray background behind health and stagger bars see-through, like the player's own HUD bars.",
-                    null, new ConfigurationManagerAttributes { Order = 180 }));
-            _staggerRecoveryEnabled = Config.Bind(
-                "Stagger Bar", "Recovery overlay", true,
-                new ConfigDescription(
-                    "Show a yellow layer inside the enemy stagger bar during a stagger. It recedes from right to left over the enemy's actual stagger time (the window in which your hits deal double damage), revealing the orange bar beneath.",
-                    null, new ConfigurationManagerAttributes { Order = 175 }));
-
-
-
-
-        }
-
         private void SetupEnhancedEffects(EnemyUiState state)
         {
             if (state == null || state.Kind != HudKind.Enemy)
@@ -200,7 +182,8 @@ namespace EnemyHudRework
         // changes; no per-frame work after that.
         private void UpdateBarBackground(EnemyUiState state)
         {
-            int want = _transparentBackground != null && _transparentBackground.Value ? 1 : 0;
+            // Re-applied only when the setting or a color changes.
+            int want = (_transparentBackground.Value ? 1 : 0) + _colorVersion * 2;
             if (state.BkgApplied == want) return;
             if (state.BkgApplied < 0)
             {
@@ -212,9 +195,9 @@ namespace EnemyHudRework
                 if (state.StaggerBkg != null) state.StaggerBkgOriginal = state.StaggerBkg.color;
             }
             if (state.HealthBkg != null)
-                state.HealthBkg.color = want == 1 ? TransparentBackground : state.HealthBkgOriginal;
+                state.HealthBkg.color = BarBackground(state.HealthBkgOriginal);
             if (state.StaggerBkg != null)
-                state.StaggerBkg.color = want == 1 ? TransparentBackground : state.StaggerBkgOriginal;
+                state.StaggerBkg.color = BarBackground(state.StaggerBkgOriginal);
             state.BkgApplied = want;
         }
 
