@@ -107,7 +107,7 @@ namespace EnemyHudRework
                 "Vanilla awareness icon (Awareness display: Icons). Empty keeps the game's color.");
             _cAlertedIcon = HexEntry(SecIconColors, "Alerted icon",
                 "Vanilla alerted icon (Awareness display: Icons). Empty keeps the game's color.");
-            string[] names = { "Blunt", "Slash", "Pierce", "Fire", "Frost", "Lightning", "Poison", "Spirit", "Pickaxe" };
+            string[] names = { "Blunt", "Slash", "Pierce", "Fire", "Frost", "Lightning", "Poison", "Spirit", "Pickaxe", "Chop" };
             for (int i = 0; i < DamageKinds; i++)
                 _cDamage[i] = HexEntry(SecIconColors, names[i] + " weakness",
                     names[i] + " weakness icon. Default #" + ColorUtility.ToHtmlStringRGB(DamageTint[i]) + ".");

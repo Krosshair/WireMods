@@ -24,12 +24,12 @@ namespace EnemyHudRework
         private ConfigEntry<float> _bossIconHeight;
         private ConfigEntry<float> _bossIconSpacing;
 
-        private enum DamageKind { Blunt, Slash, Pierce, Fire, Frost, Lightning, Poison, Spirit, Pickaxe }
-        private const int DamageKinds = 9;
+        private enum DamageKind { Blunt, Slash, Pierce, Fire, Frost, Lightning, Poison, Spirit, Pickaxe, Chop }
+        private const int DamageKinds = 10;
         private const int Weak = 1, Resist = -1, Immune = -2;
 
         private static readonly string[] DamageAsset =
-            { "blunt", "slash", "pierce", "fire", "frost", "lightning", "poison", "spirit", "pickaxe" };
+            { "blunt", "slash", "pierce", "fire", "frost", "lightning", "poison", "spirit", "pickaxe", "chop" };
 
         // Tints, multiplied over the gray shapes (as the game tints stars).
         private static readonly Color[] DamageTint =
@@ -42,7 +42,8 @@ namespace EnemyHudRework
             new Color32(120, 205, 255, 255), // lightning: light blue (tall rhombus)
             new Color32(120, 210, 70, 255),  // poison: green
             new Color32(90, 255, 200, 255),  // spirit: aqua green
-            new Color32(80, 68, 98, 255)     // pickaxe: very dark violet gray
+            new Color32(80, 68, 98, 255),    // pickaxe: very dark violet gray
+            new Color32(80, 68, 98, 255)     // chop: same as pickaxe, axe head pointing right
         };
         // Vanilla's resisted-hit gray, at 45% so weaknesses stand out.
         private static readonly Color ResistTint = new Color(0.6f, 0.6f, 0.6f, 0.45f);
@@ -140,7 +141,8 @@ namespace EnemyHudRework
                 case DamageKind.Lightning: return m.m_lightning;
                 case DamageKind.Poison: return m.m_poison;
                 case DamageKind.Spirit: return m.m_spirit;
-                default: return m.m_pickaxe;
+                case DamageKind.Pickaxe: return m.m_pickaxe;
+                default: return m.m_chop;
             }
         }
 
