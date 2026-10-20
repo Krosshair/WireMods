@@ -287,14 +287,6 @@ namespace EnemyHudRework
             return img != null ? img.rectTransform : null;
         }
 
-        private static void WorldYRange(RectTransform r, out float min, out float max)
-        {
-            Rect rr = r.rect;
-            float a = r.TransformPoint(new Vector3(rr.center.x, rr.yMin, 0f)).y;
-            float b = r.TransformPoint(new Vector3(rr.center.x, rr.yMax, 0f)).y;
-            min = Mathf.Min(a, b); max = Mathf.Max(a, b);
-        }
-
         private static void HideWeaknessIcons(WeaknessUi ui)
         {
             if (ui.Root.gameObject.activeSelf) ui.Root.gameObject.SetActive(false);
@@ -376,7 +368,7 @@ namespace EnemyHudRework
                     float x = right - (n % perRow) * step;
                     float y = -(n / perRow) * step;
                     Color tint = IconTint(i, want == Weak);
-                    show[i] = Place(ui, i, x, y, size, fillRatio, tint, _cIconOutline.Or(Color.black), false);
+                    show[i] = Place(ui, i, x, y, size, fillRatio, tint, Color.black, false);
                     if (show[i]) n++;
                 }
             }
@@ -436,7 +428,7 @@ namespace EnemyHudRework
                     if (ui.Kind[i] != want || !KindAllowed(i)) continue;
                     float x = want == Weak ? -(edge + left * step) : edge + right * step;
                     Color tint = IconTint(i, want == Weak);
-                    show[i] = Place(ui, i, x, iconY, size, 12f / 15f, tint, _cIconOutline.Or(Color.black), false);
+                    show[i] = Place(ui, i, x, iconY, size, 12f / 15f, tint, Color.black, false);
                     if (!show[i]) continue;
                     if (want == Weak) left++; else right++;
                 }
@@ -456,9 +448,10 @@ namespace EnemyHudRework
 
         // The outline fades with the icon, so faint icons stay faint.
         // A silhouette is the outlined shape in one flat color, no inner fill.
-        private static bool Place(WeaknessUi ui, int kind, float x, float y, float size, float fillRatio, Color color, Color outline, bool silhouette)
+        private bool Place(WeaknessUi ui, int kind, float x, float y, float size, float fillRatio, Color color, Color outline, bool silhouette)
         {
-            Sprite back = DamageBack[kind], fill = DamageFill[kind];
+            int shape = _shapeOf[kind];
+            Sprite back = DamageBack[shape], fill = DamageFill[shape];
             if (back == null || fill == null) return false;
             Image img = ui.Slots[kind], f = ui.Fills[kind];
             if (img.sprite != back) img.sprite = back;
@@ -484,7 +477,7 @@ namespace EnemyHudRework
 
         private Color IconTint(int kind, bool weak)
         {
-            return weak ? _cDamage[kind].Or(DamageTint[kind]) : _cResist.Or(ResistTint);
+            return weak ? _tintOf[kind] : _resistTint;
         }
 
         private void DestroyWeaknessIcons(EnemyUiState state)
@@ -503,7 +496,10 @@ namespace EnemyHudRework
         private static void Notify(object who)
         {
             if (EnemyHudReworkPlugin.Instance != null && who != null && ReferenceEquals(who, Player.m_localPlayer))
+            {
                 EnemyHudReworkPlugin.Instance.OnLocalEquipmentChanged();
+                EnemyHudReworkPlugin.Instance.InvalidatePredictions();
+            }
         }
 
         [HarmonyLib.HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]

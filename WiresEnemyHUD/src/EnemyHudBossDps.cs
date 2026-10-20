@@ -162,7 +162,7 @@ namespace EnemyHudRework
                 dps.ShownValue = value;
                 dps.ShownSuffix = suffix;
             }
-            Color color = _cDpsText.Or(Color.white);
+            Color color = Color.white;
             if (dps.Text.color != color) dps.Text.color = color;
             if (!dps.TextObject.activeSelf) dps.TextObject.SetActive(true);
 

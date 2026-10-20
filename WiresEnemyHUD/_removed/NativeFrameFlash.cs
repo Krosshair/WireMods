@@ -125,7 +125,7 @@ namespace EnemyHudRework
         {
             int L = Quantize(l), B = Quantize(b), R = Quantize(r), T = Quantize(t);
             int reference = Mathf.Max(1, Mathf.RoundToInt(canvasReference));
-            long key = L | (long)B << 8 | (long)R << 16 | (long)T << 24 | (long)reference << 32;
+            long key = (long)L | (long)B << 8 | (long)R << 16 | (long)T << 24 | (long)reference << 32;
             Sprite sprite;
             if (sprites.TryGetValue(key, out sprite) && sprite != null) return sprite;
             if (white == null)

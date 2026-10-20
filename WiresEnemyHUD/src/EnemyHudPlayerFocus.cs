@@ -84,12 +84,10 @@ namespace EnemyHudRework
 
             float target = state.Character == directlyTargeted
                 ? state.PlayerOriginalAlpha
-                : state.PlayerOriginalAlpha * 0.25f;
+                : state.PlayerOriginalAlpha * 0.1f;
 
-            // Short unobtrusive fade; the final target is exactly 25%.
-            group.alpha = Mathf.MoveTowards(
-                group.alpha, target,
-                Mathf.Max(0f, dt) * 6f);
+            // Instant: 10% until aimed at, full the moment you are.
+            if (group.alpha != target) group.alpha = target;
         }
 
         private static void RestorePlayerNameplateOpacity(EnemyUiState state)

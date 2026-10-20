@@ -182,8 +182,8 @@ namespace EnemyHudRework
         // changes; no per-frame work after that.
         private void UpdateBarBackground(EnemyUiState state)
         {
-            // Re-applied only when the setting or a color changes.
-            int want = (_transparentBackground.Value ? 1 : 0) + _colorVersion * 2;
+            // Re-applied only when the setting changes.
+            int want = _transparentBackground.Value ? 1 : 0;
             if (state.BkgApplied == want) return;
             if (state.BkgApplied < 0)
             {

@@ -1,8 +1,12 @@
 # Wire's Enemy HUD
 
-Valheim's own enemy health bars, finished. Weakness icons, a stagger bar, HP numbers and smarter visibility, drawn with the game's own art, fonts and colors, so it looks like it shipped with the game.
+The ORIGINAL health bar mod. Weakness icons, a stagger bar, HP numbers, bubble bars, hit predictions and smarter visibility, drawn with the game's own art, fonts and colors, so it looks like it shipped with the game.
 
 ![Health bar features](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/health-bar-legend.jpg)
+
+## New in 0.8.0
+
+![Stuff added in 0.8.0](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.0.jpg)
 
 ## Weakness icons
 
@@ -12,11 +16,12 @@ Valheim's own enemy health bars, finished. Weakness icons, a stagger bar, HP num
 * One shape and color per damage type, built like the level stars.
 * Bosses show weaknesses left of their name and resistances to the right.
 * Read from each creature's real damage modifiers, so modded creatures work too.
+* Limited mode (off by default): only the icons of what your weapon in hand and its ammo can deal.
 
 ## Stagger bar
 
 * A stagger meter under the health bar, styled after your own.
-* The frame flashes white when an enemy is staggered.
+* The frame flashes white the moment an enemy is staggered, just like your own stagger bar.
 * While staggered, a yellow layer drains over the exact window your hits deal double damage.
 * Hidden on enemies that can't be staggered. Synced in multiplayer.
 
@@ -27,12 +32,26 @@ Valheim's own enemy health bars, finished. Weakness icons, a stagger bar, HP num
 * Boss HP follows the health fill and never runs off the bar. A DPS counter sits under it.
 * See-through backgrounds, like your own HUD bars.
 * Friendly creatures get their own bar color.
-* A white flash on the frame when a backstab or a hit on a staggered enemy lands.
+* A white flash on the frame when a backstab or a hit on a staggered enemy lands. Never on the killing blow.
+
+## Bubble bars
+
+* A bar above the health bar of anyone inside a protective bubble (Staff of Protection), showing how much it can still take.
+* Purple on friendlies (eitr), blue on enemies (shaman magic).
+* Your own bubble gets a bar right of your health bar, same height, half the width. The forsaken power moves over for it.
+* When a bubble breaks, its bar flashes, stays empty for a second, then goes.
+* Other players need Enemy HUD for their bubble to show.
+
+## Hit predictions
+
+* Off by default. Shows what your next hit would do to the enemy you're looking at, on its health, stagger and bubble bars.
+* Uses the middle of your possible damage, or the weakest possible hit if you never want to see something that doesn't happen.
+* Counts the creature's weaknesses and resistances, sneak attacks, the combo finisher and double damage on staggered enemies.
 
 ## Awareness and visibility
 
 * The name color shows whether an enemy noticed you or is hunting you. Or use the vanilla icons if you want, or nothing, if you're a masochist.
-* Hitting an enemy shows its bar for a few seconds, at any distance.
+* Hitting or parrying an enemy shows its bar for a few seconds, at any distance.
 * Bars stay on screen: a troll's bar slides along the top edge instead of vanishing.
 * Other players' nameplates fade until you aim at them.
 
@@ -46,7 +65,7 @@ Valheim's own enemy health bars, finished. Weakness icons, a stagger bar, HP num
 
 * Presets: Author's Choice, or Vanilla as a clean starting point.
 * Everything can be changed or turned off in the in-game Configuration Manager (I use the one by Shudnal).
-* A hex color option for every color the HUD uses, vanilla ones included. Not recommended, but you can if you want to.
+* Pick each damage type's icon shape and color, plus one color for resistances.
 
 ## Disclaimer: the code is AI assisted since I barely know C#. Not fully AI nor human. No AI image generation was used.
 ## https://ko-fi.com/krosshair

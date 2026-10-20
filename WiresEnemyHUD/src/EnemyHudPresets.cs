@@ -26,7 +26,7 @@ namespace EnemyHudRework
 
             try
             {
-                ClearColorOverrides();
+                ResetIconLook();
                 switch (preset)
                 {
                     case "Vanilla":

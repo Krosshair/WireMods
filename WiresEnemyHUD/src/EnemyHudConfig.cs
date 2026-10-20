@@ -17,12 +17,10 @@ namespace EnemyHudRework
         private const string SecBoss = "05 - Boss Bar";
         private const string SecPlayer = "06 - Player Nameplates";
         private const string SecLook = "07 - Appearance";
-        private const string SecBarColors = "08 - Bar Colors";
-        private const string SecTextColors = "09 - Text Colors";
-        private const string SecIconColors = "10 - Icon Colors";
-        private const string SecSync = "11 - Multiplayer";
-        private const string SecDebug = "12 - Debug";
-        private const string SecOldColors = "Colors";
+        private const string SecIconColors = "08 - Damage Icons";
+        private const string SecSync = "09 - Multiplayer";
+        private const string SecDebug = "10 - Debug";
+        private const string SecPredict = "11 - Hit Predictions";
 
         private static readonly string[] HealthTextModes =
             { "Current HP", "Current HP/Max HP", "Percentage", "None" };
@@ -33,6 +31,19 @@ namespace EnemyHudRework
 
         private void BindConfig()
         {
+            // 0.8.0: the bar and text color sections are gone; the sections
+            // after them moved up. Saved values carry over.
+            DropSection("08 - Bar Colors");
+            DropSection("09 - Text Colors");
+            DropSection("Colors");
+            DropSection("08 - Colors");
+            DropSection("10 - Icon Colors");
+            DropSection("08 - Icon Colors");
+            MoveSection("11 - Multiplayer", SecSync);
+            MoveSection("12 - Debug", SecDebug);
+            MoveSection("13 - Hit Predictions", SecPredict);
+            MoveSection("14 - Bubble Bar", "12 - Bubble Bar");
+
             // 0.6.0 "Features" values carry over into the new keys below.
             string oldAwareness, oldUppercase;
             TakeOrphan("Features", "NameAwarenessColors", out oldAwareness);
@@ -45,7 +56,7 @@ namespace EnemyHudRework
                 new AcceptableValueList<string>("Author's Choice", "Vanilla"), null,
                 "General", "Preset");
             Config.SettingChanged += OnPresetSettingChanged;
-            Config.SettingChanged += (s, e) => MarkAllWeaknessDirty();
+            Config.SettingChanged += (s, e) => { MarkAllWeaknessDirty(); InvalidatePredictions(); };
 
             // ---- 02 Enemy bars ----
             _order = 1000;
@@ -59,6 +70,9 @@ namespace EnemyHudRework
             _showOnDamage = Bind(SecEnemy, "Show on damage", true,
                 "Reveal an enemy's bar for 3 seconds after you damage it. Each hit restarts the timer.",
                 null, null, "Enemy Health Bar", "Show on damage");
+            _showOnParry = Bind(SecEnemy, "Show on parry", true,
+                "Reveal an enemy's bar for 3 seconds after you parry its attack.",
+                null, null);
             _keepNameplatesOnScreen = Bind(SecEnemy, "Keep bars on screen", true,
                 "Keep visible enemy bars within the screen edges. Bars above the screen slide along the top edge.",
                 null, null, "Enemy Health Bar", "Keep bars on screen");
@@ -161,7 +175,7 @@ namespace EnemyHudRework
                 "Doubles the thickness of other players' health bars while keeping their width.",
                 null, null, "Player Health Bar", "Double size");
             _playerNameplateAimFade = Bind(SecPlayer, "Fade unless aimed at", true,
-                "Fade other players' nameplates to 25% until your crosshair is on that player.",
+                "Dim other players' nameplates to 10% until your crosshair is on that player; they show fully the moment it is.",
                 null, null, "Player Health Bar", "Fade unfocused player nameplates");
 
             // ---- 07 Appearance ----
@@ -177,11 +191,14 @@ namespace EnemyHudRework
                 "Scale of the boss DPS counter. 1.0 is the original size.",
                 new AcceptableValueRange<float>(.5f, 2.5f), null);
 
-            // ---- 08-10 Colors ----
-            BindColorSections();
-            RefreshFlashColors();
+            // ---- 13 Hit predictions ----
+            BindHitPredictionConfig(SecPredict);
+            BindBubbleConfig();
 
-            // ---- 11 Multiplayer ----
+            // ---- 08 Damage icons ----
+            BindColorSections();
+
+            // ---- 09 Multiplayer ----
             _order = 1000;
             Func<bool> syncOff = () => _syncStaggerForMultiplayer != null && !_syncStaggerForMultiplayer.Value;
             _syncStaggerForMultiplayer = Bind(SecSync, "Sync stagger", true,
@@ -194,7 +211,7 @@ namespace EnemyHudRework
                 "Least change in stagger progress (0 to 1) before another update is sent.",
                 null, syncOff, "Multiplayer", "SyncMinimumDelta", "09 - Multiplayer", "Sync minimum change");
 
-            // ---- 12 Debug ----
+            // ---- 10 Debug ----
             _order = 1000;
             _debugBossHealthBar = Bind(SecDebug, "Test boss bar", false,
                 "Show a test boss bar using your own character's health and resistances.",
@@ -256,6 +273,34 @@ namespace EnemyHudRework
                 catch (Exception) { }
             }
             return entry;
+        }
+
+        private Dictionary<ConfigDefinition, string> Orphans()
+        {
+            return AccessTools.Property(typeof(ConfigFile), "OrphanedEntries")
+                ?.GetValue(Config) as Dictionary<ConfigDefinition, string>;
+        }
+
+        private void DropSection(string section)
+        {
+            var orphans = Orphans();
+            if (orphans == null) return;
+            foreach (ConfigDefinition d in new List<ConfigDefinition>(orphans.Keys))
+                if (d.Section == section) orphans.Remove(d);
+        }
+
+        // Saved values of a renamed section, moved to its new name before
+        // anything binds there (the newer name loses to the moved values).
+        private void MoveSection(string from, string to)
+        {
+            var orphans = Orphans();
+            if (orphans == null) return;
+            foreach (ConfigDefinition d in new List<ConfigDefinition>(orphans.Keys))
+            {
+                if (d.Section != from) continue;
+                orphans[new ConfigDefinition(to, d.Key)] = orphans[d];
+                orphans.Remove(d);
+            }
         }
 
         private bool TakeOrphan(string section, string key, out string value)

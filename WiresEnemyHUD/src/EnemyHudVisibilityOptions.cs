@@ -34,6 +34,7 @@ namespace EnemyHudRework
         }
 
         private ConfigEntry<bool> _showOnDamage;
+        private ConfigEntry<bool> _showOnParry;
         private ConfigEntry<bool> _keepNameplatesOnScreen;
         private ConfigEntry<bool> _criticalHitFlash;
         private ConfigEntry<float> _hpFontScale;
@@ -43,12 +44,12 @@ namespace EnemyHudRework
             public float LastHp;
             public float SeenAt;
             public float ShowUntil;
+            public float ParryUntil;
             public float PendingLocalHitUntil = -999f;
         }
 
         private sealed class HealthOutline
         {
-            public Image[] Border;
             public float StartsAt = -999f;
             public float EndsAt = -999f;
             public float ObservedCriticalUntil = -999f;
@@ -76,6 +77,7 @@ namespace EnemyHudRework
         {
             _keepNameplatesOnScreen.Value = enabled;
             _showOnDamage.Value = enabled;
+            _showOnParry.Value = enabled;
             _criticalHitFlash.Value = enabled;
             _weaknessIcons.Value = enabled;
             _resistanceIcons.Value = enabled;
@@ -131,6 +133,8 @@ namespace EnemyHudRework
         // Sample actual HP changes, but only as confirmation of a
         // recently sent, locally attributed hit. HP loss alone never
         // reveals another player's or environmental damage.
+        private readonly List<Character> _missingSamples = new List<Character>();
+
         private void SampleHealthForVisibility()
         {
             if (_showOnDamage == null ||
@@ -139,8 +143,8 @@ namespace EnemyHudRework
             if (!_showOnDamage.Value)
             {
                 // Re-enabling it later must not treat old, unseen
-                // damage as a fresh hit.
-                _healthSamples.Clear();
+                // damage as a fresh hit. Parry reveals keep theirs.
+                if (_healthSamples.Count > 0 && !_showOnParry.Value) _healthSamples.Clear();
                 return;
             }
 
@@ -180,7 +184,8 @@ namespace EnemyHudRework
 
             if (Time.frameCount % 120 == 0)
             {
-                var missing = new List<Character>();
+                List<Character> missing = _missingSamples;
+                missing.Clear();
                 foreach (var entry in _healthSamples)
                     if (entry.Key == null ||
                         now - entry.Value.SeenAt > 5f)
@@ -193,15 +198,41 @@ namespace EnemyHudRework
             }
         }
 
+        // Shown for a while after you damage or parry it.
         private bool ForceShowOnDamage(Character c)
         {
-            if (_showOnDamage == null ||
-                !_showOnDamage.Value ||
-                !IsOrdinaryEnemy(c))
+            if (_showOnDamage == null || !IsOrdinaryEnemy(c))
                 return false;
             HealthSample sample;
-            return _healthSamples.TryGetValue(c, out sample) &&
-                Time.unscaledTime < sample.ShowUntil;
+            if (!_healthSamples.TryGetValue(c, out sample)) return false;
+            float now = Time.unscaledTime;
+            return (_showOnDamage.Value && now < sample.ShowUntil) ||
+                (_showOnParry.Value && now < sample.ParryUntil);
+        }
+
+        // You parried this attacker: its bar shows like after a hit.
+        internal void OnLocalParry(Character attacker)
+        {
+            if (_showOnParry == null || !_showOnParry.Value || !IsOrdinaryEnemy(attacker))
+                return;
+            if (!_showOnDamage.Value)
+            {
+                // Nothing else tidies the list then: drop finished ones.
+                float t = Time.unscaledTime;
+                _missingSamples.Clear();
+                foreach (var entry in _healthSamples)
+                    if (entry.Key == null || t >= entry.Value.ParryUntil) _missingSamples.Add(entry.Key);
+                foreach (Character c in _missingSamples) _healthSamples.Remove(c);
+            }
+            HealthSample sample;
+            if (!_healthSamples.TryGetValue(attacker, out sample))
+            {
+                sample = new HealthSample();
+                sample.LastHp = attacker.GetHealth();
+                _healthSamples[attacker] = sample;
+            }
+            sample.SeenAt = Time.unscaledTime;
+            sample.ParryUntil = Time.unscaledTime + DamageShowSeconds;
         }
 
         // Real local damage, including the very first hit that
@@ -258,55 +289,13 @@ namespace EnemyHudRework
                     hud.m_hoverShowDuration;
         }
 
-        private static Image MakeOutlineEdge(
-            Transform parent, string name, Vector2 min,
-            Vector2 max, Vector2 pivot, Vector2 pos,
-            Vector2 size)
-        {
-            GameObject obj = new GameObject(
-                name, typeof(RectTransform), typeof(Image));
-            obj.transform.SetParent(parent, false);
-            RectTransform r = obj.GetComponent<RectTransform>();
-            r.anchorMin = min;
-            r.anchorMax = max;
-            r.pivot = pivot;
-            r.anchoredPosition = pos;
-            r.sizeDelta = size;
-            Image image = obj.GetComponent<Image>();
-            image.raycastTarget = false;
-            image.color = Color.clear;
-            return image;
-        }
-
         private void SetupCriticalOutline(EnemyUiState state)
         {
             if (state?.HealthRect == null ||
                 state.Kind != HudKind.Enemy)
                 return;
 
-            Transform hp = state.HealthRect;
-            HealthOutline outline = new HealthOutline
-            {
-                Border = new[]
-                {
-                    MakeOutlineEdge(hp, "WireCritTop",
-                        new Vector2(0f,1f), new Vector2(1f,1f),
-                        new Vector2(.5f,1f), Vector2.zero,
-                        new Vector2(0f,2f)),
-                    MakeOutlineEdge(hp, "WireCritBottom",
-                        new Vector2(0f,0f), new Vector2(1f,0f),
-                        new Vector2(.5f,0f), Vector2.zero,
-                        new Vector2(0f,2f)),
-                    MakeOutlineEdge(hp, "WireCritLeft",
-                        new Vector2(0f,0f), new Vector2(0f,1f),
-                        new Vector2(0f,.5f), Vector2.zero,
-                        new Vector2(2f,0f)),
-                    MakeOutlineEdge(hp, "WireCritRight",
-                        new Vector2(1f,0f), new Vector2(1f,1f),
-                        new Vector2(1f,.5f), Vector2.zero,
-                        new Vector2(2f,0f))
-                }
-            };
+            HealthOutline outline = new HealthOutline();
 
             ZNetView view =
                 state.Character.GetComponent<ZNetView>();
@@ -406,21 +395,11 @@ namespace EnemyHudRework
                 ? (now - outline.StartsAt) / duration : 1f;
             float criticalAlpha = enabled &&
                 progress >= 0f && progress < 1f
-                ? Mathf.Sin(progress * Mathf.PI) : 0f;
+                ? VanillaFlash(progress) : 0f;
 
-            float alpha = criticalAlpha;
-
-            // The four whites cover the existing dark HP frame's
-            // entire thickness, following the real resized bar.
-            if (outline.Border != null && outline.Border.Length == 4)
-                NativeFrameFlash.Fit(state.HealthRect,
-                    outline.Border[0], outline.Border[1],
-                    outline.Border[2], outline.Border[3]);
-            Color borderColor = _critFlashBase;
-            borderColor.a *= alpha;
-            foreach (Image piece in outline.Border)
-                if (piece != null)
-                    piece.color = borderColor;
+            // Drawn like the game's own flash: the bar's dark frame itself
+            // lights up (see ApplyFrameFlash).
+            state.CritFlashAlpha = criticalAlpha;
         }
 
         private void DestroyCriticalOutline(EnemyUiState state)
@@ -428,9 +407,6 @@ namespace EnemyHudRework
             HealthOutline outline;
             if (!_healthOutlines.TryGetValue(state, out outline))
                 return;
-            foreach (Image image in outline.Border)
-                if (image != null)
-                    Destroy(image.gameObject);
             _healthOutlines.Remove(state);
         }
 
@@ -576,7 +552,7 @@ namespace EnemyHudRework
         private void ApplyDamageRevealAfterHudUpdate(EnemyHud hud)
         {
             if (hud == null || Hud.IsUserHidden() ||
-                _showOnDamage == null || !_showOnDamage.Value)
+                _showOnDamage == null || (!_showOnDamage.Value && !_showOnParry.Value))
                 return;
 
             Camera camera = Utils.GetMainCamera();
@@ -630,10 +606,6 @@ namespace EnemyHudRework
         {
             _healthSamples.Clear();
             _lastCriticalHits.Clear();
-            foreach (var entry in _healthOutlines)
-                foreach (Image image in entry.Value.Border)
-                    if (image != null)
-                        Destroy(image.gameObject);
             _healthOutlines.Clear();
         }
 
@@ -643,6 +615,34 @@ namespace EnemyHudRework
             private static void Prefix()
             {
                 Instance?.SampleHealthForVisibility();
+            }
+        }
+
+        // A parry is decided on your own machine, in your block: the timed
+        // block window is read before the block runs, the same check the
+        // game makes.
+        [HarmonyPatch(typeof(Humanoid), "BlockAttack")]
+        private static class ParryVisibility
+        {
+            private static readonly AccessTools.FieldRef<Humanoid, float> BlockTimer =
+                AccessTools.FieldRefAccess<Humanoid, float>("m_blockTimer");
+            private static readonly Func<Humanoid, ItemDrop.ItemData> CurrentBlocker =
+                AccessTools.MethodDelegate<Func<Humanoid, ItemDrop.ItemData>>(
+                    AccessTools.Method(typeof(Humanoid), "GetCurrentBlocker"));
+
+            private static void Prefix(Humanoid __instance, out bool __state)
+            {
+                __state = false;
+                if (Instance == null || !ReferenceEquals(__instance, Player.m_localPlayer)) return;
+                ItemDrop.ItemData blocker = CurrentBlocker(__instance);
+                float timer = BlockTimer(__instance);
+                __state = blocker != null && blocker.m_shared.m_timedBlockBonus > 1f &&
+                    timer != -1f && timer < 0.25f;
+            }
+
+            private static void Postfix(Character attacker, bool __result, bool __state)
+            {
+                if (__state && __result && attacker != null) Instance?.OnLocalParry(attacker);
             }
         }
 
@@ -717,8 +717,10 @@ namespace EnemyHudRework
                         ? (float)BackstabTimeField.GetValue(
                             __instance)
                         : -999f;
-                if (backstab != before.y ||
-                    before.z > .5f)
+                // Not on the killing blow: the bar is gone with it.
+                if ((backstab != before.y ||
+                    before.z > .5f) &&
+                    __instance.GetHealth() > 0f)
                     Instance.MarkCriticalHit(__instance);
 
             }

@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.7.4";
+        public const string PluginVersion = "0.8.0";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -25,7 +25,6 @@ namespace EnemyHudRework
         internal static EnemyHudReworkPlugin Instance;
 
         public enum NameColorMode { Pastel, Normal, Icons, None }
-        public enum HealthDisplayMode { CurrentHP, CurrentHPMaxHP, Percentage, None }
         public enum BossHealthTextPosition { Tracked, Centered }
         public enum BossNameColorMode { Pastel, Vanilla, White }
         private enum HudKind { Enemy, Boss, Player }
@@ -90,6 +89,18 @@ namespace EnemyHudRework
         private sealed class EnemyUiState
         {
             public WeaknessUi Weakness;
+            public BubbleUi Bubble;
+            public float BubbleLift;
+            public ZNetView BubbleView;
+            public uint BubbleRevision = uint.MaxValue; // MaxValue: read again
+            public float BubbleMax, BubbleDamage;
+            public bool BubbleFoe, BubbleSeen, BubbleTimed;
+            public long BubbleUntil;
+            public float BubbleFlashStart = -1f, BubbleFlashShown;
+            public HitPredictionUi Prediction;
+            public bool PredictShowStagger;
+            public float StaggerFlashAlpha, CritFlashAlpha;
+            public float StaggerFlashShown, CritFlashShown;
             public float LastStarY = float.NaN;
             public Character Character;
             public BaseAI Ai;
@@ -130,10 +141,6 @@ namespace EnemyHudRework
             public GuiBar StaggerFast;
             public GuiBar StaggerBackground;
 
-            public Image FlashTop;
-            public Image FlashBottom;
-            public Image FlashLeft;
-            public Image FlashRight;
 
             public RectTransform Level2;
             public RectTransform Level3;
@@ -308,7 +315,13 @@ namespace EnemyHudRework
             ApplyLevelStars(state, character);
 
             if (state.Kind == HudKind.Enemy || state.Kind == HudKind.Player)
+            {
                 CreateStaggerBar(state);
+                // Made the same way and at the same moment as the stagger
+                // bar: a copy of the fresh health bar, kept hidden until a
+                // bubble shows.
+                state.Bubble = CreateWorldBubble(state);
+            }
 
             CreateHealthValue(state);
             SetupCriticalOutline(state);
@@ -342,6 +355,7 @@ namespace EnemyHudRework
             float dt)
         {
             List<Character> remove = null;
+            Character lookedAt = localPlayer != null ? localPlayer.GetHoverCreature() : null;
             Player directlyTargeted = _playerNameplateAimFade != null &&
                 _playerNameplateAimFade.Value
                 ? GetCrosshairPlayer(localPlayer) : null;
@@ -379,12 +393,14 @@ namespace EnemyHudRework
                     UpdateStaggerBar(state, isEnemy, dt);
                 }
 
+                UpdateWorldBubble(state, isEnemy);
                 UpdateHealthValue(state);
+                UpdateHitPrediction(state, isEnemy, localPlayer, lookedAt, dt);
                 UpdateCriticalOutline(state);
                 UpdateWeaknessIcons(state, isEnemy);
                 UpdateBossDps(state);
                 UpdateEnhancedEffects(state, isEnemy);
-                UpdateNativePalette(state, isEnemy);
+                ApplyFrameFlash(state);
                 UpdateViewportVisibility(state);
                 UpdatePlayerNameplateOpacity(
                     state, localPlayer, directlyTargeted, dt);
@@ -425,7 +441,7 @@ namespace EnemyHudRework
             if (state.Ai == null ||
                 _nameColorMode.Value == NameColorMode.Icons)
             {
-                state.NameGraphic.color = _cEnemyName.Or(state.NormalNameColor);
+                state.NameGraphic.color = state.NormalNameColor;
                 return;
             }
 
@@ -437,7 +453,7 @@ namespace EnemyHudRework
 
             if (_nameColorMode.Value == NameColorMode.None)
             {
-                state.NameGraphic.color = _cEnemyName.Or(state.NormalNameColor);
+                state.NameGraphic.color = state.NormalNameColor;
                 return;
             }
 
@@ -447,19 +463,19 @@ namespace EnemyHudRework
 
             if (isEnemy)
             {
-                alertedColor = _cEnemyAlerted.Or(pastel
+                alertedColor = (pastel
                     ? new Color32(0xFF, 0x7A, 0x76, 255)
                     : new Color32(0xF2, 0x10, 0x0C, 255));
-                awareColor = _cEnemyAware.Or(pastel
+                awareColor = (pastel
                     ? new Color32(0xFF, 0xE5, 0x80, 255)
                     : new Color32(0xFE, 0xDB, 0x00, 255));
             }
             else
             {
-                alertedColor = _cFriendlyAlerted.Or(pastel
+                alertedColor = (pastel
                     ? new Color32(0x83, 0xE5, 0xA7, 255)
                     : new Color32(0x18, 0xC9, 0x62, 255));
-                awareColor = _cFriendlyAware.Or(pastel
+                awareColor = (pastel
                     ? new Color32(0x86, 0xBE, 0xFF, 255)
                     : new Color32(0x1E, 0x86, 0xFF, 255));
             }
@@ -469,7 +485,7 @@ namespace EnemyHudRework
             else if (state.Ai.HaveTarget())
                 state.NameGraphic.color = awareColor;
             else
-                state.NameGraphic.color = _cEnemyName.Or(state.NormalNameColor);
+                state.NameGraphic.color = state.NormalNameColor;
         }
 
         // A setting from an older config layout, read once and removed.
@@ -479,13 +495,6 @@ namespace EnemyHudRework
                 state.Kind != HudKind.Boss ||
                 state.NameGraphic == null)
                 return;
-
-            if (_cBossName.Has)
-            {
-                if (state.NameGraphic.color != _cBossName.Value)
-                    state.NameGraphic.color = _cBossName.Value;
-                return;
-            }
 
             switch (_bossNameColorMode.Value)
             {
@@ -565,7 +574,7 @@ namespace EnemyHudRework
             if (state.HealthValueText != null)
             {
                 state.HealthValueText.text = "";
-                state.HealthValueText.color = HpTextColor();
+                state.HealthValueText.color = Color.white;
                 state.HealthValueText.alignment =
                     TextAlignmentOptions.Center;
                 // The Name prefab uses TMP automatic font sizing.
@@ -639,7 +648,7 @@ namespace EnemyHudRework
             {
                 state.HealthValueObject.SetActive(false);
                 if (state.NameRect != null)
-                    state.NameRect.anchoredPosition = state.NameOriginalPosition;
+                    state.NameRect.anchoredPosition = NameBase(state);
                 return;
             }
 
@@ -666,7 +675,7 @@ namespace EnemyHudRework
             }
 
             state.HealthValueObject.SetActive(true);
-            state.HealthValueText.color = HpTextColor();
+            state.HealthValueText.color = Color.white;
 
             if (state.Kind == HudKind.Boss && state.HealthRect != null)
             {
@@ -677,7 +686,7 @@ namespace EnemyHudRework
             if (IsDoubleHealthBar(state) && state.HealthRect != null)
             {
                 if (state.NameRect != null)
-                    state.NameRect.anchoredPosition = state.NameOriginalPosition;
+                    state.NameRect.anchoredPosition = NameBase(state);
 
                 state.HealthValueRect.anchorMin = state.HealthRect.anchorMin;
                 state.HealthValueRect.anchorMax = state.HealthRect.anchorMax;
@@ -705,11 +714,11 @@ namespace EnemyHudRework
                 float valueWidth = state.HealthValueText.preferredWidth;
 
                 state.NameRect.anchoredPosition =
-                    state.NameOriginalPosition +
+                    NameBase(state) +
                     Vector2.left * ((valueWidth + gap) * 0.5f);
 
                 state.HealthValueRect.anchoredPosition =
-                    state.NameOriginalPosition +
+                    NameBase(state) +
                     Vector2.right * ((nameWidth + gap) * 0.5f);
             }
         }
@@ -725,7 +734,7 @@ namespace EnemyHudRework
                 return;
 
             if (state.NameRect != null)
-                state.NameRect.anchoredPosition = state.NameOriginalPosition;
+                state.NameRect.anchoredPosition = NameBase(state);
 
             state.HealthValueRect.localScale = Vector3.one;
             state.HealthValueText.fontSize = state.HealthValueBaseFontSize * 0.738f * _hpFontScale.Value;
@@ -964,7 +973,6 @@ namespace EnemyHudRework
                     graphic.gameObject.SetActive(false);
             }
 
-            CreateFlashBorder(state);
             staggerRoot.SetActive(false);
         }
 
@@ -1064,7 +1072,8 @@ namespace EnemyHudRework
             bool visible =
                 staggerPercentage > 0f ||
                 state.HideTimer < PlayerLikeHideDelay ||
-                recovering;
+                recovering ||
+                state.PredictShowStagger;
 
             SetStaggerLayoutActive(state, visible);
 
@@ -1080,8 +1089,13 @@ namespace EnemyHudRework
                 isStaggering &&
                 !state.WasStaggering;
 
-            if (reachedFull || beganStagger)
+            // Not when that hit killed it: the bar is gone with it. A flash
+            // already running stops if it dies.
+            bool dead = state.Character.GetHealth() <= 0f;
+            if ((reachedFull || beganStagger) && !dead)
                 StartFlash(state);
+            else if (dead && state.FlashUntil > Time.time)
+                state.FlashUntil = Time.time;
 
             UpdateFlash(state);
 
@@ -1133,82 +1147,6 @@ namespace EnemyHudRework
             }
         }
 
-        private void CreateFlashBorder(
-            EnemyUiState state)
-        {
-            if (state == null ||
-                state.StaggerRoot == null)
-                return;
-
-            Transform parent =
-                state.StaggerRoot.transform;
-
-            state.FlashTop = CreateBorderPiece(
-                parent,
-                "FlashTop",
-                new Vector2(0f, 1f),
-                new Vector2(1f, 1f),
-                new Vector2(0.5f, 1f),
-                new Vector2(0f, 1f),
-                new Vector2(2f, 2f));
-
-            state.FlashBottom = CreateBorderPiece(
-                parent,
-                "FlashBottom",
-                new Vector2(0f, 0f),
-                new Vector2(1f, 0f),
-                new Vector2(0.5f, 0f),
-                new Vector2(0f, -1f),
-                new Vector2(2f, 2f));
-
-            state.FlashLeft = CreateBorderPiece(
-                parent, "FlashLeft",
-                new Vector2(0f, 0f),
-                new Vector2(0f, 1f),
-                new Vector2(0f, 0.5f),
-                new Vector2(-1f, 0f),
-                new Vector2(2f, 2f));
-
-            state.FlashRight = CreateBorderPiece(
-                parent, "FlashRight",
-                new Vector2(1f, 0f),
-                new Vector2(1f, 1f),
-                new Vector2(1f, 0.5f),
-                new Vector2(1f, 0f),
-                new Vector2(2f, 2f));
-
-            NativeFrameFlash.Fit(state.StaggerRect, state.FlashTop,
-                state.FlashBottom, state.FlashLeft, state.FlashRight);
-            SetFlashAlpha(state, 0f);
-        }
-
-        private static Image CreateBorderPiece(
-            Transform parent,
-            string name,
-            Vector2 anchorMin,
-            Vector2 anchorMax,
-            Vector2 pivot,
-            Vector2 anchoredPosition,
-            Vector2 sizeDelta)
-        {
-            GameObject go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-
-            RectTransform rect = go.AddComponent<RectTransform>();
-            rect.anchorMin = anchorMin;
-            rect.anchorMax = anchorMax;
-            rect.pivot = pivot;
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = sizeDelta;
-
-            Image image = go.AddComponent<Image>();
-            image.raycastTarget = false;
-            image.color = new Color(1f, 1f, 1f, 0f);
-
-            go.transform.SetAsLastSibling();
-            return image;
-        }
-
         private void StartFlash(EnemyUiState state)
         {
             if (state == null)
@@ -1224,11 +1162,6 @@ namespace EnemyHudRework
             if (state == null)
                 return;
 
-            // Align to the complete dark native frame after every
-            // stagger-bar resize, never just a two-pixel outline.
-            NativeFrameFlash.Fit(state.StaggerRect, state.FlashTop,
-                state.FlashBottom, state.FlashLeft, state.FlashRight);
-
             float duration = state.FlashUntil - state.FlashStarted;
             if (duration <= 0f || Time.time >= state.FlashUntil)
             {
@@ -1241,7 +1174,16 @@ namespace EnemyHudRework
 
             SetFlashAlpha(
                 state,
-                Mathf.Sin(Mathf.PI * t));
+                VanillaFlash(t));
+        }
+
+        // The game's own flash animation (stagger_flash): full white on the
+        // very first frame, then eases back down to the frame's own color
+        // (2t^3 - 3t^2 + 1). It hits, it doesn't fade in.
+        internal static float VanillaFlash(float t)
+        {
+            if (t < 0f || t >= 1f) return 0f;
+            return (2f * t - 3f) * t * t + 1f;
         }
 
         private static void SetFlashAlpha(
@@ -1251,17 +1193,9 @@ namespace EnemyHudRework
             if (state == null)
                 return;
 
-            Color color = _staggerFlashBase;
-            color.a *= Mathf.Clamp01(alpha);
-
-            if (state.FlashTop != null)
-                state.FlashTop.color = color;
-            if (state.FlashBottom != null)
-                state.FlashBottom.color = color;
-            if (state.FlashLeft != null)
-                state.FlashLeft.color = color;
-            if (state.FlashRight != null)
-                state.FlashRight.color = color;
+            // Drawn like the game's own flash: the bar's dark frame itself
+            // lights up (see ApplyFrameFlash).
+            state.StaggerFlashAlpha = Mathf.Clamp01(alpha);
         }
 
         private static float GetPlayerStaggerFlashDuration()
@@ -1473,7 +1407,6 @@ namespace EnemyHudRework
                 slowBar.SetValue(healthPercentage);
 
             ApplyHealthBarScale(_debugBossState);
-            UpdateNativePalette(_debugBossState, false);
             UpdateBarBackground(_debugBossState);
             UpdateHealthValue(_debugBossState);
             if (_debugBossState.Weakness != null) _debugBossState.Weakness.Dirty = true; // debug name changes
@@ -1588,20 +1521,6 @@ namespace EnemyHudRework
                 : null;
         }
 
-        private static Color ParseColor(
-            string value,
-            Color fallback)
-        {
-            Color parsed;
-            if (!string.IsNullOrEmpty(value) &&
-                ColorUtility.TryParseHtmlString(value, out parsed))
-            {
-                return parsed;
-            }
-
-            return fallback;
-        }
-
         private void DestroyState(EnemyUiState state)
         {
             if (state == null)
@@ -1612,6 +1531,7 @@ namespace EnemyHudRework
             DestroyWeaknessIcons(state);
             DestroyBossDps(state);
             DestroyEnhancedEffects(state);
+            DestroyWorldBubble(state);
             ForgetNativePalette(state);
 
             if (state.HealthRect != null)
