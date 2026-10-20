@@ -93,6 +93,8 @@ namespace EnemyHudRework
                 : WorldMillis() + (long)(Mathf.Max(0f, se.m_ttl - se.GetDuration()) * 1000f);
 
             ZNetView view = c.GetComponent<ZNetView>();
+            // Always shared, whatever your own settings: other players with
+            // the mod need it for their bars.
             if (view != null && view.IsValid() && view.IsOwner())
             {
                 ZDO zdo = view.GetZDO();
@@ -200,6 +202,18 @@ namespace EnemyHudRework
             // Nothing while the nameplate is hidden: its bars only start
             // once it shows, and they would measure themselves wrong.
             if (state.Gui == null || !state.Gui.activeInHierarchy) return;
+            if (!_bubbleWorld.Value)
+            {
+                // Turned off: hide what shows, then nothing at all.
+                if (state.Bubble != null && state.Bubble.Root.activeSelf)
+                {
+                    EndWorldBubbleFlash(state);
+                    state.Bubble.Root.SetActive(false);
+                }
+                state.BubbleLift = 0f;
+                state.BubbleSeen = false;
+                return;
+            }
             if (state.BubbleView == null) state.BubbleView = state.Character.GetComponent<ZNetView>();
             ZDO zdo = state.BubbleView != null && state.BubbleView.IsValid() ? state.BubbleView.GetZDO() : null;
             if (zdo == null) return;

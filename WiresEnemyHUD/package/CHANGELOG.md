@@ -1,3 +1,11 @@
+## 0.8.2
+
+Turned off now means fully off: the bubble bars, show on parry and keep bars on screen do no work at all while disabled. Your bubble and the crits on creatures you control are still shared, so other players with the mod keep seeing them.
+
+Less work each frame for every nameplate: the mod no longer looks up the game's nameplate data by reflection every frame.
+
+Show on damage no longer reads the health of every creature every frame. Only a creature you just hit is watched, until its health shows the hit landed (at most 4 seconds), so nothing runs while you aren't fighting.
+
 ## 0.8.1
 
 Critical hit flashes are now sent to other players as a one-off message instead of a counter saved on every creature that ever took a crit. Old counters, and the leftover values of ended bubbles, are removed from the world's save as creatures load. Players on 0.8.0 and 0.8.1 won't see each other's crit flashes.

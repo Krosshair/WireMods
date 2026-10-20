@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.8.1";
+        public const string PluginVersion = "0.8.2";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -105,6 +105,7 @@ namespace EnemyHudRework
             public Character Character;
             public BaseAI Ai;
             public GameObject Gui;
+            public object HudRecord; // the game's own record for this nameplate
             public HudKind Kind;
             public bool IsDebug;
             public CanvasGroup PlayerOpacityGroup;
@@ -207,7 +208,14 @@ namespace EnemyHudRework
             if (isMount)
                 return;
 
-            GameObject gui = GetHudGui(enemyHud, character);
+            // The game calls this every frame for every shown nameplate:
+            // one dictionary lookup once it is set up.
+            EnemyUiState known;
+            if (_states.TryGetValue(character, out known) && known != null && known.Gui != null)
+                return;
+
+            object record;
+            GameObject gui = GetHudGui(enemyHud, character, out record);
             if (gui == null)
                 return;
 
@@ -226,6 +234,7 @@ namespace EnemyHudRework
                 Character = character,
                 Ai = character.GetComponent<BaseAI>(),
                 Gui = gui,
+                HudRecord = record,
                 Kind = character.IsBoss()
                     ? HudKind.Boss
                     : (character.IsPlayer() ? HudKind.Player : HudKind.Enemy)
@@ -1500,8 +1509,10 @@ namespace EnemyHudRework
 
         private GameObject GetHudGui(
             EnemyHud enemyHud,
-            Character character)
+            Character character,
+            out object hudData)
         {
+            hudData = null;
             if (EnemyHudHudsField == null ||
                 HudDataGuiField == null ||
                 enemyHud == null ||
@@ -1515,7 +1526,7 @@ namespace EnemyHudRework
             if (huds == null || !huds.Contains(character))
                 return null;
 
-            object hudData = huds[character];
+            hudData = huds[character];
             return hudData != null
                 ? HudDataGuiField.GetValue(hudData) as GameObject
                 : null;

@@ -66,13 +66,26 @@ namespace EnemyHudRework
         private readonly Dictionary<EnemyUiState, HealthOutline> _healthOutlines =
             new Dictionary<EnemyUiState, HealthOutline>();
 
-        private static readonly FieldInfo BackstabTimeField =
-            AccessTools.Field(typeof(Character), "m_backstabTime");
+        private static readonly AccessTools.FieldRef<Character, float> BackstabTime =
+            AccessTools.FieldRefAccess<Character, float>("m_backstabTime");
 
-        private static readonly FieldInfo HoverTimerField =
-            HudDataType != null
-                ? AccessTools.Field(HudDataType, "m_hoverTimer")
-                : null;
+        // The game's hover timer on its private per-nameplate record, read
+        // through a compiled getter (no reflection while playing).
+        private static readonly Func<object, float> HoverTimer = MakeHoverTimer();
+
+        private static Func<object, float> MakeHoverTimer()
+        {
+            try
+            {
+                FieldInfo field = HudDataType != null ? AccessTools.Field(HudDataType, "m_hoverTimer") : null;
+                if (field == null) return null;
+                var p = System.Linq.Expressions.Expression.Parameter(typeof(object), "record");
+                var body = System.Linq.Expressions.Expression.Field(
+                    System.Linq.Expressions.Expression.Convert(p, HudDataType), field);
+                return System.Linq.Expressions.Expression.Lambda<Func<object, float>>(body, p).Compile();
+            }
+            catch (Exception) { return null; }
+        }
 
         private void ApplyVisibilityPreset(bool enabled)
         {
@@ -117,6 +130,7 @@ namespace EnemyHudRework
                 return;
 
             float now = Time.unscaledTime;
+            PruneSamples(now);
             HealthSample sample;
             if (!_healthSamples.TryGetValue(target, out sample))
             {
@@ -129,49 +143,42 @@ namespace EnemyHudRework
             sample.LastHp = Mathf.Max(0f, target.GetHealth());
             sample.SeenAt = now;
             sample.PendingLocalHitUntil = now + 4f;
+            if (!_pendingHits.Contains(target)) _pendingHits.Add(target);
         }
 
-        // Sample actual HP changes, but only as confirmation of a
-        // recently sent, locally attributed hit. HP loss alone never
-        // reveals another player's or environmental damage.
+        // Only creatures you just hit are watched, and only until their
+        // health shows the hit landed (or 4 seconds pass). Hits on
+        // creatures your own game runs are confirmed on the spot instead
+        // (RecordDamage). With nothing pending this does nothing.
+        private readonly List<Character> _pendingHits = new List<Character>();
         private readonly List<Character> _missingSamples = new List<Character>();
 
         private void SampleHealthForVisibility()
         {
-            if (_showOnDamage == null ||
-                Player.m_localPlayer == null)
-                return;
-            if (!_showOnDamage.Value)
-            {
-                // Re-enabling it later must not treat old, unseen
-                // damage as a fresh hit. Parry reveals keep theirs.
-                if (_healthSamples.Count > 0 && !_showOnParry.Value) _healthSamples.Clear();
-                return;
-            }
-
+            if (_pendingHits.Count == 0) return;
             float now = Time.unscaledTime;
-            foreach (Character c in Character.GetAllCharacters())
+            for (int i = _pendingHits.Count - 1; i >= 0; i--)
             {
-                if (!IsOrdinaryEnemy(c)) continue;
-                float hp = Mathf.Max(0f, c.GetHealth());
+                Character c = _pendingHits[i];
                 HealthSample sample;
-                if (!_healthSamples.TryGetValue(c, out sample))
+                if (c == null || !IsOrdinaryEnemy(c) ||
+                    !_healthSamples.TryGetValue(c, out sample) ||
+                    now > sample.PendingLocalHitUntil)
                 {
-                    _healthSamples[c] = new HealthSample
-                    {
-                        LastHp = hp, SeenAt = now
-                    };
+                    _pendingHits.RemoveAt(i);
                     continue;
                 }
 
                 // Only a confirmed HP decrease following our own
-                // outgoing attack qualifies. Other HP loss is ignored.
-                if (hp > 0f &&
-                    sample.LastHp - hp > .01f &&
-                    now <= sample.PendingLocalHitUntil)
+                // outgoing attack qualifies.
+                float hp = Mathf.Max(0f, c.GetHealth());
+                if (hp > 0f && sample.LastHp - hp > .01f)
                 {
                     sample.PendingLocalHitUntil = -999f;
                     sample.ShowUntil = now + DamageShowSeconds;
+                    sample.LastHp = hp;
+                    sample.SeenAt = now;
+                    _pendingHits.RemoveAt(i);
                     if (!_reportedHitReveal)
                     {
                         Logger.LogInfo(
@@ -179,23 +186,34 @@ namespace EnemyHudRework
                         _reportedHitReveal = true;
                     }
                 }
-                sample.LastHp = hp;
-                sample.SeenAt = now;
             }
+        }
 
-            if (Time.frameCount % 120 == 0)
+        // Drops creatures whose reveal is over, when a new one is added.
+        private void PruneSamples(float now)
+        {
+            if (_healthSamples.Count == 0) return;
+            _missingSamples.Clear();
+            foreach (var entry in _healthSamples)
             {
-                List<Character> missing = _missingSamples;
-                missing.Clear();
-                foreach (var entry in _healthSamples)
-                    if (entry.Key == null ||
-                        now - entry.Value.SeenAt > 5f)
-                        missing.Add(entry.Key);
-                foreach (Character c in missing)
-                {
-                    _healthSamples.Remove(c);
-                    _lastCriticalHits.Remove(c);
-                }
+                HealthSample v = entry.Value;
+                if (entry.Key == null ||
+                    (now >= v.ShowUntil && now >= v.ParryUntil && now > v.PendingLocalHitUntil))
+                    _missingSamples.Add(entry.Key);
+            }
+            foreach (Character c in _missingSamples) _healthSamples.Remove(c);
+        }
+
+        private void OnShowOnDamageChanged()
+        {
+            // Turning it off forgets pending hits and damage reveals, so
+            // turning it on later can't reveal an old hit.
+            if (_showOnDamage.Value) return;
+            _pendingHits.Clear();
+            foreach (var entry in _healthSamples)
+            {
+                entry.Value.ShowUntil = 0f;
+                entry.Value.PendingLocalHitUntil = -999f;
             }
         }
 
@@ -216,15 +234,7 @@ namespace EnemyHudRework
         {
             if (_showOnParry == null || !_showOnParry.Value || !IsOrdinaryEnemy(attacker))
                 return;
-            if (!_showOnDamage.Value)
-            {
-                // Nothing else tidies the list then: drop finished ones.
-                float t = Time.unscaledTime;
-                _missingSamples.Clear();
-                foreach (var entry in _healthSamples)
-                    if (entry.Key == null || t >= entry.Value.ParryUntil) _missingSamples.Add(entry.Key);
-                foreach (Character c in _missingSamples) _healthSamples.Remove(c);
-            }
+            PruneSamples(Time.unscaledTime);
             HealthSample sample;
             if (!_healthSamples.TryGetValue(attacker, out sample))
             {
@@ -248,12 +258,14 @@ namespace EnemyHudRework
                 currentHp >= previousHp - .01f)
                 return;
 
+            PruneSamples(Time.unscaledTime);
             HealthSample sample;
             if (!_healthSamples.TryGetValue(c, out sample))
             {
                 sample = new HealthSample();
                 _healthSamples[c] = sample;
             }
+            _pendingHits.Remove(c);
             sample.LastHp = Mathf.Max(0f, currentHp);
             sample.SeenAt = Time.unscaledTime;
             sample.PendingLocalHitUntil = -999f;
@@ -267,27 +279,11 @@ namespace EnemyHudRework
             }
         }
 
-        private IDictionary GetVanillaHudData(EnemyHud hud)
+        private static bool HasNativeHoverVisibility(EnemyUiState state)
         {
-            return hud != null && EnemyHudHudsField != null
-                ? EnemyHudHudsField.GetValue(hud) as IDictionary
-                : null;
-        }
-
-        private bool HasNativeHoverVisibility(Character c)
-        {
-            if (c == null || HoverTimerField == null)
-                return false;
-
             EnemyHud hud = EnemyHud.instance;
-            IDictionary records = GetVanillaHudData(hud);
-            if (records == null || !records.Contains(c))
-                return false;
-
-            object record = records[c];
-            return record != null &&
-                (float)HoverTimerField.GetValue(record) <
-                    hud.m_hoverShowDuration;
+            return HoverTimer != null && hud != null && state.HudRecord != null &&
+                HoverTimer(state.HudRecord) < hud.m_hoverShowDuration;
         }
 
         private void SetupCriticalOutline(EnemyUiState state)
@@ -311,7 +307,7 @@ namespace EnemyHudRework
         // without the mod ignore it. Nothing is stored.
         private void MarkCriticalHit(Character c)
         {
-            if (!IsOrdinaryEnemy(c)) return;
+            if (!IsOrdinaryEnemy(c)) return; // sent even with your flash off: others may use it
             ZNetView view = c.GetComponent<ZNetView>();
             if (ZRoutedRpc.instance != null && view != null && view.IsValid())
                 ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, CriticalRpc, view.GetZDO().m_uid);
@@ -335,7 +331,15 @@ namespace EnemyHudRework
         private void ShowCriticalHit(Character c)
         {
             if (!_criticalHitFlash.Value || !IsOrdinaryEnemy(c) || c.GetHealth() <= 0f) return;
-            _lastCriticalHits[c] = Time.unscaledTime + GetPlayerStaggerFlashDuration();
+            float now = Time.unscaledTime;
+            if (_lastCriticalHits.Count > 0)
+            {
+                _missingSamples.Clear();
+                foreach (var entry in _lastCriticalHits)
+                    if (entry.Key == null || entry.Value <= now) _missingSamples.Add(entry.Key);
+                foreach (Character old in _missingSamples) _lastCriticalHits.Remove(old);
+            }
+            _lastCriticalHits[c] = now + GetPlayerStaggerFlashDuration();
         }
 
         // Old 0.8.0 counters, removed from the creature's saved data by the
@@ -397,8 +401,11 @@ namespace EnemyHudRework
 
             bool damageReveal =
                 ForceShowOnDamage(state.Character);
+            // Nothing to do unless a reveal is on or bars are kept on screen.
+            if (!damageReveal && !_keepNameplatesOnScreen.Value)
+                return;
             bool ordinaryHover =
-                HasNativeHoverVisibility(state.Character);
+                HasNativeHoverVisibility(state);
             bool vanillaVisible = state.Gui.activeSelf;
 
             // Do not invent nameplates for enemies which would
@@ -581,6 +588,7 @@ namespace EnemyHudRework
         private void DestroyVisibilityOptions()
         {
             _healthSamples.Clear();
+            _pendingHits.Clear();
             _lastCriticalHits.Clear();
             _healthOutlines.Clear();
         }
@@ -609,7 +617,8 @@ namespace EnemyHudRework
             private static void Prefix(Humanoid __instance, out bool __state)
             {
                 __state = false;
-                if (Instance == null || !ReferenceEquals(__instance, Player.m_localPlayer)) return;
+                if (Instance == null || !Instance._showOnParry.Value ||
+                    !ReferenceEquals(__instance, Player.m_localPlayer)) return;
                 ItemDrop.ItemData blocker = CurrentBlocker(__instance);
                 float timer = BlockTimer(__instance);
                 __state = blocker != null && blocker.m_shared.m_timedBlockBonus > 1f &&
@@ -657,18 +666,19 @@ namespace EnemyHudRework
             {
                 internal Vector3 Snapshot;
                 internal bool LocalAttacker;
+                internal bool Active;
             }
 
             private static void Prefix(
                 Character __instance, HitData hit,
                 out HitState __state)
             {
+                __state = default(HitState);
+                if (Instance == null) return;
                 float backstab =
-                    BackstabTimeField != null
-                        ? (float)BackstabTimeField.GetValue(
-                            __instance)
-                        : -999f;
+BackstabTime(__instance);
                 __state = new HitState {
+                    Active = true,
                     Snapshot = new Vector3(
                         __instance.GetHealth(), backstab,
                         __instance.IsStaggering() ? 1f : 0f),
@@ -681,7 +691,7 @@ namespace EnemyHudRework
                 Character __instance, HitState __state)
             {
                 Vector3 before = __state.Snapshot;
-                if (Instance == null ||
+                if (!__state.Active || Instance == null ||
                     !IsOrdinaryEnemy(__instance) ||
                     __instance.GetHealth() >= before.x - .01f)
                     return;
@@ -695,10 +705,7 @@ namespace EnemyHudRework
                         __instance.GetHealth());
 
                 float backstab =
-                    BackstabTimeField != null
-                        ? (float)BackstabTimeField.GetValue(
-                            __instance)
-                        : -999f;
+BackstabTime(__instance);
                 // Not on the killing blow: the bar is gone with it.
                 if ((backstab != before.y ||
                     before.z > .5f) &&

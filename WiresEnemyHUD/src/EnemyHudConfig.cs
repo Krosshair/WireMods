@@ -70,6 +70,7 @@ namespace EnemyHudRework
             _showOnDamage = Bind(SecEnemy, "Show on damage", true,
                 "Reveal an enemy's bar for 3 seconds after you damage it. Each hit restarts the timer.",
                 null, null, "Enemy Health Bar", "Show on damage");
+            _showOnDamage.SettingChanged += (s, e) => OnShowOnDamageChanged();
             _showOnParry = Bind(SecEnemy, "Show on parry", true,
                 "Reveal an enemy's bar for 3 seconds after you parry its attack.",
                 null, null);
