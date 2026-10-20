@@ -15,7 +15,10 @@ namespace EnemyHudRework
     public sealed partial class EnemyHudReworkPlugin
     {
         private const float DamageShowSeconds = 3f;
-        private const string CriticalCounterKey = "wire.enemyhud.critical_id";
+        // 0.8.0 kept a crit counter in each creature's saved data; it is
+        // now a one-off message instead, and old counters are removed.
+        private static readonly int OldCriticalCounterKey = "wire.enemyhud.critical_id".GetStableHashCode();
+        private const string CriticalRpc = "WireEnemyHUD_Crit";
         private bool _reportedHitReveal;
         private bool _reportedViewportClamp;
         private bool _reportedHpFont;
@@ -53,8 +56,6 @@ namespace EnemyHudRework
             public float StartsAt = -999f;
             public float EndsAt = -999f;
             public float ObservedCriticalUntil = -999f;
-            public bool HasNetworkId;
-            public int LastNetworkId;
 
         }
 
@@ -295,17 +296,7 @@ namespace EnemyHudRework
                 state.Kind != HudKind.Enemy)
                 return;
 
-            HealthOutline outline = new HealthOutline();
-
-            ZNetView view =
-                state.Character.GetComponent<ZNetView>();
-            if (view != null && view.IsValid())
-            {
-                outline.LastNetworkId =
-                    view.GetZDO().GetInt(CriticalCounterKey);
-                outline.HasNetworkId = true;
-            }
-            _healthOutlines[state] = outline;
+            _healthOutlines[state] = new HealthOutline();
         }
 
         private static void StartHealthFlash(HealthOutline outline)
@@ -315,24 +306,43 @@ namespace EnemyHudRework
                 GetPlayerStaggerFlashDuration();
         }
 
+        // Runs where the hit is decided (the creature's owner), which tells
+        // everyone, itself included, with one small message. Players
+        // without the mod ignore it. Nothing is stored.
         private void MarkCriticalHit(Character c)
         {
-            if (!_criticalHitFlash.Value ||
-                !IsOrdinaryEnemy(c))
-                return;
-
-            float until = Time.unscaledTime +
-                GetPlayerStaggerFlashDuration();
-            _lastCriticalHits[c] = until;
-
+            if (!IsOrdinaryEnemy(c)) return;
             ZNetView view = c.GetComponent<ZNetView>();
-            if (view != null && view.IsValid() &&
-                view.IsOwner())
-            {
-                ZDO zdo = view.GetZDO();
-                zdo.Set(CriticalCounterKey,
-                    zdo.GetInt(CriticalCounterKey) + 1);
-            }
+            if (ZRoutedRpc.instance != null && view != null && view.IsValid())
+                ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, CriticalRpc, view.GetZDO().m_uid);
+            else
+                ShowCriticalHit(c);
+        }
+
+        internal static void RegisterCriticalRpc(ZRoutedRpc rpc)
+        {
+            try { rpc.Register<ZDOID>(CriticalRpc, (sender, id) => Instance?.OnCriticalRpc(id)); }
+            catch (ArgumentException) { } // already registered
+        }
+
+        private void OnCriticalRpc(ZDOID id)
+        {
+            GameObject go = ZNetScene.instance != null ? ZNetScene.instance.FindInstance(id) : null;
+            Character c = go != null ? go.GetComponent<Character>() : null;
+            if (c != null) ShowCriticalHit(c);
+        }
+
+        private void ShowCriticalHit(Character c)
+        {
+            if (!_criticalHitFlash.Value || !IsOrdinaryEnemy(c) || c.GetHealth() <= 0f) return;
+            _lastCriticalHits[c] = Time.unscaledTime + GetPlayerStaggerFlashDuration();
+        }
+
+        // Old 0.8.0 counters, removed from the creature's saved data by the
+        // machine that owns it.
+        internal static void DropOldCriticalCounter(ZDO zdo)
+        {
+            if (zdo != null && zdo.GetInt(OldCriticalCounterKey) != 0) zdo.RemoveInt(OldCriticalCounterKey);
         }
 
         private void UpdateCriticalOutline(EnemyUiState state)
@@ -353,40 +363,6 @@ namespace EnemyHudRework
                 {
                     outline.ObservedCriticalUntil = localUntil;
                     StartHealthFlash(outline);
-                }
-
-                ZNetView view =
-                    state.Character.GetComponent<ZNetView>();
-                if (view != null && view.IsValid())
-                {
-                    int id = view.GetZDO().GetInt(
-                        CriticalCounterKey);
-                    if (outline.HasNetworkId)
-                    {
-                        if (id != outline.LastNetworkId)
-                        {
-                            outline.LastNetworkId = id;
-                            StartHealthFlash(outline);
-                        }
-                    }
-                    else
-                    {
-                        outline.LastNetworkId = id;
-                        outline.HasNetworkId = true;
-                    }
-                }
-            }
-            else
-            {
-                // Disabling and re-enabling the option shouldn't
-                // flash a critical that happened while disabled.
-                ZNetView view =
-                    state.Character.GetComponent<ZNetView>();
-                if (view != null && view.IsValid())
-                {
-                    outline.LastNetworkId =
-                        view.GetZDO().GetInt(CriticalCounterKey);
-                    outline.HasNetworkId = true;
                 }
             }
 
@@ -644,6 +620,12 @@ namespace EnemyHudRework
             {
                 if (__state && __result && attacker != null) Instance?.OnLocalParry(attacker);
             }
+        }
+
+        [HarmonyPatch(typeof(ZRoutedRpc), MethodType.Constructor, typeof(bool))]
+        private static class RegisterRpcs
+        {
+            private static void Postfix(ZRoutedRpc __instance) { RegisterCriticalRpc(__instance); }
         }
 
         [HarmonyPatch(typeof(EnemyHud), "TestShow")]

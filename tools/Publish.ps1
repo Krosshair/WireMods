@@ -247,7 +247,17 @@ function Publish-GitHub {
         if ($DryRun) { return "ok (dry run): would commit, tag $tag and create a GitHub release" }
         & git add -A "$Mod" tools | Out-Null
         & git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { & git commit -q -m "$Mod $Ver" | Out-Null }
-        & git tag $tag; & git push -q origin HEAD; & git push -q origin $tag
+        & git tag $tag
+        # GitHub may have changes made on the website (uploaded images). Bring
+        # them in first, or GitHub refuses the push.
+        & git fetch -q origin
+        if ($LASTEXITCODE -ne 0) { return 'FAILED: git fetch (check your connection and GitHub login)' }
+        & git merge -q --no-edit '@{u}'
+        if ($LASTEXITCODE -ne 0) { & git merge --abort; return 'FAILED: GitHub and your copy changed the same files; merge them by hand (git pull), then run publish again' }
+        & git push -q origin HEAD
+        if ($LASTEXITCODE -ne 0) { return 'FAILED: git push (the mod sites are done; run "git push origin HEAD --tags" once it works)' }
+        & git push -q origin $tag
+        if ($LASTEXITCODE -ne 0) { return "FAILED: git push of tag $tag" }
         $notes = Join-Path $env:TEMP "wire-notes-$PkgName.md"; Set-Content -Path $notes -Value $Changelog -Encoding UTF8
         & gh release create $tag $Zip --title "$($Manifest.name) $Ver" --notes-file $notes | Out-Null
         if ($LASTEXITCODE -ne 0) { return 'FAILED: gh release create' }

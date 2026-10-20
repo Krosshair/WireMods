@@ -125,7 +125,16 @@ namespace EnemyHudRework
             ZNetView view = c.GetComponent<ZNetView>();
             if (view == null || !view.IsValid() || !view.IsOwner()) return;
             ZDO zdo = view.GetZDO();
-            if (zdo.GetFloat(BubbleMaxKey) <= 0f) return;
+            DropOldCriticalCounter(zdo);
+            if (zdo.GetFloat(BubbleMaxKey) <= 0f)
+            {
+                // An ended bubble leaves zeros behind; nothing needs them
+                // saved, so they go (an absent value reads as zero too).
+                zdo.RemoveFloat(BubbleMaxKey);
+                zdo.RemoveFloat(BubbleDamageKey);
+                zdo.RemoveLong(BubbleUntilKey);
+                return;
+            }
             SE_Shield shield = FindShield(c);
             if (shield != null) { OnShieldChanged(shield, false); return; }
             zdo.Set(BubbleMaxKey, 0f);

@@ -1,7 +1,7 @@
 {
     "name": "WiresEnemyHUD",
     "description": "The ORIGINAL health bar mod. Stagger bars, weakness icons, HP numbers, bubble bars, hit predictions and smarter visibility, all built from the game's own art and colors, so it looks like it was always there.",
-    "version_number": "0.8.0",
+    "version_number": "0.8.1",
     "website_url": "",
     "dependencies": []
 }

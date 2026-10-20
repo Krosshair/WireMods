@@ -1,3 +1,9 @@
+## 0.8.1
+
+Critical hit flashes are now sent to other players as a one-off message instead of a counter saved on every creature that ever took a crit. Old counters, and the leftover values of ended bubbles, are removed from the world's save as creatures load. Players on 0.8.0 and 0.8.1 won't see each other's crit flashes.
+
+Less work each frame: nameplates no longer check a creature's network data for crits.
+
 ## 0.8.0
 
 The stagger and critical hit flashes now work like the game's own: the bar's dark frame itself lights up white (darker inside, behind the bar's background), instead of a ring drawn around it. Like the game's, they hit at full brightness right away and then fade out. Neither flash shows on the hit that kills.
