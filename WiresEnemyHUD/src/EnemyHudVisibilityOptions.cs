@@ -351,6 +351,11 @@ namespace EnemyHudRework
 
         private void UpdateCriticalOutline(EnemyUiState state)
         {
+            if (!_criticalHitFlash.Value)
+            {
+                state.CritFlashAlpha = 0f;
+                return;
+            }
             HealthOutline outline;
             if (!_healthOutlines.TryGetValue(state, out outline))
                 return;
@@ -482,13 +487,33 @@ namespace EnemyHudRework
             // Clamp the actual whole nameplate, not just its
             // health line: name, stars, stagger and numbers
             // all stay inside the viewport together.
+            // Measuring the whole nameplate walks all its parts, so it's
+            // only done near the screen edge, where it matters. Elsewhere
+            // the last measurement says it fits with room to spare.
+            Vector3 scale =
+                state.Gui.transform.lossyScale;
+            const float spare = 96f;
+            if (state.ClampKnown)
+            {
+                Bounds b = state.ClampBounds;
+                float sx0 = Mathf.Max(.01f, Mathf.Abs(scale.x));
+                float sy0 = Mathf.Max(.01f, Mathf.Abs(scale.y));
+                if (projected.x + b.min.x * sx0 > spare &&
+                    projected.x + b.max.x * sx0 < Screen.width - spare &&
+                    projected.y + b.min.y * sy0 > spare &&
+                    projected.y + b.max.y * sy0 < Screen.height - spare)
+                {
+                    state.Gui.transform.position = projected;
+                    return;
+                }
+            }
             Bounds bounds =
                 RectTransformUtility
                     .CalculateRelativeRectTransformBounds(
                         state.Gui.transform,
                         state.Gui.transform);
-            Vector3 scale =
-                state.Gui.transform.lossyScale;
+            state.ClampBounds = bounds;
+            state.ClampKnown = true;
             float sx = Mathf.Max(.01f, Mathf.Abs(scale.x));
             float sy = Mathf.Max(.01f, Mathf.Abs(scale.y));
             const float padding = 8f;
@@ -534,7 +559,7 @@ namespace EnemyHudRework
         // Uses only confirmed local damage, not arbitrary HP loss.
         private void ApplyDamageRevealAfterHudUpdate(EnemyHud hud)
         {
-            if (hud == null || Hud.IsUserHidden() ||
+            if (hud == null || _healthSamples.Count == 0 || Hud.IsUserHidden() ||
                 _showOnDamage == null || (!_showOnDamage.Value && !_showOnParry.Value))
                 return;
 
@@ -644,6 +669,7 @@ namespace EnemyHudRework
                 Character c, ref bool __result)
             {
                 if (!__result && Instance != null &&
+                    Instance._healthSamples.Count > 0 &&
                     Instance.ForceShowOnDamage(c))
                     __result = true;
             }

@@ -22,6 +22,9 @@ namespace EnemyHudRework
         private ConfigEntry<bool> _bossResistanceIcons;
         private ConfigEntry<bool> _limitedMode;
 
+        private ConfigEntry<bool> _dynamicMode;
+        private ConfigEntry<float> _dynamicDelay;
+
         // Limited mode: which damage types the weapon in hand (plus its
         // ammo) can deal. Worked out only when equipment changes; a type you
         // switch away from stays shown for a second, then a single timer
@@ -148,6 +151,55 @@ namespace EnemyHudRework
         private static readonly Sprite[] DamageBack = new Sprite[DamageKinds];
         private static readonly Sprite[] DamageFill = new Sprite[DamageKinds];
         private static bool _spritesLoaded;
+
+        // The game's own icons for "Game icons" style, found once they exist
+        // (skills come with your character, status effects and items with
+        // the object database).
+        private static readonly Sprite[] GameIcon = new Sprite[DamageKinds];
+
+        private static Sprite FindGameIcon(int kind)
+        {
+            if (GameIcon[kind] != null) return GameIcon[kind];
+            Sprite found = null;
+            Skills.SkillType skill = Skills.SkillType.None;
+            string effect = null;
+            switch ((DamageKind)kind)
+            {
+                case DamageKind.Blunt: skill = Skills.SkillType.Clubs; break;
+                case DamageKind.Slash: skill = Skills.SkillType.Swords; break;
+                case DamageKind.Pierce: skill = Skills.SkillType.Spears; break;
+                case DamageKind.Pickaxe: skill = Skills.SkillType.Pickaxes; break;
+                case DamageKind.Chop: skill = Skills.SkillType.Axes; break;
+                case DamageKind.Fire: effect = "Burning"; break;
+                case DamageKind.Frost: effect = "Frost"; break;
+                case DamageKind.Lightning: effect = "Lightning"; break;
+                case DamageKind.Poison: effect = "Poison"; break;
+                case DamageKind.Spirit: break; // ectoplasm, below
+            }
+            if (skill != Skills.SkillType.None)
+            {
+                Skills skills = Player.m_localPlayer != null ? Player.m_localPlayer.GetSkills() : null;
+                if (skills != null && skills.m_skills != null)
+                    foreach (Skills.SkillDef def in skills.m_skills)
+                        if (def != null && def.m_skill == skill) { found = def.m_icon; break; }
+            }
+            else if (ObjectDB.instance != null)
+            {
+                StatusEffect se = effect != null ? ObjectDB.instance.GetStatusEffect(effect.GetStableHashCode()) : null;
+                found = se != null ? se.m_icon : null;
+                // Spirit's own status icon is one you never see on yourself,
+                // so it uses ectoplasm.
+                if (kind == (int)DamageKind.Spirit)
+                {
+                    GameObject ecto = ObjectDB.instance.GetItemPrefab("Ectoplasm");
+                    ItemDrop drop = ecto != null ? ecto.GetComponent<ItemDrop>() : null;
+                    if (drop != null && drop.m_itemData.m_shared.m_icons != null && drop.m_itemData.m_shared.m_icons.Length > 0)
+                        found = drop.m_itemData.m_shared.m_icons[0];
+                }
+            }
+            GameIcon[kind] = found;
+            return found;
+        }
 
         private sealed class WeaknessUi
         {
@@ -324,7 +376,8 @@ namespace EnemyHudRework
         {
             RectTransform star = StarRect(state);
             if (!_weaknessIcons.Value || !isEnemy || state.Character == null ||
-                state.Character.IsTamed() || star == null)
+                state.Character.IsTamed() || star == null ||
+                (_dynamicMode.Value && !LookedAtRecently(state.Character, _dynamicDelay.Value)))
             {
                 HideWeaknessIcons(ui);
                 return;
@@ -450,10 +503,27 @@ namespace EnemyHudRework
         // A silhouette is the outlined shape in one flat color, no inner fill.
         private bool Place(WeaknessUi ui, int kind, float x, float y, float size, float fillRatio, Color color, Color outline, bool silhouette)
         {
+            Image img = ui.Slots[kind], f = ui.Fills[kind];
+            Sprite game = _iconStyle.Value == IconStyle.GameIcons ? FindGameIcon(kind) : null;
+            if (game != null)
+            {
+                // The game's picture as it is: no outline, own colors for
+                // weaknesses, the resistance color over resistances.
+                if (img.sprite != game) img.sprite = game;
+                if (!img.preserveAspect) img.preserveAspect = true;
+                if (f.enabled) f.enabled = false;
+                Vector2 gsz = new Vector2(size, size), gpos = new Vector2(x, y);
+                RectTransform gr = img.rectTransform;
+                if (gr.sizeDelta != gsz) gr.sizeDelta = gsz;
+                if (gr.anchoredPosition != gpos) gr.anchoredPosition = gpos;
+                Color gc = ui.Kind[kind] == Weak ? Color.white : _resistTint;
+                if (img.color != gc) img.color = gc;
+                return true;
+            }
+            if (img.preserveAspect) img.preserveAspect = false;
             int shape = _shapeOf[kind];
             Sprite back = DamageBack[shape], fill = DamageFill[shape];
             if (back == null || fill == null) return false;
-            Image img = ui.Slots[kind], f = ui.Fills[kind];
             if (img.sprite != back) img.sprite = back;
             if (f.sprite != fill) f.sprite = fill;
             RectTransform r = img.rectTransform;

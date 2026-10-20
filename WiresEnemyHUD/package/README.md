@@ -4,10 +4,6 @@ The ORIGINAL health bar mod. Weakness icons, a stagger bar, HP numbers, bubble b
 
 ![Health bar features](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/health-bar-legend.jpg)
 
-## New in 0.8.0
-
-![Stuff added in 0.8.0](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.0.jpg)
-
 ## Weakness icons
 
 ![Damage type icons](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/damage-icons-legend.jpg)
@@ -17,6 +13,7 @@ The ORIGINAL health bar mod. Weakness icons, a stagger bar, HP numbers, bubble b
 * Bosses show weaknesses left of their name and resistances to the right.
 * Read from each creature's real damage modifiers, so modded creatures work too.
 * Limited mode (off by default): only the icons of what your weapon in hand and its ammo can deal.
+* Dynamic mode (off by default): icons only on the enemy you're looking at, with an optional delay after you look away. Works together with Limited mode.
 
 ## Stagger bar
 
@@ -29,12 +26,15 @@ The ORIGINAL health bar mod. Weakness icons, a stagger bar, HP numbers, bubble b
 
 * Double-thickness bars for enemies and players, same width as vanilla.
 * HP as current, current/max or percent, on enemies, bosses and players.
+* Dynamic HP numbers: only on the enemy you're looking at (off by default) or the player you're aiming at (on by default), with an optional delay.
 * Boss HP follows the health fill and never runs off the bar. A DPS counter sits under it.
 * See-through backgrounds, like your own HUD bars.
 * Friendly creatures get their own bar color.
 * A white flash on the frame when a backstab or a hit on a staggered enemy lands. Never on the killing blow.
 
 ## Bubble bars
+
+![Bubble bars and hit predictions](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.0.jpg)
 
 * A bar above the health bar of anyone inside a protective bubble (Staff of Protection), showing how much it can still take.
 * Purple on friendlies (eitr), blue on enemies (shaman magic).
@@ -53,7 +53,7 @@ The ORIGINAL health bar mod. Weakness icons, a stagger bar, HP numbers, bubble b
 * The name color shows whether an enemy noticed you or is hunting you. Or use the vanilla icons if you want, or nothing, if you're a masochist.
 * Hitting or parrying an enemy shows its bar for a few seconds, at any distance.
 * Bars stay on screen: a troll's bar slides along the top edge instead of vanishing.
-* Other players' nameplates fade until you aim at them.
+* Other players' nameplates fade until you aim at them. Creature nameplates can do the same (off by default). Faded bars keep their damage trail without tinting.
 
 ## Built on the vanilla HUD
 

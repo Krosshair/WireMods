@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.8.2";
+        public const string PluginVersion = "0.8.3";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -86,6 +86,14 @@ namespace EnemyHudRework
         private static readonly MethodInfo EnemyHudShowHudMethod =
             AccessTools.Method(typeof(EnemyHud), "ShowHud");
 
+        // A damage trail clipped to start where its bar's fill ends.
+        private sealed class TrailClip
+        {
+            public RectMask2D Mask;
+            public bool Bubble; // the bubble bar's trail, else the health trail
+            public float Shown = -1f; public int Layout = -1;
+        }
+
         private sealed class EnemyUiState
         {
             public WeaknessUi Weakness;
@@ -106,11 +114,18 @@ namespace EnemyHudRework
             public BaseAI Ai;
             public GameObject Gui;
             public object HudRecord; // the game's own record for this nameplate
+            // What was last drawn, so unchanged frames do nothing.
+            public bool HpDrawn; public int HpA, HpB, HpLayout; public float HpLift; public string HpName;
+            public int ScaleLayout = -1; public float ScaleHeight;
+            public string UpperSource, UpperValue;
+            public bool ClampKnown; public Bounds ClampBounds;
             public HudKind Kind;
             public bool IsDebug;
             public CanvasGroup PlayerOpacityGroup;
             public bool PlayerFadeGroupAdded;
             public float PlayerOriginalAlpha = 1f;
+            public float LastAimedAt = -999f; // players: when your crosshair was last on them
+            public TrailClip[] Trails; public bool TrailsHidden;
 
             public Graphic NameGraphic;
             public TMP_Text NameText;
@@ -125,6 +140,7 @@ namespace EnemyHudRework
             public float HealthValueBaseFontSize;
             public GameObject AlertedIcon;
             public GameObject AwareIcon;
+            public Graphic[] IconGraphics; public bool IconsHidden;
 
             public RectTransform HealthRect;
             public Vector2 HealthOriginalPosition;
@@ -359,15 +375,104 @@ namespace EnemyHudRework
                 state.Level3.gameObject.SetActive(level == 3);
         }
 
+        // ---- What you're looking at ----
+        // One check for everything that cares (hit predictions, Dynamic
+        // icons, Dynamic HP numbers): the game's own hover creature, read
+        // once a frame. Enemies you just looked away from are remembered
+        // with the time, for the delay settings; that list is tiny and
+        // empties itself.
+        private ConfigEntry<bool> _dynamicHp;
+        private ConfigEntry<bool> _enemyAimFade;
+        // Players: the crosshair check the nameplate fading uses, with one
+        // delay for both it and their Dynamic HP numbers.
+        private ConfigEntry<bool> _playerDynamicHp;
+        private ConfigEntry<float> _playerAimDelay;
+
+        private bool AimedAtRecently(EnemyUiState state)
+        {
+            return Time.time <= state.LastAimedAt + _playerAimDelay.Value;
+        }
+        private ConfigEntry<float> _dynamicHpDelay;
+        private Character _looked;
+        private struct LookedAway { public Character C; public float At; public bool IconsShown; }
+        private readonly List<LookedAway> _lookedAway = new List<LookedAway>();
+
+        private void UpdateLookTarget(Character lookedAt)
+        {
+            // Nothing uses the memory with all three off: just follow the
+            // target (hit predictions read it directly) and keep no list.
+            if (!_dynamicMode.Value && !_dynamicHp.Value && !_enemyAimFade.Value)
+            {
+                if (_lookedAway.Count > 0) _lookedAway.Clear();
+                _looked = lookedAt;
+                return;
+            }
+            float now = Time.time;
+            if (!ReferenceEquals(lookedAt, _looked))
+            {
+                if (_looked != null)
+                {
+                    _lookedAway.Add(new LookedAway { C = _looked, At = now, IconsShown = true });
+                    MarkIconsDirty(_looked);
+                }
+                for (int i = _lookedAway.Count - 1; i >= 0; i--)
+                    if (ReferenceEquals(_lookedAway[i].C, lookedAt)) _lookedAway.RemoveAt(i);
+                _looked = lookedAt;
+                MarkIconsDirty(lookedAt);
+            }
+            if (_lookedAway.Count == 0) return;
+            float iconDelay = _dynamicDelay.Value, hpDelay = _dynamicHpDelay.Value;
+            for (int i = _lookedAway.Count - 1; i >= 0; i--)
+            {
+                LookedAway e = _lookedAway[i];
+                if (e.IconsShown && now >= e.At + iconDelay)
+                {
+                    e.IconsShown = false;
+                    _lookedAway[i] = e;
+                    MarkIconsDirty(e.C);
+                }
+                if (e.C == null || (!e.IconsShown && now >= e.At + hpDelay))
+                    _lookedAway.RemoveAt(i);
+            }
+        }
+
+        private void MarkIconsDirty(Character c)
+        {
+            EnemyUiState st;
+            if (c != null && _dynamicMode.Value && _states.TryGetValue(c, out st) && st != null && st.Weakness != null)
+                st.Weakness.Dirty = true;
+        }
+
+        // Looked at now, or looked away less than delay seconds ago.
+        private bool LookedAtRecently(Character c, float delay)
+        {
+            if (c == null) return false;
+            if (ReferenceEquals(c, _looked)) return true;
+            float now = Time.time;
+            for (int i = 0; i < _lookedAway.Count; i++)
+                if (ReferenceEquals(_lookedAway[i].C, c)) return now < _lookedAway[i].At + delay;
+            return false;
+        }
+
+        // Bumped on any setting change: layouts are redone once after it.
+        private int _layoutVersion = 1;
+        private static int _layoutVersionStatic => Instance != null ? Instance._layoutVersion : 0;
+        private bool _hadPlayerNameplate;
+
         internal void UpdateEnemyHuds(
             Player localPlayer,
             float dt)
         {
             List<Character> remove = null;
             Character lookedAt = localPlayer != null ? localPlayer.GetHoverCreature() : null;
+            UpdateLookTarget(lookedAt);
+            // The crosshair ray is only needed while another player's
+            // nameplate is around (never in single player).
             Player directlyTargeted = _playerNameplateAimFade != null &&
-                _playerNameplateAimFade.Value
+                (_playerNameplateAimFade.Value || _playerDynamicHp.Value) && _hadPlayerNameplate
                 ? GetCrosshairPlayer(localPlayer) : null;
+            float frameTime = Time.time;
+            bool anyPlayerNameplate = false;
 
             foreach (KeyValuePair<Character, EnemyUiState> pair in _states)
             {
@@ -391,6 +496,10 @@ namespace EnemyHudRework
 
                 ApplyHealthBarScale(state);
 
+                if (state.Kind == HudKind.Player && directlyTargeted != null &&
+                    ReferenceEquals(state.Character, directlyTargeted))
+                    state.LastAimedAt = frameTime;
+
                 if (state.Kind == HudKind.Enemy)
                     UpdateStatusName(state, isEnemy);
                 else if (state.Kind == HudKind.Boss)
@@ -413,7 +522,10 @@ namespace EnemyHudRework
                 UpdateViewportVisibility(state);
                 UpdatePlayerNameplateOpacity(
                     state, localPlayer, directlyTargeted, dt);
+                if (state.Kind == HudKind.Player && state.Character != localPlayer)
+                    anyPlayerNameplate = true;
             }
+            _hadPlayerNameplate = anyPlayerNameplate;
 
             if (remove == null)
                 return;
@@ -428,6 +540,25 @@ namespace EnemyHudRework
             }
         }
 
+        // The game turns its awareness icons on and off itself every frame.
+        // Switching them off after it would make the UI rebuild each time,
+        // so instead their pictures are made invisible once, and the game
+        // can switch the empty objects as much as it likes.
+        private static void SetAwarenessIconsHidden(EnemyUiState state, bool hidden)
+        {
+            if (state.IconsHidden == hidden) return;
+            state.IconsHidden = hidden;
+            if (state.IconGraphics == null)
+            {
+                var list = new List<Graphic>();
+                if (state.AlertedIcon != null) list.AddRange(state.AlertedIcon.GetComponentsInChildren<Graphic>(true));
+                if (state.AwareIcon != null) list.AddRange(state.AwareIcon.GetComponentsInChildren<Graphic>(true));
+                state.IconGraphics = list.ToArray();
+            }
+            foreach (Graphic g in state.IconGraphics)
+                if (g != null) g.enabled = !hidden;
+        }
+
         private void UpdateStatusName(
             EnemyUiState state,
             bool isEnemy)
@@ -438,7 +569,16 @@ namespace EnemyHudRework
             if (state.NameText != null)
             {
                 string source = state.OriginalNameText ?? state.NameText.text ?? "";
-                string wanted = _uppercaseNames.Value ? source.ToUpperInvariant() : source;
+                string wanted = source;
+                if (_uppercaseNames.Value)
+                {
+                    if (!ReferenceEquals(state.UpperSource, source))
+                    {
+                        state.UpperSource = source;
+                        state.UpperValue = source.ToUpperInvariant();
+                    }
+                    wanted = state.UpperValue;
+                }
                 if (!string.Equals(state.NameText.text, wanted, System.StringComparison.Ordinal))
                     state.NameText.text = wanted;
             }
@@ -450,15 +590,12 @@ namespace EnemyHudRework
             if (state.Ai == null ||
                 _nameColorMode.Value == NameColorMode.Icons)
             {
+                SetAwarenessIconsHidden(state, false);
                 state.NameGraphic.color = state.NormalNameColor;
                 return;
             }
 
-            if (state.AlertedIcon != null)
-                state.AlertedIcon.SetActive(false);
-
-            if (state.AwareIcon != null)
-                state.AwareIcon.SetActive(false);
+            SetAwarenessIconsHidden(state, true);
 
             if (_nameColorMode.Value == NameColorMode.None)
             {
@@ -650,8 +787,27 @@ namespace EnemyHudRework
             // With vanilla-height player bars, leave the nameplate completely
             // untouched regardless of the selected HP display mode.
             bool playerCounterDisabled =
-                state.Kind == HudKind.Player &&
-                !_doublePlayerHealthBar.Value;
+                (state.Kind == HudKind.Player &&
+                 !_doublePlayerHealthBar.Value) ||
+                (state.Kind == HudKind.Enemy && _dynamicHp.Value && !state.IsDebug &&
+                 !LookedAtRecently(state.Character, _dynamicHpDelay.Value)) ||
+                (state.Kind == HudKind.Player && _playerDynamicHp.Value && !state.IsDebug &&
+                 state.Character != Player.m_localPlayer && !AimedAtRecently(state));
+
+            float hpNow = state.Character != null ? Mathf.Max(0f, state.Character.GetHealth()) : 0f;
+            float maxNow = state.Character != null ? Mathf.Max(1f, state.Character.GetMaxHealth()) : 1f;
+            int keyA, keyB;
+            if (mode == "None" || playerCounterDisabled) { keyA = -1; keyB = -1; }
+            else if (mode == "Percentage") { keyA = Mathf.Clamp(Mathf.RoundToInt(hpNow / maxNow * 100f), 0, 100); keyB = -2; }
+            else { keyA = Mathf.CeilToInt(hpNow); keyB = mode == "Current HP/Max HP" ? Mathf.CeilToInt(maxNow) : -3; }
+            string nameNow = state.NameText != null ? state.NameText.text : null;
+            if (state.HpDrawn && keyA == state.HpA && keyB == state.HpB &&
+                state.HpLayout == _layoutVersion && state.HpLift == state.BubbleLift &&
+                ReferenceEquals(nameNow, state.HpName))
+                return;
+            state.HpDrawn = true;
+            state.HpA = keyA; state.HpB = keyB;
+            state.HpLayout = _layoutVersion; state.HpLift = state.BubbleLift; state.HpName = nameNow;
 
             if (mode == "None" || playerCounterDisabled)
             {
@@ -874,6 +1030,9 @@ namespace EnemyHudRework
             float extraLocalHeight = IsDoubleHealthBar(state)
                 ? GetHealthFillBaseHeight(state) * (HealthHeightMultiplier - 1f)
                 : 0f;
+            float height = state.HealthOriginalHeight + extraLocalHeight;
+            if (state.ScaleLayout == _layoutVersion && state.HealthRect.sizeDelta.y == state.ScaleHeight)
+                return;
 
             state.HealthRect.localScale = state.HealthOriginalScale;
             state.HealthRect.SetSizeWithCurrentAnchors(
@@ -887,6 +1046,8 @@ namespace EnemyHudRework
             float extraHeight = GetExtraHealthHeight(state);
             state.HealthRect.anchoredPosition =
                 state.HealthOriginalPosition + Vector2.down * (extraHeight * 0.5f);
+            state.ScaleLayout = _layoutVersion;
+            state.ScaleHeight = state.HealthRect.sizeDelta.y;
         }
 
         private float GetExtraHealthHeight(EnemyUiState state)
@@ -1023,11 +1184,13 @@ namespace EnemyHudRework
                 state.StaggerRect == null)
                 return;
 
-            state.StaggerRect.anchoredPosition =
+            Vector2 pos =
                 state.HealthOriginalPosition +
                 Vector2.down *
                 (_staggerVerticalOffset.Value +
                  GetExtraHealthHeight(state));
+            if (state.StaggerRect.anchoredPosition != pos)
+                state.StaggerRect.anchoredPosition = pos;
         }
 
         private void UpdateStaggerBar(
@@ -1122,7 +1285,7 @@ namespace EnemyHudRework
             if (state == null)
                 return;
 
-            if (state.StaggerRoot != null)
+            if (state.StaggerRoot != null && state.StaggerRoot.activeSelf != active)
                 state.StaggerRoot.SetActive(active);
 
             // The chosen star row height, below the double-height health
@@ -1133,11 +1296,12 @@ namespace EnemyHudRework
                 GetExtraHealthHeight(state) -
                 (active ? Mathf.Abs(_staggerVerticalOffset.Value) : 0f);
 
-            if (state.Weakness != null && !(state.LastStarY == y))
-            {
-                state.LastStarY = y;
+            // The stars only move when that height changes.
+            if (state.LastStarY == y)
+                return;
+            state.LastStarY = y;
+            if (state.Weakness != null)
                 state.Weakness.Dirty = true;
-            }
 
             if (state.HasLevel2 &&
                 state.Level2 != null)
@@ -1207,7 +1371,19 @@ namespace EnemyHudRework
             state.StaggerFlashAlpha = Mathf.Clamp01(alpha);
         }
 
+        // Length of the game's stagger flash animation, read once from your
+        // HUD (asking the animator for its clips makes a new list each time).
+        private static float _flashDuration = -1f;
+
         private static float GetPlayerStaggerFlashDuration()
+        {
+            if (_flashDuration > 0f) return _flashDuration;
+            float found = ReadPlayerStaggerFlashDuration();
+            if (Hud.instance != null) _flashDuration = found; // known once the HUD exists
+            return found;
+        }
+
+        private static float ReadPlayerStaggerFlashDuration()
         {
             Hud hud = Hud.instance;
             Animator animator =
@@ -1247,7 +1423,7 @@ namespace EnemyHudRework
             if (!_syncStaggerForMultiplayer.Value)
                 return character.GetStaggerPercentage();
 
-            ZNetView nview = character.GetComponent<ZNetView>();
+            ZNetView nview = CharacterView(character);
             if (nview == null || !nview.IsValid() || nview.IsOwner())
                 return character.GetStaggerPercentage();
 
@@ -1261,13 +1437,32 @@ namespace EnemyHudRework
                     character.GetStaggerPercentage()));
         }
 
+        private static readonly AccessTools.FieldRef<Character, ZNetView> CharacterView =
+            AccessTools.FieldRefAccess<Character, ZNetView>("m_nview");
+
+        // Runs on every character's stagger tick, so it bails out as early
+        // as it can: alone in the world (nobody to tell), or not staggered
+        // and nothing left to send. Only staggered creatures are tracked.
         internal void SyncOwnedStagger(Character character)
         {
             if (!_syncStaggerForMultiplayer.Value ||
-                character == null)
+                character == null ||
+                ZNet.instance == null ||
+                ZNet.instance.GetPeers().Count == 0)
                 return;
 
-            ZNetView nview = character.GetComponent<ZNetView>();
+            float value = Mathf.Clamp01(
+                character.GetStaggerPercentage());
+            int id = character.GetInstanceID();
+            StaggerSyncState sync;
+            bool tracked = _syncStates.TryGetValue(id, out sync);
+            if (value <= 0.0001f && (!tracked || sync.LastSent <= 0.0001f))
+            {
+                if (tracked) _syncStates.Remove(id);
+                return;
+            }
+
+            ZNetView nview = CharacterView(character);
             if (nview == null || !nview.IsValid() || !nview.IsOwner())
                 return;
 
@@ -1275,10 +1470,7 @@ namespace EnemyHudRework
             if (zdo == null)
                 return;
 
-            int id = character.GetInstanceID();
-
-            StaggerSyncState sync;
-            if (!_syncStates.TryGetValue(id, out sync))
+            if (!tracked)
             {
                 sync = new StaggerSyncState();
                 _syncStates[id] = sync;
@@ -1287,9 +1479,6 @@ namespace EnemyHudRework
             float now = Time.time;
             if (now < sync.NextSendTime)
                 return;
-
-            float value = Mathf.Clamp01(
-                character.GetStaggerPercentage());
 
             float delta = Mathf.Abs(value - sync.LastSent);
 

@@ -56,7 +56,7 @@ namespace EnemyHudRework
                 new AcceptableValueList<string>("Author's Choice", "Vanilla"), null,
                 "General", "Preset");
             Config.SettingChanged += OnPresetSettingChanged;
-            Config.SettingChanged += (s, e) => { MarkAllWeaknessDirty(); InvalidatePredictions(); };
+            Config.SettingChanged += (s, e) => { MarkAllWeaknessDirty(); InvalidatePredictions(); _layoutVersion++; };
 
             // ---- 02 Enemy bars ----
             _order = 1000;
@@ -64,6 +64,15 @@ namespace EnemyHudRework
                 "HP text on enemy bars: current HP, current/max HP, percentage, or None.",
                 new AcceptableValueList<string>(HealthTextModes), null,
                 "Enemy Health Bar", "Health display");
+            _dynamicHp = Bind(SecEnemy, "Dynamic HP numbers", false,
+                "HP numbers only show on the enemy you're looking at. Bosses always show theirs.",
+                null, null);
+            _enemyAimFade = Bind(SecEnemy, "Fade unless looked at", false,
+                "Dim creature nameplates to 10% unless you're looking at that creature. Bosses always show fully.",
+                null, null);
+            _dynamicHpDelay = Bind(SecEnemy, "Delay", 0f,
+                "How many seconds a creature counts as looked at after you look away, for both Dynamic HP numbers and Fade unless looked at. 0 is right away.",
+                new AcceptableValueRange<float>(0f, 3f), null, SecEnemy, "Dynamic HP numbers delay");
             _doubleEnemyHealthBar = Bind(SecEnemy, "Double size", true,
                 "Doubles the thickness of enemy health bars while keeping their width.",
                 null, null, "Enemy Health Bar", "Double size");
@@ -117,7 +126,13 @@ namespace EnemyHudRework
             _limitedMode.SettingChanged += (s, e) => OnLimitedModeChanged();
             _limitedDelay = Bind(SecWeak, "Limited mode delay", 0f,
                 "Limited mode: how many seconds icons for a weapon you switched away from stay shown. 0 hides them right away.",
-                new AcceptableValueRange<float>(0f, 2f), null);
+                new AcceptableValueRange<float>(0f, 3f), null);
+            _dynamicMode = Bind(SecWeak, "Dynamic mode", false,
+                "Damage type icons only show on the enemy you're looking at. Bosses always show theirs. Separate from Limited mode: Limited picks which icons, Dynamic picks which enemies; both can be on.",
+                null, null);
+            _dynamicDelay = Bind(SecWeak, "Dynamic mode delay", 0f,
+                "Dynamic mode: how many seconds icons stay on an enemy after you look away. 0 hides them right away.",
+                new AcceptableValueRange<float>(0f, 3f), null);
             _iconScale = Bind(SecWeak, "Icon size", 1f,
                 "Size of the damage type icons, relative to the level stars. 1.0 is exactly star size.",
                 new AcceptableValueRange<float>(0.5f, 2f), null);
@@ -172,12 +187,18 @@ namespace EnemyHudRework
                 "HP text above other players: current HP, current/max HP, percentage, or None.",
                 new AcceptableValueList<string>(HealthTextModes), null,
                 "Player Health Bar", "Health display");
+            _playerDynamicHp = Bind(SecPlayer, "Dynamic HP numbers", true,
+                "HP numbers only show on the player your crosshair is on.",
+                null, null);
             _doublePlayerHealthBar = Bind(SecPlayer, "Double size", true,
                 "Doubles the thickness of other players' health bars while keeping their width.",
                 null, null, "Player Health Bar", "Double size");
             _playerNameplateAimFade = Bind(SecPlayer, "Fade unless aimed at", true,
                 "Dim other players' nameplates to 10% until your crosshair is on that player; they show fully the moment it is.",
                 null, null, "Player Health Bar", "Fade unfocused player nameplates");
+            _playerAimDelay = Bind(SecPlayer, "Delay", 0f,
+                "How many seconds a player counts as aimed at after your crosshair leaves them, for both Dynamic HP numbers and Fade unless aimed at. 0 is right away.",
+                new AcceptableValueRange<float>(0f, 3f), null);
 
             // ---- 07 Appearance ----
             _order = 1000;
@@ -191,10 +212,6 @@ namespace EnemyHudRework
             _dpsFontScale = Bind(SecLook, "Boss DPS text size", 1.267f,
                 "Scale of the boss DPS counter. 1.0 is the original size.",
                 new AcceptableValueRange<float>(.5f, 2.5f), null);
-
-            // ---- 13 Hit predictions ----
-            BindHitPredictionConfig(SecPredict);
-            BindBubbleConfig();
 
             // ---- 08 Damage icons ----
             BindColorSections();
@@ -220,6 +237,11 @@ namespace EnemyHudRework
             _debugSeeOwnHealthBar = Bind(SecDebug, "See your own nameplate", false,
                 "Show your own multiplayer nameplate above your character.",
                 null, null, "Debug", "See your own nameplate", "10 - Debug", "See your own nameplate");
+
+            // ---- 11 Hit predictions, 12 Bubble bar ----
+            // Bound last so config editors list the sections in number order.
+            BindHitPredictionConfig(SecPredict);
+            BindBubbleConfig();
 
             DropRetiredSettings();
             Config.Save();

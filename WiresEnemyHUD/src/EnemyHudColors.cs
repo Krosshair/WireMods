@@ -29,6 +29,13 @@ namespace EnemyHudRework
         private static readonly string[] DamageNames =
             { "Blunt", "Slash", "Pierce", "Fire", "Frost", "Lightning", "Poison", "Spirit", "Pickaxe", "Chop" };
 
+        private enum IconStyle
+        {
+            [Description("Shapes")] Shapes,
+            [Description("Game icons (not recommended)")] GameIcons
+        }
+
+        private ConfigEntry<IconStyle> _iconStyle;
         private readonly ConfigEntry<IconShape>[] _iconShape = new ConfigEntry<IconShape>[DamageKinds];
         private readonly ConfigEntry<Color>[] _iconColor = new ConfigEntry<Color>[DamageKinds];
         private ConfigEntry<Color> _resistColor;
@@ -41,6 +48,10 @@ namespace EnemyHudRework
         private void BindColorSections()
         {
             _order = 1000;
+            _iconStyle = Bind(SecIconColors, "Icon style", IconStyle.Shapes,
+                "Shapes are made to be told apart at a glance at this size. Game icons uses the game's own skill and status effect icons instead (axe for chop, clubs for blunt, the poison effect for poison, ectoplasm for spirit...). NOT recommended: they are detailed pictures, hard to tell apart this small. The shapes below don't apply to them; weaknesses keep the icon's own colors and resistances use the resistance color.",
+                null, null);
+            _iconStyle.SettingChanged += (s, e) => RefreshIconLook();
             for (int i = 0; i < DamageKinds; i++)
             {
                 _iconShape[i] = Bind(SecIconColors, DamageNames[i] + " icon", (IconShape)i,

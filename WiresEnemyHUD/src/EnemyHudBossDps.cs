@@ -34,6 +34,9 @@ namespace EnemyHudRework
             public int Damage;
             public int ShownValue = -1;
             public bool ShownSuffix;
+            // Text measurements, redone only when a text or setting changes.
+            public string MeasuredText, MeasuredHp; public int MeasuredLayout = -1;
+            public float TextWidth, TextHeight, HpHeight, LeftPad;
         }
 
         private readonly Dictionary<EnemyUiState, DpsUiState> _dpsStates =
@@ -92,7 +95,8 @@ namespace EnemyHudRework
             // m_onDamaged runs after mitigation: this is damage actually taken.
             dps.DamageHandler = (damage, attacker) =>
             {
-                if (dps.EnabledLastFrame && damage > 0.01f)
+                if (!dps.EnabledLastFrame) return; // DPS off: nothing
+                if (damage > 0.01f)
                     AddDpsDamage(dps, Mathf.Max(1, Mathf.RoundToInt(damage)), Time.realtimeSinceStartup);
                 if (state.Character != null) dps.LastHealth = state.Character.GetHealth();
                 dps.HasLastHealth = true;
@@ -208,12 +212,28 @@ namespace EnemyHudRework
         {
             if (state.HealthRect == null) return;
 
-            dps.Rect.localScale = Vector3.one;
-            dps.Text.fontSize = dps.BaseFontSize * 0.738f * _dpsFontScale.Value;
-
-            float textWidth = Mathf.Max(80f, dps.Text.preferredWidth + 12f);
-            float textHeight = Mathf.Max(dps.Text.preferredHeight, dps.Text.fontSize * 1.2f);
-            dps.Rect.sizeDelta = new Vector2(textWidth, textHeight);
+            bool hpShown = _bossHealthDisplayMode.Value != "None" && state.HealthValueText != null;
+            string hpText = hpShown ? state.HealthValueText.text : null;
+            bool measure = dps.MeasuredLayout != _layoutVersion ||
+                !ReferenceEquals(dps.MeasuredText, dps.Text.text) ||
+                !ReferenceEquals(dps.MeasuredHp, hpText);
+            if (measure)
+            {
+                // Measuring text is the costly part: only when it changed.
+                dps.MeasuredLayout = _layoutVersion;
+                dps.MeasuredText = dps.Text.text;
+                dps.MeasuredHp = hpText;
+                dps.Rect.localScale = Vector3.one;
+                dps.Text.fontSize = dps.BaseFontSize * 0.738f * _dpsFontScale.Value;
+                dps.TextWidth = Mathf.Max(80f, dps.Text.preferredWidth + 12f);
+                dps.TextHeight = Mathf.Max(dps.Text.preferredHeight, dps.Text.fontSize * 1.2f);
+                dps.Rect.sizeDelta = new Vector2(dps.TextWidth, dps.TextHeight);
+                dps.HpHeight = hpShown
+                    ? Mathf.Max(state.HealthValueText.preferredHeight, state.HealthValueText.fontSize * 1.2f)
+                    : dps.TextHeight;
+                dps.LeftPad = TextWidthIn(dps.Text, dps.Rect, state.HealthRect);
+            }
+            float textHeight = dps.TextHeight;
 
             Rect barRect = state.HealthRect.rect;
             bool tracked = _bossHealthTextPosition.Value == BossHealthTextPosition.Tracked;
@@ -235,19 +255,18 @@ namespace EnemyHudRework
                     localX = Mathf.Lerp(barRect.xMin, barRect.xMax, Mathf.Clamp01(hp / max));
                 }
                 // Never let the number run past the bar's left end.
-                localX = Mathf.Max(localX, barRect.xMin + TextWidthIn(dps.Text, dps.Rect, state.HealthRect));
+                localX = Mathf.Max(localX, barRect.xMin + dps.LeftPad);
             }
 
-            bool hpShown = _bossHealthDisplayMode.Value != "None" && state.HealthValueText != null;
-            float hpHeight = hpShown
-                ? Mathf.Max(state.HealthValueText.preferredHeight, state.HealthValueText.fontSize * 1.2f)
-                : textHeight;
+            float hpHeight = dps.HpHeight;
             float localY = hpShown
                 ? barRect.yMin - hpHeight * 0.55f - 2f - (hpHeight + textHeight) * 0.5f
                 : barRect.yMin - textHeight * 0.55f - 2f;
 
-            dps.Rect.pivot = tracked ? new Vector2(1f, 0.5f) : new Vector2(0.5f, 0.5f);
-            dps.Text.alignment = tracked ? TextAlignmentOptions.Right : TextAlignmentOptions.Center;
+            Vector2 pivot = tracked ? new Vector2(1f, 0.5f) : new Vector2(0.5f, 0.5f);
+            if (dps.Rect.pivot != pivot) dps.Rect.pivot = pivot;
+            TextAlignmentOptions align = tracked ? TextAlignmentOptions.Right : TextAlignmentOptions.Center;
+            if (dps.Text.alignment != align) dps.Text.alignment = align;
             dps.Rect.position = state.HealthRect.TransformPoint(new Vector3(localX, localY, 0f));
         }
     }
