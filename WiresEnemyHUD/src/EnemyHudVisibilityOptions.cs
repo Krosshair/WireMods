@@ -91,12 +91,9 @@ namespace EnemyHudRework
         {
             _keepNameplatesOnScreen.Value = enabled;
             _showOnDamage.Value = enabled;
-            _showOnParry.Value = enabled;
             _criticalHitFlash.Value = enabled;
-            _weaknessIcons.Value = enabled;
-            _resistanceIcons.Value = enabled;
-            _bossWeaknessIcons.Value = enabled;
-            _bossResistanceIcons.Value = enabled;
+            _enemyIconShow.Value = enabled ? IconShow.Both : IconShow.Off;
+            _bossIconShow.Value = enabled ? IconShow.Both : IconShow.Off;
             _hpFontScale.Value = 1f;
             _dpsFontScale.Value = 1f;
         }
@@ -177,6 +174,7 @@ namespace EnemyHudRework
                     sample.PendingLocalHitUntil = -999f;
                     sample.ShowUntil = now + DamageShowSeconds;
                     sample.LastHp = hp;
+                    NoteReveal(c);
                     sample.SeenAt = now;
                     _pendingHits.RemoveAt(i);
                     if (!_reportedHitReveal)
@@ -244,6 +242,7 @@ namespace EnemyHudRework
             }
             sample.SeenAt = Time.unscaledTime;
             sample.ParryUntil = Time.unscaledTime + DamageShowSeconds;
+            NoteReveal(attacker);
         }
 
         // Real local damage, including the very first hit that
@@ -271,6 +270,7 @@ namespace EnemyHudRework
             sample.PendingLocalHitUntil = -999f;
             sample.ShowUntil =
                 Time.unscaledTime + DamageShowSeconds;
+            NoteReveal(c);
             if (!_reportedHitReveal)
             {
                 Logger.LogInfo(
@@ -308,17 +308,19 @@ namespace EnemyHudRework
         private void MarkCriticalHit(Character c)
         {
             if (!IsOrdinaryEnemy(c)) return; // sent even with your flash off: others may use it
-            ZNetView view = c.GetComponent<ZNetView>();
-            if (ZRoutedRpc.instance != null && view != null && view.IsValid())
+            ZNetView view = CharacterView(c);
+            if (SyncOn && ZRoutedRpc.instance != null && view != null && view.IsValid())
                 ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, CriticalRpc, view.GetZDO().m_uid);
             else
-                ShowCriticalHit(c);
+                ShowCriticalHit(c); // Sync info off: only here
         }
 
         internal static void RegisterCriticalRpc(ZRoutedRpc rpc)
         {
             try { rpc.Register<ZDOID>(CriticalRpc, (sender, id) => Instance?.OnCriticalRpc(id)); }
             catch (ArgumentException) { } // already registered
+            try { rpc.Register<ZDOID, int>(TypeHitRpc, (sender, id, mask) => Instance?.OnTypeHitRpc(id, mask)); }
+            catch (ArgumentException) { }
         }
 
         private void OnCriticalRpc(ZDOID id)
@@ -693,6 +695,7 @@ namespace EnemyHudRework
                 internal Vector3 Snapshot;
                 internal bool LocalAttacker;
                 internal bool Active;
+                internal int Types; // damage types in the hit, before resistances
             }
 
             private static void Prefix(
@@ -708,7 +711,10 @@ BackstabTime(__instance);
                     Snapshot = new Vector3(
                         __instance.GetHealth(), backstab,
                         __instance.IsStaggering() ? 1f : 0f),
-                    LocalAttacker = IsLocalPlayerHit(hit)
+                    LocalAttacker = IsLocalPlayerHit(hit),
+                    // Only players' hits get a hit response (and a message):
+                    // creature fights would only add traffic.
+                    Types = hit != null && hit.GetAttacker() is Player ? MaskOf(hit.m_damage) : 0
                 };
 
             }
@@ -717,6 +723,11 @@ BackstabTime(__instance);
                 Character __instance, HitState __state)
             {
                 Vector3 before = __state.Snapshot;
+                // Which damage types landed, for the icons' hit response.
+                // Before the "did it lose health" check: immune hits don't.
+                if (__state.Active && Instance != null && __state.Types != 0 &&
+                    !__instance.IsPlayer() && __instance.GetHealth() > 0f)
+                    Instance.SendTypeHit(__instance, __state.Types);
                 if (!__state.Active || Instance == null ||
                     !IsOrdinaryEnemy(__instance) ||
                     __instance.GetHealth() >= before.x - .01f)

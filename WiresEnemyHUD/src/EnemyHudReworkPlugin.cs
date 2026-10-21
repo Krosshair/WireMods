@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.8.3";
+        public const string PluginVersion = "0.8.4";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -36,6 +36,7 @@ namespace EnemyHudRework
             public int Order { get; set; }
             public string Category { get; set; }
             public Func<bool> ReadOnlyProvider { get; set; }
+            public bool? IsAdvanced { get; set; }
             public bool ReadOnly =>
                 ReadOnlyProvider != null && ReadOnlyProvider();
         }
@@ -57,11 +58,10 @@ namespace EnemyHudRework
         private ConfigEntry<bool> _staggerBarEnabled;
         private ConfigEntry<float> _staggerVerticalOffset;
         private ConfigEntry<float> _starRowHeight;
-        private ConfigEntry<bool> _hideForNonStaggerable;
 
         private ConfigEntry<bool> _syncStaggerForMultiplayer;
-        private ConfigEntry<float> _syncInterval;
-        private ConfigEntry<float> _syncMinimumDelta;
+        private const float SyncInterval = 0.10f;      // least time between stagger updates
+        private const float SyncMinimumDelta = 0.01f;  // least change before another is sent
 
         private readonly Dictionary<Character, EnemyUiState> _states =
             new Dictionary<Character, EnemyUiState>();
@@ -160,6 +160,9 @@ namespace EnemyHudRework
 
 
             public RectTransform Level2;
+            public TMP_Text LevelNumber; public GameObject LevelSecondStar;
+            public int StarLevel = -1; public GameObject[] OtherStars;
+            public StatusUi Status;
             public RectTransform Level3;
             public Vector2 Level2Original;
             public Vector2 Level3Original;
@@ -369,10 +372,103 @@ namespace EnemyHudRework
         {
             if (state == null || character == null) return;
             int level = character.GetLevel();
+            state.StarLevel = level;
+            if (Instance != null && !Instance._starCount.Value)
+            {
+                // Off: exactly the game's own stars (none past two), and
+                // other mods' star rows are left alone.
+                if (state.Level2 != null && state.Level2.gameObject.activeSelf != (level == 2))
+                    state.Level2.gameObject.SetActive(level == 2);
+                if (state.Level3 != null && state.Level3.gameObject.activeSelf != (level == 3))
+                    state.Level3.gameObject.SetActive(level == 3);
+                if (state.LevelSecondStar != null && !state.LevelSecondStar.activeSelf)
+                    state.LevelSecondStar.SetActive(true);
+                if (state.LevelNumber != null && state.LevelNumber.gameObject.activeSelf)
+                    state.LevelNumber.gameObject.SetActive(false);
+                return;
+            }
+            // Other mods' own star rows (any "level_" object besides the
+            // game's two) give way to ours; their pictures aren't touched.
+            if (state.OtherStars == null && state.Gui != null)
+            {
+                var others = new List<GameObject>();
+                foreach (Transform t in state.Gui.transform)
+                    if (t.name.StartsWith("level_", StringComparison.Ordinal) &&
+                        t != state.Level2 && t != state.Level3)
+                        others.Add(t.gameObject);
+                state.OtherStars = others.ToArray();
+            }
+            if (state.OtherStars != null)
+                foreach (GameObject o in state.OtherStars)
+                    if (o != null && o.activeSelf) o.SetActive(false);
+            // Past two stars (level mods): the two-star row with its second
+            // star swapped for the star count, in the stars' own yellow and
+            // the HP numbers' font.
+            bool high = level >= 4;
             if (state.Level2 != null && state.Level2.gameObject.activeSelf != (level == 2))
                 state.Level2.gameObject.SetActive(level == 2);
-            if (state.Level3 != null && state.Level3.gameObject.activeSelf != (level == 3))
-                state.Level3.gameObject.SetActive(level == 3);
+            bool three = level == 3 || high;
+            if (state.Level3 != null && state.Level3.gameObject.activeSelf != three)
+                state.Level3.gameObject.SetActive(three);
+            if (state.Level3 == null) return;
+            if (high && state.LevelNumber == null) CreateLevelNumber(state);
+            if (state.LevelSecondStar != null && state.LevelSecondStar.activeSelf == high)
+                state.LevelSecondStar.SetActive(!high);
+            if (state.LevelNumber != null)
+            {
+                if (state.LevelNumber.gameObject.activeSelf != high)
+                    state.LevelNumber.gameObject.SetActive(high);
+                if (high) state.LevelNumber.text = (level - 1).ToString();
+            }
+        }
+
+        // Runs after every other mod's nameplate update (ours is last): if
+        // anything switched our stars around, they're put back. A few
+        // reads; only acts when something actually changed them.
+        private static void GuardLevelStars(EnemyUiState state)
+        {
+            int level = state.StarLevel;
+            if (level < 1 || !Instance._starCount.Value) return;
+            bool high = level >= 4;
+            bool wrong =
+                (state.Level2 != null && state.Level2.gameObject.activeSelf != (level == 2)) ||
+                (state.Level3 != null && state.Level3.gameObject.activeSelf != (level == 3 || high)) ||
+                (state.LevelSecondStar != null && state.LevelSecondStar.activeSelf == high) ||
+                (state.LevelNumber != null && state.LevelNumber.gameObject.activeSelf != high);
+            if (!wrong && state.OtherStars != null)
+                foreach (GameObject o in state.OtherStars)
+                    if (o != null && o.activeSelf) { wrong = true; break; }
+            if (wrong && state.Character != null) ApplyLevelStars(state, state.Character);
+        }
+
+        private static readonly Color StarYellow = new Color(1f, 0.8174443f, 0.3382353f, 1f);
+
+        private static void CreateLevelNumber(EnemyUiState state)
+        {
+            Transform second = state.Level3.Find("star (1)");
+            TMP_Text font = state.HealthValueText != null ? state.HealthValueText : state.NameText;
+            if (second == null || font == null) return;
+            state.LevelSecondStar = second.gameObject;
+            RectTransform starRect = (RectTransform)second;
+            GameObject go = new GameObject("WireLevelNumber", typeof(RectTransform), typeof(TextMeshProUGUI));
+            RectTransform r = (RectTransform)go.transform;
+            r.SetParent(state.Level3, false);
+            r.anchorMin = starRect.anchorMin;
+            r.anchorMax = starRect.anchorMax;
+            r.pivot = starRect.pivot;
+            r.anchoredPosition = starRect.anchoredPosition;
+            r.sizeDelta = starRect.sizeDelta;
+            TMP_Text t = go.GetComponent<TMP_Text>();
+            t.font = font.font;
+            t.fontSharedMaterial = font.fontSharedMaterial;
+            t.fontStyle = font.fontStyle;
+            t.fontSize = starRect.sizeDelta.y;
+            t.textWrappingMode = TextWrappingModes.NoWrap;
+            t.overflowMode = TextOverflowModes.Overflow;
+            t.alignment = TextAlignmentOptions.Center;
+            t.color = StarYellow;
+            t.raycastTarget = false;
+            state.LevelNumber = t;
         }
 
         // ---- What you're looking at ----
@@ -382,11 +478,13 @@ namespace EnemyHudRework
         // with the time, for the delay settings; that list is tiny and
         // empties itself.
         private ConfigEntry<bool> _dynamicHp;
+        private ConfigEntry<bool> _starCount;
         private ConfigEntry<bool> _enemyAimFade;
         // Players: the crosshair check the nameplate fading uses, with one
         // delay for both it and their Dynamic HP numbers.
         private ConfigEntry<bool> _playerDynamicHp;
         private ConfigEntry<float> _playerAimDelay;
+        private ConfigEntry<float> _lookAwayDelay; // one delay for all of them
 
         private bool AimedAtRecently(EnemyUiState state)
         {
@@ -410,13 +508,7 @@ namespace EnemyHudRework
             float now = Time.time;
             if (!ReferenceEquals(lookedAt, _looked))
             {
-                if (_looked != null)
-                {
-                    _lookedAway.Add(new LookedAway { C = _looked, At = now, IconsShown = true });
-                    MarkIconsDirty(_looked);
-                }
-                for (int i = _lookedAway.Count - 1; i >= 0; i--)
-                    if (ReferenceEquals(_lookedAway[i].C, lookedAt)) _lookedAway.RemoveAt(i);
+                if (_looked != null) KeepInFocusUntil(_looked, now);
                 _looked = lookedAt;
                 MarkIconsDirty(lookedAt);
             }
@@ -434,6 +526,33 @@ namespace EnemyHudRework
                 if (e.C == null || (!e.IconsShown && now >= e.At + hpDelay))
                     _lookedAway.RemoveAt(i);
             }
+        }
+
+        // Counts a creature as looked at until the given time (then its
+        // delays run from there). Looking away uses "now"; a hit or parry
+        // reveal uses the end of the reveal, so revealed creatures get their
+        // HP numbers, icons and full opacity exactly like looked-at ones.
+        private void KeepInFocusUntil(Character c, float until)
+        {
+            if (c == null) return;
+            for (int i = 0; i < _lookedAway.Count; i++)
+            {
+                if (!ReferenceEquals(_lookedAway[i].C, c)) continue;
+                LookedAway e = _lookedAway[i];
+                e.At = Mathf.Max(e.At, until);
+                e.IconsShown = true;
+                _lookedAway[i] = e;
+                MarkIconsDirty(c);
+                return;
+            }
+            _lookedAway.Add(new LookedAway { C = c, At = until, IconsShown = true });
+            MarkIconsDirty(c);
+        }
+
+        internal void NoteReveal(Character c)
+        {
+            if (!_dynamicMode.Value && !_dynamicHp.Value && !_enemyAimFade.Value) return;
+            KeepInFocusUntil(c, Time.time + DamageShowSeconds);
         }
 
         private void MarkIconsDirty(Character c)
@@ -501,7 +620,10 @@ namespace EnemyHudRework
                     state.LastAimedAt = frameTime;
 
                 if (state.Kind == HudKind.Enemy)
+                {
+                    GuardLevelStars(state);
                     UpdateStatusName(state, isEnemy);
+                }
                 else if (state.Kind == HudKind.Boss)
                     ApplyBossNameColor(state);
 
@@ -518,6 +640,7 @@ namespace EnemyHudRework
                 UpdateWeaknessIcons(state, isEnemy);
                 UpdateBossDps(state);
                 UpdateEnhancedEffects(state, isEnemy);
+                UpdateStatusIcons(state);
                 ApplyFrameFlash(state);
                 UpdateViewportVisibility(state);
                 UpdatePlayerNameplateOpacity(
@@ -526,6 +649,7 @@ namespace EnemyHudRework
                     anyPlayerNameplate = true;
             }
             _hadPlayerNameplate = anyPlayerNameplate;
+            UpdateIconFlashes();
 
             if (remove == null)
                 return;
@@ -1217,8 +1341,8 @@ namespace EnemyHudRework
             bool staggerable =
                 state.Character.m_staggerDamageFactor > 0f;
 
-            if (_hideForNonStaggerable.Value &&
-                !staggerable)
+            // An enemy that can't be staggered never gets a stagger bar.
+            if (!staggerable)
             {
                 SetStaggerLayoutActive(state, false);
                 return;
@@ -1253,9 +1377,13 @@ namespace EnemyHudRework
                 state.StaggerFast.SetValue(
                     recovering ? 1f : staggerPercentage);
 
+            // The game keeps the meter full during a stagger and lets it
+            // drain; any hit then tops it back up to full (bows always do).
+            // That's no new stagger: a fill only counts while not staggering.
             bool reachedFull =
                 staggerPercentage >= 0.999f &&
-                state.LastStaggerPercentage < 0.999f;
+                state.LastStaggerPercentage < 0.999f &&
+                !isStaggering && !state.WasStaggering;
 
             bool beganStagger =
                 isStaggering &&
@@ -1489,7 +1617,7 @@ namespace EnemyHudRework
             if (sync.LastSent < 0f ||
                 delta >= Mathf.Max(
                     0.0001f,
-                    _syncMinimumDelta.Value) ||
+                    SyncMinimumDelta) ||
                 endpointChanged)
             {
                 zdo.Set(StaggerZdoKey, value);
@@ -1497,7 +1625,7 @@ namespace EnemyHudRework
             }
 
             sync.NextSendTime =
-                now + Mathf.Max(0.02f, _syncInterval.Value);
+                now + SyncInterval;
         }
 
         internal void UpdateDebugHuds(EnemyHud enemyHud)

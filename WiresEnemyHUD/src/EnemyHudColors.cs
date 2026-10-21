@@ -43,15 +43,14 @@ namespace EnemyHudRework
         // Read into plain arrays when a setting changes, never per frame.
         private readonly int[] _shapeOf = new int[DamageKinds];
         private readonly Color[] _tintOf = new Color[DamageKinds];
-        private Color _resistTint = ResistTint;
+        private Color _resistTint = ResistTint, _immuneTint = ResistTint;
 
         private void BindColorSections()
         {
             _order = 1000;
-            _iconStyle = Bind(SecIconColors, "Icon style", IconStyle.Shapes,
-                "Shapes are made to be told apart at a glance at this size. Game icons uses the game's own skill and status effect icons instead (axe for chop, clubs for blunt, the poison effect for poison, ectoplasm for spirit...). NOT recommended: they are detailed pictures, hard to tell apart this small. The shapes below don't apply to them; weaknesses keep the icon's own colors and resistances use the resistance color.",
-                null, null);
-            _iconStyle.SettingChanged += (s, e) => RefreshIconLook();
+            _resistColor = Bind(SecIconColors, "Resistance color", ResistTint,
+                "Color of every resistance icon.", null, null);
+            _resistColor.SettingChanged += (s, e) => RefreshIconLook();
             for (int i = 0; i < DamageKinds; i++)
             {
                 _iconShape[i] = Bind(SecIconColors, DamageNames[i] + " icon", (IconShape)i,
@@ -61,9 +60,6 @@ namespace EnemyHudRework
                 _iconShape[i].SettingChanged += (s, e) => RefreshIconLook();
                 _iconColor[i].SettingChanged += (s, e) => RefreshIconLook();
             }
-            _resistColor = Bind(SecIconColors, "Resistance color", ResistTint,
-                "Color of every resistance icon.", null, null);
-            _resistColor.SettingChanged += (s, e) => RefreshIconLook();
             RefreshIconLook();
         }
 
@@ -76,6 +72,8 @@ namespace EnemyHudRework
                 _tintOf[i] = _iconColor[i] != null ? _iconColor[i].Value : DamageTint[i];
             }
             _resistTint = _resistColor != null ? _resistColor.Value : ResistTint;
+            // Immunities: the resistance color, darker (same opacity).
+            _immuneTint = new Color(_resistTint.r * 0.55f, _resistTint.g * 0.55f, _resistTint.b * 0.55f, _resistTint.a);
             MarkAllWeaknessDirty();
         }
 

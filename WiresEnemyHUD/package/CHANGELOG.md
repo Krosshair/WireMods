@@ -1,3 +1,42 @@
+## 0.8.4
+
+A creature you hit or parry now counts as looked at for as long as the hit or parry reveals its bar (then the Hover delay runs as usual): full opacity, HP numbers and icons with the hover settings.
+
+New Immunities setting for damage type icons: what a creature is immune to, as darker icons after its resistances. Notable only (default) leaves out spirit, chop and pickaxe, which most creatures are immune to; All shows every immunity (Limited mode recommended with it). Works with both icon styles.
+
+Damage type icons are now sorted by strength. Left to right: immune, very resistant, resistant, slightly resistant, slightly weak, weak, very weak, so the strongest weakness sits at the bar's end. On boss bars the mildest sit next to the name, immunities outermost.
+
+Creatures above two stars (from level mods) now show one star and the star count next to it, in the stars' yellow and the HP numbers' font, instead of no stars at all. Other mods that switch the nameplate's stars around can't override this; their star pictures are left as they are.
+
+New Hit response for damage type icons (on by default): when a creature is hit by a type it's weak to, that icon flashes white, outline and all, and swells for a moment; types it resists or is immune to go darker and shrink instead. Other players' hits show too when the creature's owner has Enemy HUD.
+
+Hit predictions now also update when one of your own effects runs out by itself (a mead, a forsaken power, rested), not only when it's removed.
+
+The star count past two stars has its own setting (on by default); off is the game's own stars.
+
+The Vanilla preset now also turns off everything added since it was made (star count, status effects, hit response, immunities, the dynamic and fade options, bubble bars, recovery overlay), and Author's Choice sets their defaults.
+
+New Status effects (on by default): icons left of a creature's or other player's health bar while they're burning, frozen, shocked, poisoned or hit by spirit, using the same icons as those damage types (your shapes and colors). With Icon style on Game icons, the game's own status icons instead, tar included. Synced in multiplayer like the bubble bar.
+
+Config reorganized into fewer sections, with clearer names and related settings next to each other (all your values carry over):
+* 01 General: the preset.
+* 02 Nameplates: Transparent background; then creatures (Creature HP numbers, Double size creature bars, Uppercase creature names, Star count past two stars, Critical hit flash, Status effects, Awareness display); then players (Player HP numbers, Double size player bars).
+* 03 Boss Bar: HP numbers, HP numbers position, DPS, Name color.
+* 04 Custom Bars: Stagger bar, Stagger recovery overlay, Bubble bar on nameplates, Bubble bar on your HUD.
+* 05 Visibility: Reveal on hit or parry (was Show on damage and Show on parry), Keep nameplates on screen, then the hover settings: Creature HP numbers only on hover, Player HP numbers only on hover, Damage icons only on hover, Fade creature nameplates unless hovered, Fade player nameplates unless hovered. A creature you just hit or parried counts as hovered.
+* 06 Damage Icons: Limited mode, Hit response, Creature icons and Boss icons (were four on/off settings, now Weaknesses and resistances / Weaknesses only / Resistances only / Off), Immunities, Icon style.
+* 07 Hit Predictions, 08 Icon Shapes and Colors.
+* 09 Fine Tuning: sizes (Text size, which was HP text size and Boss DPS text size; Icon size; Icons per row), positions (Star row height, Stagger bar gap, boss icon height and spacing), timing (Hover delay, which was three separate delays; Limited mode delay).
+* 10 Multiplayer: Sync info, which now turns all sharing on or off: stagger, bubbles, status effects, critical hits and hit responses. Sync interval and Sync minimum change are gone.
+* 11 Debug, last, only shown with Advanced settings ticked.
+* Gone: Hide on unstaggerable enemies (unstaggerable creatures never get a stagger bar now).
+
+New defaults (and Author's Choice): Limited mode and Damage icons only on hover are on, Player HP numbers only on hover is off.
+
+Fixed the stagger bar flashing again on every hit (always with bows) against an already staggered enemy: the game tops the meter back up during a stagger, which looked like a new one.
+
+Less network traffic: hit responses are only sent for players' hits, not creature fights, and the player nameplate crosshair check looks 100 m instead of 2 km.
+
 ## 0.8.3
 
 Less work every frame for every nameplate:

@@ -31,6 +31,7 @@ namespace EnemyHudRework
                 {
                     case "Vanilla":
                         ApplyVanillaVisualValues();
+                        ApplyFeaturePreset(false);
                         _staggerBarEnabled.Value = false;
                         ApplyVisibilityPreset(false);
                         _playerNameplateAimFade.Value = false;
@@ -53,8 +54,8 @@ namespace EnemyHudRework
                         _transparentBackground.Value = true;
                         _staggerVerticalOffset.Value = 8f;
                         _starRowHeight.Value = StarRowHeightDefault;
-                        _hideForNonStaggerable.Value = true;
                         ApplyVisibilityPreset(true);
+                        ApplyFeaturePreset(true);
                         _hpFontScale.Value = 1.267f;
                         _dpsFontScale.Value = 1.267f;
                         _playerNameplateAimFade.Value = true;
@@ -69,6 +70,27 @@ namespace EnemyHudRework
             }
 
             Config.Save();
+        }
+
+        // Everything added since the presets were first made: the vanilla
+        // preset turns all of it off, Author's Choice sets the defaults.
+        private void ApplyFeaturePreset(bool mine)
+        {
+            _starCount.Value = mine;
+            _statusEffects.Value = mine;
+            _hitResponse.Value = mine;
+            _immunityShow.Value = mine ? ImmunityShow.Notable : ImmunityShow.Off;
+            _limitedMode.Value = mine;
+            _dynamicMode.Value = mine;
+            _dynamicHp.Value = false;
+            _enemyAimFade.Value = false;
+            _playerDynamicHp.Value = false;
+            _lookAwayDelay.Value = 0f;
+            _bubbleWorld.Value = mine;
+            _bubbleHud.Value = mine;
+            _hitPredictions.Value = false;
+            _staggerRecoveryEnabled.Value = mine;
+            _iconStyle.Value = IconStyle.Shapes;
         }
 
         private void ApplyVanillaVisualValues()
@@ -86,7 +108,6 @@ namespace EnemyHudRework
             _transparentBackground.Value = false;
             _staggerVerticalOffset.Value = 8f;
             _starRowHeight.Value = 0f;
-            _hideForNonStaggerable.Value = true;
         }
 
         private void OnPresetDestroy()

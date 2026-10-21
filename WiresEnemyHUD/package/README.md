@@ -1,73 +1,74 @@
 # Wire's Enemy HUD
 
-The ORIGINAL health bar mod. Weakness icons, a stagger bar, HP numbers, bubble bars, hit predictions and smarter visibility, drawn with the game's own art, fonts and colors, so it looks like it shipped with the game.
+The ORIGINAL Valheim 1.0 health bar mod. Weakness icons, a stagger bar, HP numbers, status effects, bubble bars, hit predictions, smarter visibility and more. (fully configurable)
+
+
 
 ![Health bar features](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/health-bar-legend.jpg)
+
+## Stagger bar
+
+* A stagger meter under the health bar, styled after your own.
+* While staggered, a yellow bar drains over the exact window your hits deal double damage.
 
 ## Weakness icons
 
 ![Damage type icons](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/damage-icons-legend.jpg)
 
-* What an enemy is weak to, at the end of its star row. Resistances follow in faint gray.
-* One shape and color per damage type, built like the level stars.
+* What an enemy is weak to, at the end of its star row. Resistances follow in faint gray, immunities in a darker gray, all sorted by strength.
+* Hit an enemy with its weakness and that icon flashes white. Hit what it resists and it goes darker.
 * Bosses show weaknesses left of their name and resistances to the right.
 * Read from each creature's real damage modifiers, so modded creatures work too.
-* Limited mode (off by default): only the icons of what your weapon in hand and its ammo can deal.
-* Dynamic mode (off by default): icons only on the enemy you're looking at, with an optional delay after you look away. Works together with Limited mode.
+* Either use the custom symbols (which can be configured in both shape and color) or vanilla icons, taken from skills and status effects (really not recommended)
 
-## Stagger bar
+## Status effects
 
-* A stagger meter under the health bar, styled after your own.
-* The frame flashes white the moment an enemy is staggered, just like your own stagger bar.
-* While staggered, a yellow layer drains over the exact window your hits deal double damage.
-* Hidden on enemies that can't be staggered. Synced in multiplayer.
+![Stuff added in 0.8.4](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.4.jpg)
+
+* Creatures and players that are burning, frozen, shocked, poisoned or hit by spirit show it next to their health bar.
 
 ## Health bars
 
-* Double-thickness bars for enemies and players, same width as vanilla.
-* HP as current, current/max or percent, on enemies, bosses and players.
-* Dynamic HP numbers: only on the enemy you're looking at (off by default) or the player you're aiming at (on by default), with an optional delay.
-* Boss HP follows the health fill and never runs off the bar. A DPS counter sits under it.
-* See-through backgrounds, like your own HUD bars.
-* Friendly creatures get their own bar color.
-* A white flash on the frame when a backstab or a hit on a staggered enemy lands. Never on the killing blow.
+* Doubles the thickness of health bars
+* HP numbers
+* Enemies above two stars (from level mods) show their star count.
+* Transparent backgrounds, like your own HUD bars.
+* Friendly creatures get their own bar color (green).
+* A white flash on the frame when a backstab or a hit on a staggered enemy lands.
+* The name color shows whether an enemy noticed you or is hunting you.
 
 ## Bubble bars
 
 ![Bubble bars and hit predictions](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.0.jpg)
 
-* A bar above the health bar of anyone inside a protective bubble (Staff of Protection), showing how much it can still take.
+* A bar above the health bar of anyone inside a protective bubble (Staff of Protection)
 * Purple on friendlies (eitr), blue on enemies (shaman magic).
-* Your own bubble gets a bar right of your health bar, same height, half the width. The forsaken power moves over for it.
-* When a bubble breaks, its bar flashes, stays empty for a second, then goes.
-* Other players need Enemy HUD for their bubble to show.
+* Your own bubble gets a bar right of your health bar.
 
 ## Hit predictions
 
 * Off by default. Shows what your next hit would do to the enemy you're looking at, on its health, stagger and bubble bars.
-* Uses the middle of your possible damage, or the weakest possible hit if you never want to see something that doesn't happen.
+* Uses the middle of your possible damage, or the weakest possible hit if you never want to see something that might not happen.
 * Counts the creature's weaknesses and resistances, sneak attacks, the combo finisher and double damage on staggered enemies.
 
-## Awareness and visibility
+## Visibility
 
-* The name color shows whether an enemy noticed you or is hunting you. Or use the vanilla icons if you want, or nothing, if you're a masochist.
 * Hitting or parrying an enemy shows its bar for a few seconds, at any distance.
 * Bars stay on screen: a troll's bar slides along the top edge instead of vanishing.
-* Other players' nameplates fade until you aim at them. Creature nameplates can do the same (off by default). Faded bars keep their damage trail without tinting.
-
-## Built on the vanilla HUD
-
-* Nothing is replaced: the game's own bars, frames, fonts and stars are used and extended.
-* Mods with their own star visuals keep them.
-* Light on performance. You'd be surprised how little the game tells you about stagger haha.
+* Other players' nameplates fade until you aim at them. Enemy nameplates can do the same (off by default).
 
 ## Make it yours
 
 * Presets: Author's Choice, or Vanilla as a clean starting point.
-* Everything can be changed or turned off in the in-game Configuration Manager (I use the one by Shudnal).
-* Pick each damage type's icon shape and color, plus one color for resistances.
+* Everything can be changed or turned off in the config
 
-## Disclaimer: the code is AI assisted since I barely know C#. Not fully AI nor human. No AI image generation was used.
+## Multiplayer
+
+Other clients need the mod to share stagger, bubble, status effect, critical hit and hit response info on creatures they're hosting and themselves.
+
+
+
+## Disclaimer: the code is AI assisted. No AI image generation was used.
+
 ## https://ko-fi.com/krosshair
 
-Thank you, darthvladi, for making HP Barheim. It motivates me to be better. You're awesome btw <3

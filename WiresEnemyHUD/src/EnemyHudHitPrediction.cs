@@ -72,17 +72,17 @@ namespace EnemyHudRework
             _order = 1000;
             _hitPredictions = Bind(section, "Hit predictions", false,
                 "On the enemy you are looking at, show the part of its health bar that one hit with your weapon would take off, and how far it would push its stagger bar. Uses the typical hit by default (see Damage roll). Bare hands show nothing.",
-                null, null, SecEnemy, "Hit predictions");
+                null, null, O2, "Hit predictions");
+            _predictionHighContrast = Bind(section, "High contrast", false,
+                "Show the health prediction in the yellow of the bar's damage trail and the stagger prediction in the game's UI blue, instead of the quieter defaults (the health bar's own red at half brightness, and the gray trail of your own stamina bar).",
+                null, null);
             _predictionAttack = Bind(section, "Attack", PredictPrimary,
                 "Which attack the predictions show when you are not attacking. While you do an attack, it always shows that one.",
-                new AcceptableValueList<string>(PredictPrimary, PredictSecondary), null, SecEnemy, "Hit prediction attack");
+                new AcceptableValueList<string>(PredictPrimary, PredictSecondary), null, O2, "Hit prediction attack");
             _predictionRoll = Bind(section, "Damage roll", RollTypical,
                 "Every hit rolls its damage between a low and a high value, all equally likely. Typical hit shows the middle of that range; Weakest possible hit shows the bottom, so it never promises more than you deal.",
                 new AcceptableValueList<string>(RollTypical, RollMinimum), null);
             _predictionRoll.SettingChanged += (s, e) => InvalidatePredictions();
-            _predictionHighContrast = Bind(section, "High contrast", false,
-                "Show the health prediction in the yellow of the bar's damage trail and the stagger prediction in the game's UI blue, instead of the quieter defaults (the health bar's own red at half brightness, and the gray trail of your own stamina bar).",
-                null, null);
             _hitPredictions.SettingChanged += (s, e) => InvalidatePredictions();
             _predictionAttack.SettingChanged += (s, e) => InvalidatePredictions();
             _predictionHighContrast.SettingChanged += (s, e) => InvalidatePredictions();
@@ -259,7 +259,7 @@ namespace EnemyHudRework
             bool staggering = barRan && state.WasStaggering;
             if (ui.View == null) ui.View = c.GetComponent<ZNetView>();
             ZDO pzdo = ui.View != null && ui.View.IsValid() ? ui.View.GetZDO() : null;
-            uint revision = pzdo != null ? pzdo.DataRevision : 0u;
+            uint revision = pzdo != null ? SharedRevision(pzdo) : 0u;
             if (ui.Version == _predictionVersion && pzdo != null && revision == ui.Revision &&
                 ui.Stagger == stagger && ui.Staggering == staggering && ui.Enemy == isEnemy)
             {
@@ -271,8 +271,8 @@ namespace EnemyHudRework
             BaseAI ai = c.GetBaseAI();
             bool alerted = ai != null && ai.IsAlerted();
             bool bubbled = HasBubble(pzdo);
-            float bubbleMax = bubbled ? pzdo.GetFloat(BubbleMaxKey) : 0f;
-            float bubbleTaken = bubbled ? pzdo.GetFloat(BubbleDamageKey) : 0f;
+            float bubbleMax = bubbled ? GetShared(pzdo, BubbleMaxKey) : 0f;
+            float bubbleTaken = bubbled ? GetShared(pzdo, BubbleDamageKey) : 0f;
             bool same = ui.Version == _predictionVersion && ui.Health == health && ui.MaxHealth == max &&
                 ui.Alerted == alerted && ui.Stagger == stagger && ui.Staggering == staggering && ui.Enemy == isEnemy &&
                 ui.Bubbled == bubbled && ui.BubbleMax == bubbleMax && ui.BubbleTaken == bubbleTaken;

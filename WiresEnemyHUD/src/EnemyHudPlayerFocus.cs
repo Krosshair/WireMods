@@ -35,7 +35,7 @@ namespace EnemyHudRework
             // Into a reused buffer, nearest first by picking, no sorting or
             // new arrays each frame.
             int count = Physics.RaycastNonAlloc(
-                ray, CrosshairHits, 2000f, ~0, QueryTriggerInteraction.Ignore);
+                ray, CrosshairHits, 100f, ~0, QueryTriggerInteraction.Ignore); // nameplates show within ~10 m
 
             for (int n = 0; n < count; ++n)
             {
@@ -102,6 +102,7 @@ namespace EnemyHudRework
                 return;
             }
 
+            // Creatures also show fully while a hit or parry reveals them.
             bool focused = player ? AimedAtRecently(state)
                 : LookedAtRecently(state.Character, _dynamicHpDelay.Value);
             float target = focused

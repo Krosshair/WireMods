@@ -16,10 +16,21 @@ namespace EnemyHudRework
     // Values come from the creature's real damage modifiers.
     public sealed partial class EnemyHudReworkPlugin
     {
-        private ConfigEntry<bool> _weaknessIcons;
-        private ConfigEntry<bool> _resistanceIcons;
-        private ConfigEntry<bool> _bossWeaknessIcons;
-        private ConfigEntry<bool> _bossResistanceIcons;
+        private enum IconShow
+        {
+            [System.ComponentModel.Description("Weaknesses and resistances")] Both,
+            [System.ComponentModel.Description("Weaknesses only")] WeaknessesOnly,
+            [System.ComponentModel.Description("Resistances only")] ResistancesOnly,
+            [System.ComponentModel.Description("Off")] Off
+        }
+
+        private ConfigEntry<IconShow> _enemyIconShow, _bossIconShow;
+        private static bool ShowsWeak(IconShow s) { return s == IconShow.Both || s == IconShow.WeaknessesOnly; }
+        private static bool ShowsResist(IconShow s) { return s == IconShow.Both || s == IconShow.ResistancesOnly; }
+        private static IconShow ToIconShow(bool weak, bool resist)
+        {
+            return weak && resist ? IconShow.Both : weak ? IconShow.WeaknessesOnly : resist ? IconShow.ResistancesOnly : IconShow.Off;
+        }
         private ConfigEntry<bool> _limitedMode;
 
         private ConfigEntry<bool> _dynamicMode;
@@ -120,7 +131,139 @@ namespace EnemyHudRework
 
         private enum DamageKind { Blunt, Slash, Pierce, Fire, Frost, Lightning, Poison, Spirit, Pickaxe, Chop }
         private const int DamageKinds = 10;
-        private const int Weak = 1, Resist = -1, Immune = -2;
+        // How strongly a creature reacts to a damage type: 3 very weak, 2 weak,
+        // 1 slightly weak, 0 normal, -1 slightly resistant, -2 resistant,
+        // -3 very resistant, -4 immune. Only sorting uses the steps; the
+        // look is just weak, resistant or immune.
+        private const int Immune = -4;
+        // Placed in this order, first nearest the bar's end (or the boss
+        // name): most extreme weakness first, immunities last.
+        private static readonly int[] WeakOrder = { 3, 2, 1 };
+        private static readonly int[] ResistOrder = { -1, -2, -3, -4 };
+        private static readonly int[] EnemyOrder = { 3, 2, 1, -1, -2, -3, -4 };
+
+        // ---- Hit response ----
+        // When a creature takes a hit of a type it's weak to, that icon
+        // flashes bright and swells; one it resists or is immune to dims and
+        // shrinks. Sent by whoever runs the creature as one small message
+        // (types in the hit), shown by everyone with the mod. Runs only
+        // while an icon is flashing.
+        private ConfigEntry<bool> _hitResponse;
+        private const string TypeHitRpc = "WireEnemyHUD_TypeHit";
+        private readonly List<EnemyUiState> _flashingIcons = new List<EnemyUiState>();
+
+        internal void SendTypeHit(Character c, int mask)
+        {
+            ZNetView view = CharacterView(c);
+            if (view == null || !view.IsValid()) return;
+            if (SyncOn && ZRoutedRpc.instance != null)
+                ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, TypeHitRpc, view.GetZDO().m_uid, mask);
+            else
+                OnTypeHitRpc(view.GetZDO().m_uid, mask); // Sync info off: only here
+        }
+
+        internal void OnTypeHitRpc(ZDOID id, int mask)
+        {
+            if (!_hitResponse.Value || ZNetScene.instance == null) return;
+            GameObject go = ZNetScene.instance.FindInstance(id);
+            Character c = go != null ? go.GetComponent<Character>() : null;
+            EnemyUiState state;
+            if (c == null || !_states.TryGetValue(c, out state) || state == null) return;
+            WeaknessUi ui = state.Weakness;
+            if (ui == null || ui.Root == null || !ui.Root.gameObject.activeInHierarchy) return;
+            float now = Time.time;
+            for (int k = 0; k < DamageKinds; k++)
+            {
+                if ((mask & (1 << k)) == 0 || !ui.Show[k]) continue;
+                if (ui.Kind[k] != 0)
+                {
+                    ui.FlashStart[k] = now;
+                    if (!ui.Flashing) { ui.Flashing = true; _flashingIcons.Add(state); }
+                }
+            }
+        }
+
+        private void UpdateIconFlashes()
+        {
+            if (_flashingIcons.Count == 0) return;
+            float now = Time.time;
+            float duration = GetPlayerStaggerFlashDuration();
+            bool game = _iconStyle.Value == IconStyle.GameIcons;
+            for (int s = _flashingIcons.Count - 1; s >= 0; s--)
+            {
+                EnemyUiState state = _flashingIcons[s];
+                WeaknessUi ui = state != null ? state.Weakness : null;
+                bool any = false;
+                if (ui != null && ui.Root != null)
+                {
+                    for (int k = 0; k < DamageKinds; k++)
+                    {
+                        if (ui.FlashStart[k] < 0f) continue;
+                        float a = duration > 0f ? VanillaFlash((now - ui.FlashStart[k]) / duration) : 0f;
+                        Image slot = ui.Slots[k], fill = ui.Fills[k];
+                        if (a <= 0f || slot == null)
+                        {
+                            ui.FlashStart[k] = -1f;
+                            if (slot != null) slot.rectTransform.localScale = Vector3.one;
+                            ui.Dirty = true; // colors back to normal on the next layout
+                            continue;
+                        }
+                        any = true;
+                        bool weak = ui.Kind[k] > 0;
+                        Color tint = IconTint(k, ui.Kind[k]);
+                        // Weakness: the whole icon flashes white, outline
+                        // included, like the bars' frame flash. Resistance
+                        // and immunity: it goes darker. Same curve as the
+                        // game's flashes.
+                        if (game)
+                        {
+                            Color b = weak ? Color.white : tint;
+                            slot.color = weak ? b : Color.Lerp(b, new Color(0f, 0f, 0f, b.a), a * 0.7f);
+                        }
+                        else
+                        {
+                            Color outline = new Color(0f, 0f, 0f, tint.a);
+                            slot.color = weak ? Color.Lerp(outline, new Color(1f, 1f, 1f, tint.a), a) : outline;
+                            if (fill != null)
+                                fill.color = Color.Lerp(tint, weak ? new Color(1f, 1f, 1f, tint.a) : new Color(0f, 0f, 0f, tint.a), a * (weak ? 0.85f : 0.7f));
+                        }
+                        slot.rectTransform.localScale = Vector3.one * (1f + (weak ? 0.25f : -0.15f) * a);
+                    }
+                }
+                if (!any)
+                {
+                    if (ui != null) ui.Flashing = false;
+                    _flashingIcons.RemoveAt(s);
+                }
+            }
+        }
+
+        private enum ImmunityShow
+        {
+            [System.ComponentModel.Description("Off")] Off,
+            [System.ComponentModel.Description("Notable only")] Notable,
+            [System.ComponentModel.Description("All")] All
+        }
+
+        private ConfigEntry<ImmunityShow> _immunityShow;
+
+        // Chop and pickaxe immunity is nearly everything, spirit immunity
+        // everything that isn't undead: "Notable" leaves those three out,
+        // "All" is all of them.
+        private bool ImmunityShown(int kind)
+        {
+            ImmunityShow s = _immunityShow.Value;
+            if (s == ImmunityShow.Off) return false;
+            if (s == ImmunityShow.All) return true;
+            return kind != (int)DamageKind.Chop && kind != (int)DamageKind.Pickaxe && kind != (int)DamageKind.Spirit;
+        }
+
+        private bool RankShown(int rank, int kind, IconShow show)
+        {
+            if (rank > 0) return ShowsWeak(show);
+            if (rank == Immune) return ImmunityShown(kind);
+            return rank < 0 && ShowsResist(show);
+        }
 
         private static readonly string[] DamageAsset =
             { "blunt", "slash", "pierce", "fire", "frost", "lightning", "poison", "spirit", "pickaxe", "chop" };
@@ -208,6 +351,8 @@ namespace EnemyHudRework
             public Image[] Fills = new Image[DamageKinds];
             public int[] Kind = new int[DamageKinds];
             public bool[] Show = new bool[DamageKinds];
+            public float[] FlashStart = { -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f };
+            public bool Flashing;
             public bool KindsReady;
             public bool Dirty = true;
             public int LastKey = -1;
@@ -263,12 +408,12 @@ namespace EnemyHudRework
         {
             switch (m)
             {
-                case HitData.DamageModifier.Weak:
-                case HitData.DamageModifier.VeryWeak:
-                case HitData.DamageModifier.SlightlyWeak: return Weak;
-                case HitData.DamageModifier.Resistant:
-                case HitData.DamageModifier.VeryResistant:
-                case HitData.DamageModifier.SlightlyResistant: return Resist;
+                case HitData.DamageModifier.VeryWeak: return 3;
+                case HitData.DamageModifier.Weak: return 2;
+                case HitData.DamageModifier.SlightlyWeak: return 1;
+                case HitData.DamageModifier.SlightlyResistant: return -1;
+                case HitData.DamageModifier.Resistant: return -2;
+                case HitData.DamageModifier.VeryResistant: return -3;
                 case HitData.DamageModifier.Immune:
                 case HitData.DamageModifier.Ignore: return Immune;
                 default: return 0;
@@ -375,7 +520,7 @@ namespace EnemyHudRework
         private void UpdateEnemyWeaknessIcons(EnemyUiState state, WeaknessUi ui, bool isEnemy)
         {
             RectTransform star = StarRect(state);
-            if (!_weaknessIcons.Value || !isEnemy || state.Character == null ||
+            if ((_enemyIconShow.Value == IconShow.Off && _immunityShow.Value == ImmunityShow.Off) || !isEnemy || state.Character == null ||
                 state.Character.IsTamed() || star == null ||
                 (_dynamicMode.Value && !LookedAtRecently(state.Character, _dynamicDelay.Value)))
             {
@@ -405,22 +550,22 @@ namespace EnemyHudRework
             ui.Root.position = new Vector3(barRight.x, starCenter.y, ui.Root.position.z);
             float right = -size * 0.5f;
 
-            // Right to left, three per row, then the next row below:
-            // weaknesses (color) first, then resistances (faint gray).
+            // Right to left, a few per row, then the next row below. Read
+            // left to right: immune, very resistant ... very weak, so the
+            // strongest weakness sits at the bar's end and immunities last.
             bool[] show = ui.Show;
             for (int i = 0; i < DamageKinds; i++) show[i] = false;
             int n = 0;
-            for (int pass = 0; pass < 2; pass++)
+            IconShow mode = _enemyIconShow.Value;
+            foreach (int want in EnemyOrder)
             {
-                int want = pass == 0 ? Weak : Resist;
-                if (want != Weak && !_resistanceIcons.Value) break;
                 for (int i = 0; i < DamageKinds; i++)
                 {
-                    if (ui.Kind[i] != want || !KindAllowed(i)) continue;
+                    if (ui.Kind[i] != want || !KindAllowed(i) || !RankShown(want, i, mode)) continue;
                     int perRow = Mathf.Max(1, _iconsPerRow.Value);
                     float x = right - (n % perRow) * step;
                     float y = -(n / perRow) * step;
-                    Color tint = IconTint(i, want == Weak);
+                    Color tint = IconTint(i, want);
                     show[i] = Place(ui, i, x, y, size, fillRatio, tint, Color.black, false);
                     if (show[i]) n++;
                 }
@@ -435,8 +580,7 @@ namespace EnemyHudRework
         private void UpdateBossWeaknessIcons(EnemyUiState state, WeaknessUi ui)
         {
             TMP_Text name = state.NameText;
-            bool weak = _bossWeaknessIcons.Value, resist = _bossResistanceIcons.Value;
-            if ((!weak && !resist) || name == null || state.Character == null ||
+            if ((_bossIconShow.Value == IconShow.Off && _immunityShow.Value == ImmunityShow.Off) || name == null || state.Character == null ||
                 !name.gameObject.activeInHierarchy)
             {
                 HideWeaknessIcons(ui);
@@ -472,18 +616,22 @@ namespace EnemyHudRework
             bool[] show = ui.Show;
             for (int i = 0; i < DamageKinds; i++) show[i] = false;
             int left = 0, right = 0;
-            for (int pass = 0; pass < 2; pass++)
+            // Weaknesses left of the name, resistances and immunities right
+            // of it, mildest next to the name, immunities outermost.
+            IconShow mode = _bossIconShow.Value;
+            for (int side = 0; side < 2; side++)
             {
-                int want = pass == 0 ? Weak : Resist;
-                if (want == Weak ? !weak : !resist) continue;
-                for (int i = 0; i < DamageKinds; i++)
+                foreach (int want in side == 0 ? WeakOrder : ResistOrder)
                 {
-                    if (ui.Kind[i] != want || !KindAllowed(i)) continue;
-                    float x = want == Weak ? -(edge + left * step) : edge + right * step;
-                    Color tint = IconTint(i, want == Weak);
-                    show[i] = Place(ui, i, x, iconY, size, 12f / 15f, tint, Color.black, false);
-                    if (!show[i]) continue;
-                    if (want == Weak) left++; else right++;
+                    for (int i = 0; i < DamageKinds; i++)
+                    {
+                        if (ui.Kind[i] != want || !KindAllowed(i) || !RankShown(want, i, mode)) continue;
+                        float x = want > 0 ? -(edge + left * step) : edge + right * step;
+                        Color tint = IconTint(i, want);
+                        show[i] = Place(ui, i, x, iconY, size, 12f / 15f, tint, Color.black, false);
+                        if (!show[i]) continue;
+                        if (want > 0) left++; else right++;
+                    }
                 }
             }
             ApplyShown(ui);
@@ -516,7 +664,7 @@ namespace EnemyHudRework
                 RectTransform gr = img.rectTransform;
                 if (gr.sizeDelta != gsz) gr.sizeDelta = gsz;
                 if (gr.anchoredPosition != gpos) gr.anchoredPosition = gpos;
-                Color gc = ui.Kind[kind] == Weak ? Color.white : _resistTint;
+                Color gc = ui.Kind[kind] > 0 ? Color.white : ui.Kind[kind] == Immune ? _immuneTint : _resistTint;
                 if (img.color != gc) img.color = gc;
                 return true;
             }
@@ -545,9 +693,9 @@ namespace EnemyHudRework
             return true;
         }
 
-        private Color IconTint(int kind, bool weak)
+        private Color IconTint(int kind, int rank)
         {
-            return weak ? _tintOf[kind] : _resistTint;
+            return rank > 0 ? _tintOf[kind] : rank == Immune ? _immuneTint : _resistTint;
         }
 
         private void DestroyWeaknessIcons(EnemyUiState state)

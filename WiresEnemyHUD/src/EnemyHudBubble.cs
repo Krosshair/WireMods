@@ -20,7 +20,8 @@ namespace EnemyHudRework
     public sealed partial class EnemyHudReworkPlugin
     {
         private ConfigEntry<bool> _bubbleWorld, _bubbleHud;
-        private const string SecBubble = "12 - Bubble Bar";
+        private bool BubbleWorldOn => _bubbleWorld.Value;
+        private bool BubbleHudOn => _bubbleHud.Value;
 
         private static readonly int BubbleMaxKey = "wire.enemyhud.bubble.max".GetStableHashCode();
         private static readonly int BubbleDamageKey = "wire.enemyhud.bubble.dmg".GetStableHashCode();
@@ -56,15 +57,22 @@ namespace EnemyHudRework
             public Color FrameOriginal;
         }
 
-        private void BindBubbleConfig()
+        private void BindBubbleConfig(string section)
         {
-            _order = 1000;
-            _bubbleWorld = Bind(SecBubble, "Bubble bar on nameplates", true,
-                "A purple bar above the health bar of players and creatures inside a protective bubble, showing how much it can still take. Other players need Enemy HUD for theirs to show.",
+            _bubbleWorld = Bind(section, "Bubble bar on nameplates", true,
+                "A bar above the health bar of anyone inside a protective bubble (Staff of Protection, fuling shamans), showing how much it can still take. Purple on friendlies, blue on enemies. Other players need Enemy HUD for theirs to show.",
                 null, null);
-            _bubbleHud = Bind(SecBubble, "Bubble bar on your HUD", true,
-                "A purple bar right of your own health bar while you are inside a bubble. The forsaken power moves over to make room.",
+            _bubbleHud = Bind(section, "Bubble bar on your HUD", true,
+                "A bar right of your own health bar while you're inside a bubble. The forsaken power moves over to make room.",
                 null, null);
+            // 0.8.4 test builds had one "Bubble bars" choice for both.
+            string both;
+            if (TakeOrphan(O2, "Bubble bars", out both) && both != null)
+            {
+                both = both.Trim();
+                _bubbleWorld.Value = both == "Both" || both == "Nameplates";
+                _bubbleHud.Value = both == "Both" || both == "Hud";
+            }
             _bubbleWorld.SettingChanged += (s, e) => { foreach (var st in _states.Values) if (st != null) st.BubbleSeen = false; };
             _bubbleHud.SettingChanged += (s, e) => RefreshHudBubble();
         }
@@ -98,9 +106,9 @@ namespace EnemyHudRework
             if (view != null && view.IsValid() && view.IsOwner())
             {
                 ZDO zdo = view.GetZDO();
-                if (zdo.GetFloat(BubbleMaxKey) != total) zdo.Set(BubbleMaxKey, total);
-                if (zdo.GetFloat(BubbleDamageKey) != damage) zdo.Set(BubbleDamageKey, damage);
-                if (zdo.GetLong(BubbleUntilKey) != until) zdo.Set(BubbleUntilKey, until);
+                SetShared(zdo, BubbleMaxKey, total);
+                SetShared(zdo, BubbleDamageKey, damage);
+                SetShared(zdo, BubbleUntilKey, until);
             }
 
             // One line when a bubble starts or ends (not on hits), to trace it.
@@ -128,6 +136,7 @@ namespace EnemyHudRework
             if (view == null || !view.IsValid() || !view.IsOwner()) return;
             ZDO zdo = view.GetZDO();
             DropOldCriticalCounter(zdo);
+            ResyncStatus(c, zdo);
             if (zdo.GetFloat(BubbleMaxKey) <= 0f)
             {
                 // An ended bubble leaves zeros behind; nothing needs them
@@ -149,7 +158,8 @@ namespace EnemyHudRework
         // its owner.
         internal void OnOwnerChanged(ZDO zdo)
         {
-            if (zdo == null || !zdo.IsOwner() || zdo.GetFloat(BubbleMaxKey) <= 0f || ZNetScene.instance == null) return;
+            if (zdo == null || !zdo.IsOwner() || ZNetScene.instance == null ||
+                (zdo.GetFloat(BubbleMaxKey) <= 0f && zdo.GetInt(StatusKey) == 0)) return;
             ZNetView view = ZNetScene.instance.FindInstance(zdo);
             Character c = view != null ? view.GetComponent<Character>() : null;
             if (c != null) OnCharacterStart(c);
@@ -180,9 +190,9 @@ namespace EnemyHudRework
         // network data says. A bubble swallows a whole hit.
         private static bool HasBubble(ZDO zdo)
         {
-            float max = zdo != null ? zdo.GetFloat(BubbleMaxKey) : 0f;
-            if (max <= 0f || zdo.GetFloat(BubbleDamageKey) > max) return false;
-            long until = zdo.GetLong(BubbleUntilKey);
+            float max = zdo != null ? GetShared(zdo, BubbleMaxKey) : 0f;
+            if (max <= 0f || GetShared(zdo, BubbleDamageKey) > max) return false;
+            long until = GetShared(zdo, BubbleUntilKey, 0L);
             return until <= 0L || WorldMillis() <= until;
         }
 
@@ -202,7 +212,7 @@ namespace EnemyHudRework
             // Nothing while the nameplate is hidden: its bars only start
             // once it shows, and they would measure themselves wrong.
             if (state.Gui == null || !state.Gui.activeInHierarchy) return;
-            if (!_bubbleWorld.Value)
+            if (!BubbleWorldOn)
             {
                 // Turned off: hide what shows, then nothing at all.
                 if (state.Bubble != null && state.Bubble.Root.activeSelf)
@@ -221,16 +231,16 @@ namespace EnemyHudRework
             // values are only read again when it moved, when friend or foe
             // changed, or or once a timed bubble's end time has passed.
             if (state.BubbleFlashStart >= 0f) UpdateWorldBubbleFlash(state);
-            uint revision = zdo.DataRevision;
+            uint revision = SharedRevision(zdo);
             if (state.BubbleSeen && revision == state.BubbleRevision && isEnemy == state.BubbleFoe &&
                 !(state.BubbleTimed && WorldMillis() > state.BubbleUntil)) return;
             state.BubbleRevision = revision;
-            float max = _bubbleWorld.Value ? zdo.GetFloat(BubbleMaxKey) : 0f;
-            long until = max > 0f ? zdo.GetLong(BubbleUntilKey) : 0L;
+            float max = BubbleWorldOn ? GetShared(zdo, BubbleMaxKey) : 0f;
+            long until = max > 0f ? GetShared(zdo, BubbleUntilKey, 0L) : 0L;
             if (until > 0L && WorldMillis() > until) max = 0f; // ran out of time
             state.BubbleTimed = until > 0L && max > 0f;
             state.BubbleUntil = until;
-            float damage = max > 0f ? zdo.GetFloat(BubbleDamageKey) : 0f;
+            float damage = max > 0f ? GetShared(zdo, BubbleDamageKey) : 0f;
             if (state.BubbleSeen && max == state.BubbleMax && damage == state.BubbleDamage &&
                 isEnemy == state.BubbleFoe) return;
             // Popped: it had something left and now has nothing.
@@ -492,7 +502,7 @@ namespace EnemyHudRework
         private void RefreshHudBubble()
         {
             if (_hudBubble == null) return;
-            bool show = _bubbleHud.Value && _hudBubbleTotal > 0f;
+            bool show = BubbleHudOn && _hudBubbleTotal > 0f;
             if (show)
             {
                 float value = Mathf.Clamp01((_hudBubbleTotal - _hudBubbleDamage) / _hudBubbleTotal);
@@ -535,7 +545,7 @@ namespace EnemyHudRework
         private void StartHudBubblePop()
         {
             StopHudBubblePop();
-            if (_hudBubble != null && _bubbleHud.Value) _hudBubblePop = StartCoroutine(HudBubblePop());
+            if (_hudBubble != null && BubbleHudOn) _hudBubblePop = StartCoroutine(HudBubblePop());
             else { _hudBubbleTotal = 0f; _hudBubbleDamage = 0f; }
         }
 
