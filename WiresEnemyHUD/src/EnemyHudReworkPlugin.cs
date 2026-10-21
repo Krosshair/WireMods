@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.8.4";
+        public const string PluginVersion = "0.8.5";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -168,6 +168,10 @@ namespace EnemyHudRework
             public Vector2 Level3Original;
             public bool HasLevel2;
             public bool HasLevel3;
+            // Players have no star row: an invisible copy of a creature's
+            // star stands in for it, so their icons line up the same way.
+            public RectTransform IconRow;
+            public Vector2 IconRowOriginal;
             public Image RecoveryOverlay;
             public Animator StaggerAnimator;
             public float StaggerBegan = -1f;
@@ -353,6 +357,7 @@ namespace EnemyHudRework
 
             CreateHealthValue(state);
             SetupCriticalOutline(state);
+            if (state.Kind == HudKind.Player) CreatePlayerIconRow(state);
             SetupWeaknessIcons(state);
             SetupEnhancedEffects(state);
             CaptureNativePalette(state);
@@ -585,6 +590,7 @@ namespace EnemyHudRework
             List<Character> remove = null;
             Character lookedAt = localPlayer != null ? localPlayer.GetHoverCreature() : null;
             UpdateLookTarget(lookedAt);
+            ProcessPendingRanks();
             // The crosshair ray is only needed while another player's
             // nameplate is around (never in single player).
             Player directlyTargeted = _playerNameplateAimFade != null &&
@@ -637,6 +643,7 @@ namespace EnemyHudRework
                 UpdateHealthValue(state);
                 UpdateHitPrediction(state, isEnemy, localPlayer, lookedAt, dt);
                 UpdateCriticalOutline(state);
+                UpdateSharedRanks(state);
                 UpdateWeaknessIcons(state, isEnemy);
                 UpdateBossDps(state);
                 UpdateEnhancedEffects(state, isEnemy);
@@ -1446,6 +1453,31 @@ namespace EnemyHudRework
                     state.Level3Original +
                     new Vector2(0f, y);
             }
+
+            if (state.IconRow != null)
+                state.IconRow.anchoredPosition =
+                    state.IconRowOriginal + new Vector2(0f, y);
+        }
+
+        // Made once per player nameplate: the creature HUD's two-star row,
+        // placed the same distance from the health bar, nothing drawn.
+        private static void CreatePlayerIconRow(EnemyUiState state)
+        {
+            if (state.Level2 != null || state.HealthRect == null || state.Gui == null) return;
+            EnemyHud hud = EnemyHud.instance;
+            if (hud == null || hud.m_baseHud == null) return;
+            RectTransform star = hud.m_baseHud.transform.Find("level_2") as RectTransform;
+            RectTransform health = hud.m_baseHud.transform.Find("Health") as RectTransform;
+            if (star == null || health == null) return;
+            GameObject copy = UnityEngine.Object.Instantiate(star.gameObject, state.Gui.transform, false);
+            copy.name = "WireIconRow";
+            foreach (Graphic g in copy.GetComponentsInChildren<Graphic>(true)) g.enabled = false;
+            copy.SetActive(true);
+            RectTransform r = (RectTransform)copy.transform;
+            r.anchoredPosition = star.anchoredPosition - health.anchoredPosition + state.HealthOriginalPosition;
+            state.IconRow = r;
+            state.IconRowOriginal = r.anchoredPosition;
+            state.LastStarY = float.NaN;
         }
 
         private void StartFlash(EnemyUiState state)

@@ -86,7 +86,7 @@ namespace EnemyHudRework
             new[] { SecVisibility, "Damage icons only on hover", O3, "Dynamic mode", L4, "Dynamic icons", K5, "Damage icons only on focus" },
             new[] { SecVisibility, "Fade creature nameplates unless hovered", O2, "Fade unless looked at", L4, "Fade unless looked at", K5, "Fade creatures out of focus", M5, "Fade creatures unless hovered" },
             new[] { SecVisibility, "Fade player nameplates unless hovered", O6, "Fade unless aimed at", L4, "Fade players unless aimed at", K5, "Fade players out of focus", M5, "Fade players unless hovered" },
-            new[] { SecWeak, "Creature icons", L5, "Enemy icons" },
+            new[] { SecWeak, "Nameplate icons", L5, "Enemy icons", SecWeak, "Creature icons" },
             new[] { SecWeak, "Boss icons", L5, "Boss icons" },
             new[] { SecWeak, "Immunities", L5, "Immunities" },
             new[] { SecWeak, "Limited mode", O3, "Limited mode", L5, "Limited mode" },
@@ -180,7 +180,7 @@ namespace EnemyHudRework
                 "A creature bar's frame flashes white, like the game's own flashes, when a backstab or a hit on a staggered creature lands. Never on the killing blow.",
                 null, null, "Enemy Health Bar", "Critical hit flash");
             _statusEffects = Bind(SecEnemy, "Status effects", true,
-                "Icons left of a creature's or player's health bar while they're burning, frozen, shocked, poisoned or hit by spirit: the same icons as those damage types. With Icon style on Game icons, the game's own status icons instead, which also show tar. Other players need Enemy HUD for theirs to show.",
+                "Icons left of a creature's or player's health bar while they're burning, frozen, shocked, poisoned or hit by spirit: the same icons as those damage types. With Icon style on Game icons, the game's own status icons instead. Other players need Enemy HUD for theirs to show.",
                 null, null);
             _nameColorMode = Bind(SecEnemy, "Awareness display", NameColorMode.Pastel,
                 "How a creature shows that it noticed you. Pastel: soft name colors. Normal: stronger Valheim name colors. Icons: the vanilla awareness icons. None: nothing.",
@@ -281,8 +281,11 @@ namespace EnemyHudRework
             _hitResponse = Bind(SecWeak, "Hit response", true,
                 "When a creature is hit by a damage type it's weak to, that icon flashes white and swells for a moment; types it resists or is immune to go darker and shrink instead.",
                 null, null);
-            _enemyIconShow = Bind(SecWeak, "Creature icons", IconShow.Both,
-                "Damage type icons at the right end of a creature's star row: weaknesses in color, resistances in faint gray. Read from the creature itself, so modded creatures work too.",
+            _enemyIconShow = Bind(SecWeak, "Nameplate icons", IconShow.Both,
+                "Damage type icons at the right end of a nameplate's star row: weaknesses in color, resistances in faint gray. Read from the creature itself, so modded creatures work too.",
+                null, null);
+            _playerIcons = Bind(SecWeak, "Resistances for player nameplates", true,
+                "Shows other players' damage type icons too, with the same settings as other nameplates: what their armor and status effects make them weak or resistant to. Limited mode doesn't apply to them, as they're there to help in multiplayer.",
                 null, null);
             _bossIconShow = Bind(SecWeak, "Boss icons", IconShow.Both,
                 "Damage type icons on boss bars: weaknesses left of the name, resistances right of it.",

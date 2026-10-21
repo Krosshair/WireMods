@@ -5,9 +5,9 @@ using UnityEngine.UI;
 
 namespace EnemyHudRework
 {
-    // Status effects on creatures (burning, frozen, shocked, poisoned,
-    // spirit, tarred), left of the health bar: your damage type icons for
-    // them, or the game's status icons with Icon style on Game icons. A status effect only exists on the machine that owns
+    // Damage type status effects (burning, frozen, shocked, poisoned,
+    // spirit), left of the health bar: your damage type icons for them, or
+    // the game's status icons with Icon style on Game icons. Nothing else. A status effect only exists on the machine that owns
     // the creature, so the owner keeps one number in the creature's network
     // data with a bit per effect, changed only when an effect starts or
     // ends. Nameplates read it again only when that data changed.
@@ -18,15 +18,14 @@ namespace EnemyHudRework
         private static readonly int[] StatusHashes =
         {
             SEMan.s_statusEffectBurning, SEMan.s_statusEffectFrost, SEMan.s_statusEffectLightning,
-            SEMan.s_statusEffectPoison, SEMan.s_statusEffectSpirit, SEMan.s_statusEffectTared
+            SEMan.s_statusEffectPoison, SEMan.s_statusEffectSpirit
         };
-        private static readonly Sprite[] StatusIcon = new Sprite[6];
-        // Our own damage type icons for them (tar has no damage type, so it
-        // only shows with the game's icons).
+        private static readonly Sprite[] StatusIcon = new Sprite[5];
+        // Our own damage type icons for them.
         private static readonly int[] StatusKind =
         {
             (int)DamageKind.Fire, (int)DamageKind.Frost, (int)DamageKind.Lightning,
-            (int)DamageKind.Poison, (int)DamageKind.Spirit, -1
+            (int)DamageKind.Poison, (int)DamageKind.Spirit
         };
 
         private static int StatusBit(int nameHash)
@@ -39,8 +38,8 @@ namespace EnemyHudRework
         private sealed class StatusUi
         {
             public RectTransform Root;
-            public readonly Image[] Icons = new Image[6];
-            public readonly Image[] Fills = new Image[6];
+            public readonly Image[] Icons = new Image[5];
+            public readonly Image[] Fills = new Image[5];
             public uint Revision = uint.MaxValue; public int Mask = -1; public int Layout = -1;
         }
 
@@ -52,6 +51,7 @@ namespace EnemyHudRework
             // Your own effects starting or running out (meads, powers,
             // rested...) change what your next hit would do.
             if (ReferenceEquals(SeOwner(se), Player.m_localPlayer)) InvalidatePredictions();
+            OnResistancesMayChange(SeOwner(se));
             int bit = StatusBit(se.NameHash());
             if (bit == 0) return;
             Character c = SeOwner(se);

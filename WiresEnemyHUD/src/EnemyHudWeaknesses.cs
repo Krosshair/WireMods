@@ -25,6 +25,7 @@ namespace EnemyHudRework
         }
 
         private ConfigEntry<IconShow> _enemyIconShow, _bossIconShow;
+        private ConfigEntry<bool> _playerIcons;
         private static bool ShowsWeak(IconShow s) { return s == IconShow.Both || s == IconShow.WeaknessesOnly; }
         private static bool ShowsResist(IconShow s) { return s == IconShow.Both || s == IconShow.ResistancesOnly; }
         private static IconShow ToIconShow(bool weak, bool resist)
@@ -353,6 +354,7 @@ namespace EnemyHudRework
             public bool[] Show = new bool[DamageKinds];
             public float[] FlashStart = { -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f };
             public bool Flashing;
+            public uint RanksRevision = uint.MaxValue; public int Ranks = -1;
             public bool KindsReady;
             public bool Dirty = true;
             public int LastKey = -1;
@@ -440,9 +442,9 @@ namespace EnemyHudRework
         // ---- UI ----
         private void SetupWeaknessIcons(EnemyUiState state)
         {
-            if (state == null || state.Kind == HudKind.Player || state.Gui == null ||
+            if (state == null || state.Gui == null ||
                 _weaknessUi.ContainsKey(state) ||
-                (state.Kind == HudKind.Enemy ? state.HealthRect == null : state.NameText == null))
+                (state.Kind != HudKind.Boss ? state.HealthRect == null : state.NameText == null))
                 return;
             var ui = new WeaknessUi();
             GameObject root = new GameObject("WireWeaknessIcons", typeof(RectTransform));
@@ -478,9 +480,10 @@ namespace EnemyHudRework
 
         private static RectTransform StarRect(EnemyUiState state)
         {
-            if (state.Level2 == null) return null;
-            Image img = state.Level2.GetComponent<Image>();
-            if (img == null || img.sprite == null) img = state.Level2.GetComponentInChildren<Image>(true);
+            RectTransform row = state.Level2 != null ? state.Level2 : state.IconRow;
+            if (row == null) return null;
+            Image img = row.GetComponent<Image>();
+            if (img == null || img.sprite == null) img = row.GetComponentInChildren<Image>(true);
             return img != null ? img.rectTransform : null;
         }
 
@@ -494,9 +497,7 @@ namespace EnemyHudRework
         {
             if (ui.KindsReady) return;
             ui.KindsReady = true;
-            HitData.DamageModifiers mods = character.GetDamageModifiers();
-            for (int i = 0; i < DamageKinds; i++)
-                ui.Kind[i] = Classify(Modifier(mods, (DamageKind)i));
+            ReadKinds(ui, character);
         }
 
         // Laid out only when something changes: the icons are children of
@@ -520,8 +521,12 @@ namespace EnemyHudRework
         private void UpdateEnemyWeaknessIcons(EnemyUiState state, WeaknessUi ui, bool isEnemy)
         {
             RectTransform star = StarRect(state);
-            if ((_enemyIconShow.Value == IconShow.Off && _immunityShow.Value == ImmunityShow.Off) || !isEnemy || state.Character == null ||
-                state.Character.IsTamed() || star == null ||
+            bool player = state.Kind == HudKind.Player;
+            IconShow mode = _enemyIconShow.Value;
+            // Players show theirs friend or foe; creatures only as enemies.
+            if ((mode == IconShow.Off && _immunityShow.Value == ImmunityShow.Off) ||
+                (player ? !_playerIcons.Value : !isEnemy) || state.Character == null ||
+                (!player && state.Character.IsTamed()) || star == null ||
                 (_dynamicMode.Value && !LookedAtRecently(state.Character, _dynamicDelay.Value)))
             {
                 HideWeaknessIcons(ui);
@@ -556,12 +561,12 @@ namespace EnemyHudRework
             bool[] show = ui.Show;
             for (int i = 0; i < DamageKinds; i++) show[i] = false;
             int n = 0;
-            IconShow mode = _enemyIconShow.Value;
             foreach (int want in EnemyOrder)
             {
                 for (int i = 0; i < DamageKinds; i++)
                 {
-                    if (ui.Kind[i] != want || !KindAllowed(i) || !RankShown(want, i, mode)) continue;
+                    // Limited mode is for your own fights: players show all.
+                    if (ui.Kind[i] != want || (!player && !KindAllowed(i)) || !RankShown(want, i, mode)) continue;
                     int perRow = Mathf.Max(1, _iconsPerRow.Value);
                     float x = right - (n % perRow) * step;
                     float y = -(n / perRow) * step;

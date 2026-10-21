@@ -1,3 +1,11 @@
+## 0.8.5
+
+Damage type icons now follow a creature's real resistances instead of being baked-in, including what its status effects change: if an effect makes a creature weak or resistant to something, its icons show it, and go back when the effect ends. Updated only when an effect starts or ends, and shared in multiplayer so everyone sees the same icons.
+
+Players get damage type icons too: what their armor and status effects make them weak or resistant to, shared so everyone sees the same. On by default (Resistances for player nameplates), with the same icon settings as other nameplates; Limited mode doesn't apply to them.
+
+Status effect icons show only damage type effects: tar no longer shows with Icon style on Game icons.
+
 ## 0.8.4
 
 A creature you hit or parry now counts as looked at for as long as the hit or parry reveals its bar (then the Hover delay runs as usual): full opacity, HP numbers and icons with the hover settings.
@@ -19,6 +27,7 @@ The Vanilla preset now also turns off everything added since it was made (star c
 New Status effects (on by default): icons left of a creature's or other player's health bar while they're burning, frozen, shocked, poisoned or hit by spirit, using the same icons as those damage types (your shapes and colors). With Icon style on Game icons, the game's own status icons instead, tar included. Synced in multiplayer like the bubble bar.
 
 Config reorganized into fewer sections, with clearer names and related settings next to each other (all your values carry over):
+
 * 01 General: the preset.
 * 02 Nameplates: Transparent background; then creatures (Creature HP numbers, Double size creature bars, Uppercase creature names, Star count past two stars, Critical hit flash, Status effects, Awareness display); then players (Player HP numbers, Double size player bars).
 * 03 Boss Bar: HP numbers, HP numbers position, DPS, Name color.
@@ -40,6 +49,7 @@ Less network traffic: hit responses are only sent for players' hits, not creatur
 ## 0.8.3
 
 Less work every frame for every nameplate:
+
 * HP numbers are only rewritten when the number changes, instead of building new text and measuring it every frame.
 * Bar sizes and the stagger bar's position are only set when they change.
 * Keep bars on screen only measures a nameplate when it gets near the edge of the screen.

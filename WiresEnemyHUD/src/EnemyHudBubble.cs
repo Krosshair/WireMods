@@ -137,6 +137,9 @@ namespace EnemyHudRework
             ZDO zdo = view.GetZDO();
             DropOldCriticalCounter(zdo);
             ResyncStatus(c, zdo);
+            DropRanks(zdo);
+            // A player's armor is known right away: share it.
+            if (c.IsPlayer()) OnResistancesMayChange(c);
             if (zdo.GetFloat(BubbleMaxKey) <= 0f)
             {
                 // An ended bubble leaves zeros behind; nothing needs them
@@ -159,7 +162,7 @@ namespace EnemyHudRework
         internal void OnOwnerChanged(ZDO zdo)
         {
             if (zdo == null || !zdo.IsOwner() || ZNetScene.instance == null ||
-                (zdo.GetFloat(BubbleMaxKey) <= 0f && zdo.GetInt(StatusKey) == 0)) return;
+                (zdo.GetFloat(BubbleMaxKey) <= 0f && zdo.GetInt(StatusKey) == 0 && zdo.GetInt(RanksKey) == 0)) return;
             ZNetView view = ZNetScene.instance.FindInstance(zdo);
             Character c = view != null ? view.GetComponent<Character>() : null;
             if (c != null) OnCharacterStart(c);
