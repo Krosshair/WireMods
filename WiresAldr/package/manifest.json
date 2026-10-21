@@ -1,7 +1,7 @@
 {
   "name": "WiresAldr",
-  "version_number": "1.0.2",
+  "version_number": "1.0.3",
   "website_url": "",
-  "description": "Major progression and reward system overhaul.",
+  "description": "Progression that rewards how you play. Each Forsaken you defeat makes its biome richer, and you level faster for fighting tougher enemies, venturing far from base, parrying, comboing and landing long shots. (fully configurable)",
   "dependencies": []
 }
