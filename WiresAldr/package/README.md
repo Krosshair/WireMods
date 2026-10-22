@@ -48,8 +48,8 @@ A bonus that grows while you adventure away from base.
 - **Bonus = 0.3% x T + 0.067% x T^1.5**, T = expedition minutes. About +20% after 30 minutes in the Swamp.
 - Each XP gain adds the time since the previous one (max 30 s), at a biome pace: Meadows x0.8, Black Forest x0.9, Swamp x1.0, then +0.1 per biome.
 - Only grows while you keep moving (20 m within 6 minutes). Riding counts; sailing at 2 m/s or more grows it at 1/5 pace.
-- **Paused at a base**, decaying 2 minutes per minute. Away from a base it decays 0.5 minutes per minute after 90 s without XP. Resting doubles both. Sailing and riding hold it.
-- Saved on your character. Lost on death.
+- **Paused at a base**, decaying 0.1 minutes per minute at first, doubling every 45 s you stay, so quick trips home cost almost nothing. Away from a base it decays 0.5 minutes per minute after 90 s without XP. Resting doubles both. Sailing and riding hold it.
+- Saved on your character. Death halves it and freezes it until you recover your gravestone.
 
 ## Challenge
 - **Stars:** +25% combat and dodge XP per star.

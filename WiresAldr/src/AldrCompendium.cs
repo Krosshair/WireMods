@@ -184,8 +184,9 @@ namespace WiresAldr
             return result.ToString();
         }
 
-        // White: the value. Gray: where it comes from.
-        private static string Value(string v) => "<color=#DCEEF0>" + v + "</color>";
+        // The game's own Compendium style for headings and values (orange);
+        // where a value comes from in small gray italics after it.
+        private static string Value(string v) => "<color=orange>" + v + "</color>";
         private static string Sub(string v) => "  <color=#99A6AD><size=80%><i>" + v + "</i></size></color>";
 
         // XP rules that apply to several skills, for the player right now.
@@ -199,7 +200,7 @@ namespace WiresAldr
             int hereIndex = BiomeCatalog.FromBiome(here);
             string hereName = here == Heightmap.Biome.Ocean ? "Ocean"
                 : hereIndex >= 0 ? Biomes[hereIndex] : Unknown;
-            sb.Append("Location XP bonus: ").Append(Value("x" + Num(1 + location + history, 2)));
+            sb.Append("Location XP bonus: ").Append(Value("+" + Num((location + history) * 100, 0) + "%"));
             if (location + history > 0.0005)
             {
                 string parts = "+" + Num(location * 100, 0) + "% " + hereName;
@@ -235,19 +236,21 @@ namespace WiresAldr
             if (Plugin.XpChallenge.Value)
             {
                 sb.AppendLine();
-                sb.Append("Starred enemy bonus: ").Append(Value(Num(Plugin.XpStarBonus.Value, 1) + "% per star")).AppendLine(Sub("combat XP, additive"));
+                sb.Append("Starred enemy bonus: ").Append(Value("+" + Num(Plugin.XpStarBonus.Value, 1) + "% per star")).AppendLine(Sub("combat XP"));
                 if (Plugin.RaidBonus.Value > 0f)
                     sb.Append("Combat XP bonus during raids: ").Append(Value("x" + Num(1 + Plugin.RaidBonus.Value / 100f, 2)))
-                      .AppendLine(Sub("against raiders, multiplicative"));
+                      .AppendLine(Sub("against raiders, multiplies all other XP bonuses"));
             }
 
             if (Expedition.Enabled)
             {
                 sb.AppendLine();
                 bool paused = Expedition.AtBase && Expedition.StoredPercent > 0.05f;
-                sb.Append("Expedition bonus: ").Append(Value(Num(Expedition.ActivePercent, 1, true) + "%"));
-                if (paused)
-                    sb.Append(Sub(Num(Expedition.StoredPercent, 1, true) + "% paused, decays at a base or when resting"));
+                sb.Append("Expedition bonus: ").Append(Value("+" + Num(Expedition.ActivePercent, 1, true) + "%"));
+                if (Expedition.Frozen)
+                    sb.Append(Sub(Num(Expedition.StoredPercent, 1, true) + "% after death, frozen until you recover your gravestone"));
+                else if (paused)
+                    sb.Append(Sub(Num(Expedition.StoredPercent, 1, true) + "% kept while you're at a base; fades slowly at first, then faster the longer you stay"));
                 else
                 {
                     int minutes = Mathf.FloorToInt(Expedition.Minutes);
@@ -296,14 +299,14 @@ namespace WiresAldr
 
         private static void Header(StringBuilder sb, string heading)
         {
-            sb.Append("<color=#E5B878><b>")
-                .Append(heading).AppendLine("</b></color>");
+            sb.Append("<color=orange>")
+                .Append(heading).AppendLine("</color>");
         }
 
         private static void Status(StringBuilder sb, string label, bool on)
         {
             sb.Append(label).Append(": ")
-                .AppendLine(on ? "Enabled" : "Disabled");
+                .AppendLine(Value(on ? "Enabled" : "Disabled"));
         }
 
         private static void Section(StringBuilder sb, string heading,
@@ -325,7 +328,7 @@ namespace WiresAldr
             if (total <= 0) return;
 
             int decimals = BonusBreakdown.Precision(total, parts);
-            sb.Append(resource).Append(": <color=#DCEEF0>+")
+            sb.Append(resource).Append(": <color=orange>+")
                 .Append(Num(total, decimals)).Append("%</color>");
 
             // One source is self-explanatory. Show short calculations

@@ -76,7 +76,7 @@ namespace WiresAldr
                 default: return false;
             }
         }
-        private static float WeaponTransfer(Skills skills, Skills.SkillType skill)
+        internal static float WeaponTransfer(Skills skills, Skills.SkillType skill)
         {
             float strength = Plugin.XpWeaponTransfer != null ? Plugin.XpWeaponTransfer.Value : 0f;
             if (strength <= 0f || !IsTransferSkill(skill) || skills == null) return 1f;

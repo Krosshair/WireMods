@@ -16,7 +16,10 @@ namespace WiresAldr
     // at least 20 m within the last 6 minutes, so camping one spot (an AFK
     // run into a wall, a trapped-creature farm) never builds it. The bonus
     // you already have still applies there. Saved on the character (logging
-    // out keeps it); death resets it.
+    // out keeps it). Death halves the bonus and freezes it, neither growing
+    // nor fading, until you've recovered your gravestone (the game's Corpse
+    // Run). At a base it fades slowly at first, then faster the longer you
+    // stay, so quick trips home cost almost nothing.
     internal static class Expedition
     {
         private static float clock;            // expedition minutes
@@ -28,6 +31,10 @@ namespace WiresAldr
         private static float lastStatus = -999f;
         private static int lastMilestone;
         private static Player owner;              // character the clock belongs to
+        private static bool frozen;               // after death, until Corpse Run
+        private static float homeSince;           // arrived at a base
+        private static readonly int CorpseRun = "CorpseRun".GetStableHashCode();
+        private const string FrozenKey = "Wire.Aldr.ExpeditionFrozen";
         private static Vector3 roamAnchor;
         private static Vector3 lastTickPosition;
         private static float lastRoam = -999f;    // last time you moved RoamRadius from the anchor
@@ -39,7 +46,8 @@ namespace WiresAldr
         private static float MaxCredit => Plugin.ExpeditionCredit.Value;
         private static float IdleGrace => Plugin.ExpeditionIdleGrace.Value;   // halved while resting
         private static float IdleFade => Plugin.ExpeditionIdleDecay.Value;    // clock minutes per minute, off-base idle
-        private static float BaseFade => Plugin.ExpeditionBaseDecay.Value;    // clock minutes per minute at a base
+        private static float BaseFade => Plugin.ExpeditionBaseDecay.Value;    // clock minutes per minute on arrival at a base
+        private static float BaseDoubling => Plugin.ExpeditionBaseDoubling.Value; // seconds per doubling while at the base
         private static float Curve => Plugin.ExpeditionCurve.Value;           // the T^1.5 part
         private static float SailShare => Plugin.ExpeditionSailShare.Value / 100f;
         private const float SailMinSpeed = 2f;    // m/s: actually under way, not drifting at anchor
@@ -56,6 +64,35 @@ namespace WiresAldr
         internal static float StoredPercent => PerMinute * clock + Curve * clock * Mathf.Sqrt(clock);
         private static bool Roaming => Time.time - lastRoam <= RoamWindow;
         internal static float ActivePercent => atBase ? 0f : StoredPercent;
+        internal static bool Frozen => frozen;
+
+        private static float PercentAt(float t) => PerMinute * t + Curve * t * Mathf.Sqrt(t);
+
+        // Death: half the bonus, then frozen until the gravestone is recovered.
+        internal static void OnDeath(bool gravestone)
+        {
+            if (clock > 0f)
+            {
+                float target = StoredPercent * 0.5f, lo = 0f, hi = clock;
+                for (int i = 0; i < 30; i++)
+                {
+                    float mid = (lo + hi) * 0.5f;
+                    if (PercentAt(mid) < target) lo = mid; else hi = mid;
+                }
+                if (AldrDiagnostics.Active)
+                    AldrDiagnostics.Log("EXPEDITION", "death bonus_percent=" + StoredPercent.ToString("0.#") +
+                        " -> " + PercentAt(lo).ToString("0.#"));
+                clock = lo;
+            }
+            // No gravestone (empty inventory, or a world that keeps it):
+            // there's no Corpse Run to wait for, so nothing freezes.
+            frozen = clock > 0f && gravestone;
+            if (owner && owner.m_customData != null)
+            {
+                if (frozen) owner.m_customData[FrozenKey] = "1";
+                else owner.m_customData.Remove(FrozenKey);
+            }
+        }
 
         internal static void Reset(string why)
         {
@@ -70,6 +107,7 @@ namespace WiresAldr
         internal static void Clear()
         {
             clock = 0f; lastXp = -999f; lastTick = -1f; lastTravel = -999f; atBase = false; resting = false; lastMilestone = 0;
+            frozen = false; homeSince = 0f;
             lastRoam = -999f;
         }
 
@@ -84,6 +122,7 @@ namespace WiresAldr
                 float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out saved) &&
                 saved > 0f && saved < 100000f)
                 clock = saved;
+            frozen = clock > 0f && p.m_customData != null && p.m_customData.ContainsKey(FrozenKey);
             lastMilestone = Mathf.FloorToInt(StoredPercent / 5f);
             if (clock > 0f && AldrDiagnostics.Active)
                 AldrDiagnostics.Log("EXPEDITION", "restored bonus_percent=" + StoredPercent.ToString("0.#") +
@@ -96,6 +135,8 @@ namespace WiresAldr
             if (!p || p != owner || p.m_customData == null) return;
             if (clock > 0.01f) p.m_customData[SaveKey] = clock.ToString("0.###", CultureInfo.InvariantCulture);
             else p.m_customData.Remove(SaveKey);
+            if (frozen && clock > 0.01f) p.m_customData[FrozenKey] = "1";
+            else p.m_customData.Remove(FrozenKey);
         }
 
         private static void Fade(float seconds, float perMinute)
@@ -125,13 +166,25 @@ namespace WiresAldr
             if (home != atBase)
             {
                 atBase = home;
+                if (home) homeSince = now;
                 // Time spent at base is never credited to the next XP event.
                 if (!home && lastXp > 0f) lastXp = now;
                 if (AldrDiagnostics.Active)
                     AldrDiagnostics.Log("EXPEDITION", (home ? "entered_base" : "left_base") +
                         " bonus_percent=" + StoredPercent.ToString("0.#"));
             }
-            if (home) Fade(dt, BaseFade);
+            // Frozen after death: nothing grows or fades until Corpse Run.
+            if (frozen)
+            {
+                if (!p.GetSEMan().HaveStatusEffect(CorpseRun)) return;
+                frozen = false;
+                if (p.m_customData != null) p.m_customData.Remove(FrozenKey);
+                lastXp = now;
+                homeSince = now; // a stay at a base starts counting now
+                if (AldrDiagnostics.Active) AldrDiagnostics.Log("EXPEDITION", "unfrozen corpse_run bonus_percent=" + StoredPercent.ToString("0.#"));
+            }
+            // Slow on arrival, doubling every so often while you stay.
+            if (home) Fade(dt, BaseFade * Mathf.Pow(2f, Mathf.Min(30f, (now - homeSince) / Mathf.Max(1f, BaseDoubling))));
             else
             {
                 // Sailing or riding to the next island isn't idling: hold the
@@ -167,7 +220,7 @@ namespace WiresAldr
         {
             if (!Enabled) return;
             Ensure(Player.m_localPlayer);
-            if (atBase) return;
+            if (atBase || frozen) return;
             Credit(currentBiomeTier, Time.time);
             Milestone();
         }
@@ -215,9 +268,19 @@ namespace WiresAldr
     [HarmonyPatch(typeof(Player), nameof(Player.OnDeath))]
     internal static class ExpeditionDeath
     {
-        private static void Postfix(Player __instance)
+        // Whether the game is about to leave a gravestone (as in
+        // Player.CreateTombStone): something in the inventory, and a world
+        // that doesn't keep it on death.
+        private static void Prefix(Player __instance, out bool __state)
         {
-            if (__instance == Player.m_localPlayer) Expedition.Reset("death");
+            __state = __instance == Player.m_localPlayer && __instance.GetInventory() != null &&
+                __instance.GetInventory().NrOfItems() != 0 && ZoneSystem.instance != null &&
+                !ZoneSystem.instance.GetGlobalKey(GlobalKeys.DeathKeepInventory);
+        }
+
+        private static void Postfix(Player __instance, bool __state)
+        {
+            if (__instance == Player.m_localPlayer) Expedition.OnDeath(__state);
         }
     }
 

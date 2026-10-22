@@ -11,7 +11,7 @@ namespace WiresAldr
     {
         public const string Guid = "wire.valheim.heimvoxtr";
         public const string Name = "Wire's Aldr";
-        public const string Version = "1.0.3";
+        public const string Version = "1.0.4";
         private static readonly ConfigSync Sync = new ConfigSync(Guid)
         {
             DisplayName = Name,
@@ -19,6 +19,7 @@ namespace WiresAldr
             MinimumRequiredVersion = Version,
             ModRequired = true
         };
+        internal static ConfigEntry<bool> ShowSkillBonuses;
         internal static ConfigEntry<bool> Enabled, Lock, Stars, Forage, Materials, FishYields,
             XpEnabled, ExpeditionEnabled, XpChallenge, Rewards, Diagnostics,
             FishExtraCatch, FishSpawnBoost, FishQualityBoost;
@@ -36,7 +37,7 @@ namespace WiresAldr
             XpWeaponTransfer, XpTransferShare, XpTransferMinimum,
             // Expedition
             VenturePerKm, ExpeditionCurve, ExpeditionCredit, ExpeditionRoamRadius, ExpeditionRoamMinutes,
-            ExpeditionSailShare, ExpeditionBaseDecay, ExpeditionIdleDecay, ExpeditionIdleGrace,
+            ExpeditionSailShare, ExpeditionBaseDecay, ExpeditionBaseDoubling, ExpeditionIdleDecay, ExpeditionIdleGrace,
             // Challenge
             XpStarBonus, RaidBonus, XpExtrasCap, XpExtrasCapRanged, XpCombatStrength,
             XpComboStep, XpCounterBonus, XpBlockStagger, XpSneakBonus, XpCookingFood,
@@ -60,6 +61,9 @@ namespace WiresAldr
             Forage = Toggle(General, "Wild foraging", true, "Section 08.");
             Materials = Toggle(General, "Natural materials", true, "Section 09.");
             FishYields = Toggle(General, "Wild fishing", true, "Section 10.");
+            ShowSkillBonuses = Config.Bind(General, "XP bonuses on the skills page", true,
+                new ConfigDescription("Shows your current XP bonus on the skills page: the bonus every skill gets at the top, and each skill's own extra next to its level. Local, not synced.",
+                    null, new ConfigurationManagerAttributes { Order = NextOrder(General) }));
 
             const string Location = "02 - Location XP";
             XpProgressionStrength = Number(Location, "Location bonus strength (%)", 100,
@@ -97,8 +101,10 @@ namespace WiresAldr
                 "See roam distance.", 1, 30);
             ExpeditionSailShare = Number(Expedition, "Sailing pace (%)", 20,
                 "Growth while sailing at 2 m/s or more, relative to normal.", 0, 100);
-            ExpeditionBaseDecay = Number(Expedition, "Decay at a base (min per min)", 2,
-                "Expedition minutes lost per minute at a base. Resting doubles it.", 0, 20);
+            ExpeditionBaseDecay = Number(Expedition, "Decay at a base, start (min per min)", 0.1f,
+                "Expedition minutes lost per minute when you arrive at a base. It speeds up the longer you stay: quick visits home cost almost nothing, long stays use it up. Resting doubles it.", 0, 20);
+            ExpeditionBaseDoubling = Number(Expedition, "Decay at a base, doubling time (s)", 45,
+                "How often the decay at a base doubles while you stay.", 5, 600);
             ExpeditionIdleDecay = Number(Expedition, "Idle decay (min per min)", 0.5f,
                 "Expedition minutes lost per minute away from bases without XP. Resting doubles it.", 0, 20);
             ExpeditionIdleGrace = Number(Expedition, "Idle grace (s)", 90,
