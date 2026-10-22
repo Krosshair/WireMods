@@ -1,13 +1,12 @@
-# 0.3.1
+# Changelog
 
-- Replace conflicting Hold R per-slot command with Shift+E, a focused swap on the precise armor-stand switch collider.
-- Preserve vanilla R weapon hide/show, E taps, Alt+E alternate interactions.
-- Rebuild item-stand and individual armor-stand hover text with actionable Hold E / Shift+E prompts.
-- Handle empty hands / empty stands clearly; no nonexistent swap hover prompts.
-- If Shift+E targets the armor stand but no individual slot is found, refuse instead of swapping an unintended full loadout.
-- Support configurable main interaction key and modifier, still with smart short-hold duration.
-- Focused body-piece action uses the corresponding equipped armor slot; no accidental weapon trade.
-- Preserve network ownership / rollback, EAQS support, and equip animations.
-- No inventory/scene scans every frame; key states only, on-demand validations.
+## 0.2.1
 
-Note: No Valheim in-game validation has yet been completed on 0.3.1.
+* Choose what Shift + E swaps: armor, utility items, and weapons, shields and tools each have their own setting. Anything switched off stays on the stand.
+* Shift + E no longer takes over turning items on item stands: a quick tap of E turns them now. Holding E still takes the item. Can be switched back.
+* Keeping E held after a Shift + E swap no longer takes the item off the stand: let go of E first.
+
+## 0.2.0
+
+* fixed a lag spike
+

@@ -55,6 +55,8 @@ namespace WiresStandSwap
             internal ArmorStand Stand;
             internal ZNetView View;
             internal readonly List<Entry> Slots = new List<Entry>();
+            // Stand slots holding gear the settings leave alone.
+            internal readonly HashSet<int> Skipped = new HashSet<int>();
         }
 
         internal static bool CanAttach(ArmorStand stand, int index,
@@ -166,6 +168,8 @@ namespace WiresStandSwap
             int occupied = 0;
             for (int i = 0; i < tx.Stand.m_slots.Count; i++)
             {
+                if (tx.Skipped.Contains(i))
+                    continue;
                 if (zdo.GetInt(
                         (i + "_item").GetStableHashCode()) != 0)
                     occupied++;
@@ -262,6 +266,15 @@ namespace WiresStandSwap
                 }
                 ItemDrop.ItemData displayed =
                     StandSwaps.ReadDisplayed(zdo,hash,i);
+                if (displayed != null &&
+                    !InputAndEquipment.Allowed(displayed.m_shared.m_itemType))
+                {
+                    if (first)
+                        tx.Skipped.Add(i);
+                    else if (!tx.Skipped.Contains(i))
+                        return false;
+                    continue;
+                }
                 if (displayed == null || !displayed.IsEquipable() ||
                     displayed.m_stack != 1 ||
                     (displayed.m_shared.m_useDurability &&
@@ -305,14 +318,14 @@ namespace WiresStandSwap
                         }
                 }
                 if (outgoing == null)
-                    outgoing=UsedItems.Find(player,displayed,
-                        candidate => acceptable(candidate) &&
-                            player.IsItemEquiped(candidate));
-
-                // Empty hands + displayed armor is an EQUIP operation,
-                // not a reason to exchange a weapon merely because it
-                // appears in historical inventory usage. If nothing
-                // matching is worn, reserve an empty inventory cell.
+                    outgoing=UsedItems.Find(player,displayed,acceptable);
+                if (outgoing == null &&
+                    UsedItems.Find(player,displayed,
+                        item => !usedItems.Contains(item)) != null)
+                {
+                    Message(player,"Stand cannot hold matching equipment");
+                    return false;
+                }
                 var entry = new Entry {
                     Index=i,Hash=hash,Displayed=displayed,
                     Outgoing=outgoing,
@@ -336,7 +349,9 @@ namespace WiresStandSwap
 
             if (entries.Count == 0)
             {
-                Message(player,"Nothing on the armor stand");
+                Message(player,first && tx.Skipped.Count > 0
+                    ? "Nothing on the armor stand to swap with your settings"
+                    : "Nothing on the armor stand");
                 return false;
             }
             // Give incoming items without outgoing counterparts new cells.

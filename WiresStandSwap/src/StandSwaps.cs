@@ -12,12 +12,6 @@ namespace WiresStandSwap
         private static readonly HashSet<int> Pending =
             new HashSet<int>();
 
-        // Hover queries can repeat, but prefab classification should
-        // only happen once per item hash per ObjectDB lifetime.
-        private static readonly Dictionary<int, bool> EquipmentByPrefab =
-            new Dictionary<int, bool>();
-        private static ObjectDB EquipmentDatabase;
-
         private static readonly MethodInfo ItemCanAttach =
             AccessTools.Method(typeof(ItemStand),
                 "CanAttach");
@@ -48,8 +42,6 @@ namespace WiresStandSwap
             internal int OldVariant;
             internal int OldSlotVariant;
             internal ItemDrop.ItemData ExpectedOutgoing;
-            internal ItemDrop.ItemData ExplicitOutgoing;
-            internal bool TakeOnly;
             internal bool WillReplace;
             internal ItemDrop.ItemData.ItemType
                 DisplayedType;
@@ -60,23 +52,18 @@ namespace WiresStandSwap
 
         internal static bool IsEquipmentItem(int prefabHash)
         {
-            ObjectDB db = ObjectDB.instance;
-            if (prefabHash == 0 || db == null)
+            if (prefabHash == 0 || ObjectDB.instance == null)
                 return false;
-            if (EquipmentDatabase != db)
-            {
-                EquipmentDatabase = db;
-                EquipmentByPrefab.Clear();
-            }
-            if (EquipmentByPrefab.TryGetValue(prefabHash, out bool cached))
-                return cached;
 
-            GameObject prefab = db.GetItemPrefab(prefabHash);
-            ItemDrop drop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
-            bool exchangeable = drop != null && IsExchangeable(
+            GameObject prefab =
+                ObjectDB.instance.GetItemPrefab(prefabHash);
+
+            if (prefab == null)
+                return false;
+
+            ItemDrop drop = prefab.GetComponent<ItemDrop>();
+            return drop != null && IsExchangeable(
                 drop.m_itemData.m_shared.m_itemType);
-            EquipmentByPrefab[prefabHash] = exchangeable;
-            return exchangeable;
         }
 
         private static bool IsExchangeable(
@@ -101,8 +88,7 @@ namespace WiresStandSwap
         }
 
         internal static bool TryItemStand(
-            ItemStand stand, Player player,
-            ItemDrop.ItemData held = null, bool takeOnly = false)
+            ItemStand stand, Player player)
         {
             if (stand == null || !stand.m_canBeRemoved ||
                 stand.m_guardianPower != null)
@@ -117,15 +103,12 @@ namespace WiresStandSwap
                 Player = player,
                 ItemStand = stand,
                 View = view,
-                Index = -1,
-                ExplicitOutgoing = held,
-                TakeOnly = takeOnly
+                Index = -1
             });
         }
 
         internal static bool TryArmorStand(
-            ArmorStand stand, int index, Player player,
-            ItemDrop.ItemData held = null, bool takeOnly = false)
+            ArmorStand stand, int index, Player player)
         {
             if (stand == null || index < 0 ||
                 index >= stand.m_slots.Count)
@@ -140,9 +123,7 @@ namespace WiresStandSwap
                 Player = player,
                 ArmorStand = stand,
                 View = view,
-                Index = index,
-                ExplicitOutgoing = held,
-                TakeOnly = takeOnly
+                Index = index
             });
         }
 
@@ -276,25 +257,20 @@ namespace WiresStandSwap
             // compatible family member instead of cancelling
             // because the first candidate cannot be attached.
             ItemDrop.ItemData outgoing =
-                request.ExplicitOutgoing != null
-                    ? request.ExplicitOutgoing
-                    : request.TakeOnly
-                        ? null
-                        : UsedItems.Find(player, displayed,
-                            candidate => IsValidReplacement(
-                                request, candidate));
-            if (request.ExplicitOutgoing != null &&
-                !IsValidReplacement(request, request.ExplicitOutgoing))
-            {
-                Notify(player, "Stand cannot hold held item");
-                return false;
-            }
+                UsedItems.Find(player, displayed,
+                    candidate => IsValidReplacement(
+                        request, candidate));
 
             // If matching gear exists but the stand can't hold
             // any of it, cancel. Never silently turn a requested
             // swap into a one-way take in that case.
-            // The explicit TakeOnly path never exchanges a previously
-            // used but currently unequipped item from the backpack.
+            if (outgoing == null &&
+                UsedItems.Find(player, displayed) != null)
+            {
+                Notify(player,
+                    "Stand cannot hold matching equipment");
+                return false;
+            }
 
             if (displayed == null ||
                 !displayed.IsEquipable())
@@ -387,7 +363,7 @@ namespace WiresStandSwap
                 : 0;
 
             Plugin.Log.LogInfo(
-                "Stand swap " +
+                "Shift+E " +
                 (request.WillReplace
                     ? "swap "
                     : "equip into " +
@@ -484,7 +460,6 @@ namespace WiresStandSwap
                     // Never match unrelated gear simply because
                     // a visual slot supports several types.
                     bool handEquipment =
-                        request.ExplicitOutgoing == null &&
                         request.DisplayedType ==
                             ItemDrop.ItemData.ItemType.Shield ||
                         UsedItems.IsWeaponOrTool(
@@ -497,8 +472,7 @@ namespace WiresStandSwap
                                 request.DisplayedFamily)
                             return false;
                     }
-                    else if (request.ExplicitOutgoing == null &&
-                             type != request.DisplayedType)
+                    else if (type != request.DisplayedType)
                         return false;
                     if (ArmorCanAttach == null)
                         return false;
@@ -611,16 +585,10 @@ namespace WiresStandSwap
                 ReadDisplayed(zdo, request.ExpectedHash,
                     request.Index);
             ItemDrop.ItemData outgoing =
-                request.ExplicitOutgoing != null
-                    ? request.ExplicitOutgoing
-                    : request.TakeOnly
-                        ? null
-                        : UsedItems.Find(player, displayed,
-                            candidate => IsValidReplacement(
-                                request, candidate));
-            if (outgoing != request.ExpectedOutgoing ||
-                (request.ExplicitOutgoing != null &&
-                 !IsValidReplacement(request, request.ExplicitOutgoing)))
+                UsedItems.Find(player, displayed,
+                    candidate => IsValidReplacement(
+                        request, candidate));
+            if (outgoing != request.ExpectedOutgoing)
             {
                 // Ownership may take a moment. The user could have
                 // switched weapons in that time: do not silently
@@ -959,8 +927,6 @@ namespace WiresStandSwap
         internal static void Clear()
         {
             Pending.Clear();
-            EquipmentByPrefab.Clear();
-            EquipmentDatabase = null;
         }
     }
 }

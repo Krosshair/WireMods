@@ -1,7 +1,7 @@
-{
+﻿{
     "name":  "WiresStandSwap",
-    "description":  "Hold E for smart stand swap, Shift+E to equip/swap a particular armor piece; contextual hover prompts and configurable keys.",
-    "version_number":  "0.3.1",
+    "description":  "Shift + E swaps complete armor-stand loadouts and equipment on item stands.",
+    "version_number":  "0.2.1",
     "website_url":  "",
     "dependencies":  [
                          "denikson-BepInExPack_Valheim-5.4.2350"

@@ -1,18 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <BepInExCore Condition="'$(BepInExCore)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Default\BepInEx\core</BepInExCore>
-    <BepInExPlugins Condition="'$(BepInExPlugins)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Default\BepInEx\plugins</BepInExPlugins>
-    <ValheimManaged Condition="'$(ValheimManaged)' == ''">D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed</ValheimManaged>
-<TargetFramework>net472</TargetFramework><LangVersion>latest</LangVersion><Nullable>disable</Nullable><AssemblyName>WiresStandSwap</AssemblyName><RootNamespace>WiresStandSwap</RootNamespace></PropertyGroup>
+  <PropertyGroup><TargetFramework>net472</TargetFramework><LangVersion>latest</LangVersion><Nullable>disable</Nullable><AssemblyName>WiresStandSwap</AssemblyName><RootNamespace>WiresStandSwap</RootNamespace></PropertyGroup>
   <ItemGroup><PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" /></ItemGroup>
   <ItemGroup>
-    <Reference Include="BepInEx"><HintPath>$(BepInExCore)\BepInEx.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="assembly_valheim"><HintPath>$(ValheimManaged)\assembly_valheim.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="assembly_utils"><HintPath>$(ValheimManaged)\assembly_utils.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="assembly_guiutils"><HintPath>$(ValheimManaged)\assembly_guiutils.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine"><HintPath>$(ValheimManaged)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.CoreModule"><HintPath>$(ValheimManaged)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.ClothModule"><HintPath>$(ValheimManaged)\UnityEngine.ClothModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx"><HintPath>C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Default\BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Default\BepInEx\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="assembly_valheim"><HintPath>D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed\assembly_valheim.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="assembly_utils"><HintPath>D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed\assembly_utils.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="assembly_guiutils"><HintPath>D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed\assembly_guiutils.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ClothModule"><HintPath>D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.ClothModule.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

@@ -11,7 +11,6 @@ namespace WiresStandSwap
         private sealed class Owner
         {
             internal ArmorStand Stand;
-            internal int Index;
         }
 
         private static ConditionalWeakTable<Switch, Owner>
@@ -21,17 +20,17 @@ namespace WiresStandSwap
         {
             if(stand == null || stand.m_slots == null)
                 return;
-            for (int i = 0; i < stand.m_slots.Count; ++i)
-                RegisterSwitch(stand.m_slots[i].m_switch, stand, i);
-            RegisterSwitch(stand.m_changePoseSwitch, stand, -1);
+            foreach(var slot in stand.m_slots)
+                RegisterSwitch(slot.m_switch,stand);
+            RegisterSwitch(stand.m_changePoseSwitch,stand);
         }
 
-        private static void RegisterSwitch(Switch sw, ArmorStand stand, int index)
+        private static void RegisterSwitch(Switch sw, ArmorStand stand)
         {
             if(sw == null)
                 return;
             _owners.Remove(sw);
-            _owners.Add(sw,new Owner {Stand=stand, Index=index});
+            _owners.Add(sw,new Owner {Stand=stand});
         }
 
         internal static ArmorStand ForSwitch(Switch sw)
@@ -42,14 +41,6 @@ namespace WiresStandSwap
             return _owners.TryGetValue(sw,out owner) &&
                    owner.Stand != null
                 ? owner.Stand : null;
-        }
-
-        internal static int IndexForSwitch(Switch sw)
-        {
-            if (sw == null) return -1;
-            Owner owner;
-            return _owners.TryGetValue(sw, out owner) &&
-                   owner.Stand != null ? owner.Index : -1;
         }
 
         internal static ArmorStand Resolve(GameObject hovered)
