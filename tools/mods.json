@@ -319,6 +319,14 @@
       "nexus_mod_id": 4201,
       "nexus_file_id": null,
       "publish": true
+    },
+    "WiresStackify": {
+      "thunderstore": true,
+      "thunderstore_categories": [],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
     }
   }
 }
