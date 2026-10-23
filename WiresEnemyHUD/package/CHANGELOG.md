@@ -1,3 +1,7 @@
+## 0.8.7
+
+Other status effects no longer check every nameplate each frame while nothing is shown: only when the shared data changes.
+
 ## 0.8.6
 
 Other status effects: right of the health bar, the game's own icons for effects that change a creature or player itself (its resistances, speed, damage, stagger or armor), such as tarred or harpooned. Effects that don't, like cold or rested, aren't shown, except wet, since fire burns wet creatures faster. Shared in multiplayer like the others. New setting: Other status effects.

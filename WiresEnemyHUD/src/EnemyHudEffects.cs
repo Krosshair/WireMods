@@ -134,21 +134,23 @@ namespace EnemyHudRework
                 if (ui != null) ui.Revision = uint.MaxValue;
                 return;
             }
-            if (ui != null && ui.Revision == revision && ui.Layout == _layoutVersion) return;
+            // Only when the shared data or the layout changed, also while
+            // there's nothing to show (no GameObject until there is).
+            if (ui == null) ui = state.Effects = new EffectUi();
+            if (ui.Revision == revision && ui.Layout == _layoutVersion) return;
+            ui.Revision = revision;
+            ui.Layout = _layoutVersion;
             bool any = false;
             for (int i = 0; i < MaxOtherEffects; i++) if (GetSharedInt(zdo, OtherKeys[i]) != 0) { any = true; break; }
-            if (ui == null)
+            if (ui.Root == null)
             {
                 if (!any) return; // nothing to show, nothing built
-                ui = state.Effects = new EffectUi();
                 GameObject go = new GameObject("WireOtherEffects", typeof(RectTransform));
                 ui.Root = (RectTransform)go.transform;
                 ui.Root.SetParent(state.Gui.transform, false);
                 ui.Root.anchorMin = ui.Root.anchorMax = ui.Root.pivot = new Vector2(0.5f, 0.5f);
                 ui.Root.sizeDelta = Vector2.zero;
             }
-            ui.Revision = revision;
-            ui.Layout = _layoutVersion;
             if (ui.Root.gameObject.activeSelf != any) ui.Root.gameObject.SetActive(any);
             if (!any) return;
 
