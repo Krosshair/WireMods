@@ -182,6 +182,13 @@ namespace EnemyHudRework
             _statusEffects = Bind(SecEnemy, "Status effects", true,
                 "Icons left of a creature's or player's health bar while they're burning, frozen, shocked, poisoned or hit by spirit: the same icons as those damage types. With Icon style on Game icons, the game's own status icons instead. Other players need Enemy HUD for theirs to show.",
                 null, null);
+            _otherEffects = Bind(SecEnemy, "Other status effects", true,
+                "The game's icons, right of the health bar, for other effects that change the creature or player itself: its resistances, speed, damage, stagger or armor (wet, tarred, harpooned, resistance meads...). Effects that don't (cold, rested...) aren't shown, except wet, which makes fire burn faster. Players follow Player nameplate effects.",
+                null, null);
+            _playerEffects = Bind(SecEnemy, "Player nameplate effects", true,
+                "Other status effects on players show only what you can't tell from where they are or what they wear: rested, encumbered, their Forsaken power, wet, then cold or freezing, in that order. Off: players use the same rule as creatures. Set by each player for their own effects.",
+                null, null);
+            _playerEffects.SettingChanged += (s, e) => ReshareLocalPlayerEffects();
             _nameColorMode = Bind(SecEnemy, "Awareness display", NameColorMode.Pastel,
                 "How a creature shows that it noticed you. Pastel: soft name colors. Normal: stronger Valheim name colors. Icons: the vanilla awareness icons. None: nothing.",
                 null, null, "Enemy Health Bar", "Awareness display");
@@ -247,6 +254,9 @@ namespace EnemyHudRework
             _keepNameplatesOnScreen = Bind(SecVisibility, "Keep nameplates on screen", true,
                 "Keep visible creature nameplates within the screen edges. Ones above the screen slide along the top edge.",
                 null, null, "Enemy Health Bar", "Keep bars on screen");
+            _farHover = Bind(SecVisibility, "Show far creatures you look at", true,
+                "A creature's bar also shows when you look at it from further away than the game shows bars (up to 50 m, as far as the game lets you look at creatures). It goes away again when you look away (after the hover delay).",
+                null, null);
             // Hover: the creature you're looking at (or just hit or
             // parried), the player your crosshair is on. HP numbers, then
             // icons, then fading.
@@ -256,7 +266,7 @@ namespace EnemyHudRework
             _playerDynamicHp = Bind(SecVisibility, "Player HP numbers only on hover", false,
                 "HP numbers on other players' bars only show on the player your crosshair is on.",
                 null, null);
-            _dynamicMode = Bind(SecVisibility, "Damage icons only on hover", true,
+            _dynamicMode = Bind(SecVisibility, "Damage icons only on hover", false,
                 "Damage type icons only show on the creature you're looking at, or just hit or parried. Bosses always show theirs. Works together with Limited mode.",
                 null, null);
             _enemyAimFade = Bind(SecVisibility, "Fade creature nameplates unless hovered", false,
@@ -274,9 +284,14 @@ namespace EnemyHudRework
             bool hbw = TakeOrphan(O3, "Boss weaknesses", out obw), hbr = TakeOrphan(O3, "Boss resistances", out obr);
             bool hw0 = TakeOrphan("Enemy Health Bar", "Weakness icons", out ow0), hr0 = TakeOrphan("Enemy Health Bar", "Resistance icons", out or0);
             // On/off behaviors first, then each choice under its own divider.
-            _limitedMode = Bind(SecWeak, "Limited mode", true,
-                "Only show icons for the damage types you can deal right now: your weapon in hand, plus its ammo.",
+            // 0.8.6: on/off became Off / Highlight / Limited.
+            string oldLimited;
+            bool hadLimited = TakeOrphan(SecWeak, "Limited mode", out oldLimited);
+            _limitedMode = Bind(SecWeak, "Limited mode", WeaponFocus.Highlight,
+                "The damage types your weapon in hand (plus its ammo) can deal. Highlight: their icons are a little bigger and brighter, every other icon still shows. Limited: only their icons show. Off: all icons the same.",
                 null, null);
+            if (hadLimited && (oldLimited == "true" || oldLimited == "false"))
+                _limitedMode.Value = IsTrue(oldLimited) ? WeaponFocus.Limited : WeaponFocus.Off;
             _limitedMode.SettingChanged += (s, e) => OnLimitedModeChanged();
             _hitResponse = Bind(SecWeak, "Hit response", true,
                 "When a creature is hit by a damage type it's weak to, that icon flashes white and swells for a moment; types it resists or is immune to go darker and shrink instead.",
@@ -301,6 +316,9 @@ namespace EnemyHudRework
                 "The look of every icon the mod draws: weaknesses, resistances, immunities and status effects. Shapes are made to be told apart at a glance at this size, with the shapes and colors set in Icon Shapes and Colors. Game icons uses the game's own skill and status effect icons instead (axe for chop, clubs for blunt, the poison effect for poison, ectoplasm for spirit...). NOT recommended: they are detailed pictures, hard to tell apart this small.",
                 null, null);
             _iconStyle.SettingChanged += (s, e) => RefreshIconLook();
+            _tooltipIcons = Bind(SecWeak, "Icons in item tooltips", true,
+                "Item tooltips show each damage type's icon in front of its line (\"Slash: 20\"), in the icon style and colors set here.",
+                null, null);
 
             // ---- 07 Hit predictions ----
             BindHitPredictionConfig(SecPredict);

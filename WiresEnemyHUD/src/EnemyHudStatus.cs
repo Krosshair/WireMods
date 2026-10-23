@@ -53,12 +53,14 @@ namespace EnemyHudRework
             if (ReferenceEquals(SeOwner(se), Player.m_localPlayer)) InvalidatePredictions();
             OnResistancesMayChange(SeOwner(se));
             int bit = StatusBit(se.NameHash());
-            if (bit == 0) return;
             Character c = SeOwner(se);
             if (c == null) return;
+            bool other = bit == 0 && CountsAsOther(se, c);
+            if (bit == 0 && !other) return;
             ZNetView view = CharacterView(c);
             if (view == null || !view.IsValid() || !view.IsOwner()) return;
             ZDO zdo = view.GetZDO();
+            if (other) { ShareOtherEffects(c, zdo, on ? null : se); return; }
             int mask = GetSharedInt(zdo, StatusKey);
             int next = on ? mask | bit : mask & ~bit;
             if (next == mask) return;
@@ -69,7 +71,9 @@ namespace EnemyHudRework
         // another machine takes them over: start from what they really have.
         internal void ResyncStatus(Character c, ZDO zdo)
         {
-            if (c == null || zdo == null || zdo.GetInt(StatusKey) == 0) return;
+            if (c == null || zdo == null) return;
+            if (zdo.GetInt(OtherKeys[0]) != 0) ShareOtherEffects(c, zdo, null);
+            if (zdo.GetInt(StatusKey) == 0) return;
             int mask = 0;
             SEMan se = c.GetSEMan();
             if (se != null)
@@ -88,6 +92,11 @@ namespace EnemyHudRework
             if (state.HealthRect == null || state.Character == null)
                 return;
             StatusUi ui = state.Status;
+            if (state.BubbleView == null) state.BubbleView = CharacterView(state.Character);
+            ZDO zdo = state.BubbleView != null && state.BubbleView.IsValid() ? state.BubbleView.GetZDO() : null;
+            if (zdo == null) return;
+            uint revision = SharedRevision(zdo);
+            UpdateOtherEffects(state, zdo, revision);
             if (!_statusEffects.Value)
             {
                 if (ui != null && ui.Root != null && ui.Root.gameObject.activeSelf)
@@ -95,10 +104,6 @@ namespace EnemyHudRework
                 if (ui != null) ui.Mask = -1;
                 return;
             }
-            if (state.BubbleView == null) state.BubbleView = CharacterView(state.Character);
-            ZDO zdo = state.BubbleView != null && state.BubbleView.IsValid() ? state.BubbleView.GetZDO() : null;
-            if (zdo == null) return;
-            uint revision = SharedRevision(zdo);
             if (ui != null && ui.Revision == revision && ui.Layout == _layoutVersion) return;
             int mask = GetSharedInt(zdo, StatusKey);
             if (ui == null)

@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.8.5";
+        public const string PluginVersion = "0.8.6";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -163,6 +163,7 @@ namespace EnemyHudRework
             public TMP_Text LevelNumber; public GameObject LevelSecondStar;
             public int StarLevel = -1; public GameObject[] OtherStars;
             public StatusUi Status;
+            public EffectUi Effects;
             public RectTransform Level3;
             public Vector2 Level2Original;
             public Vector2 Level3Original;
@@ -1474,10 +1475,27 @@ namespace EnemyHudRework
             foreach (Graphic g in copy.GetComponentsInChildren<Graphic>(true)) g.enabled = false;
             copy.SetActive(true);
             RectTransform r = (RectTransform)copy.transform;
-            r.anchoredPosition = star.anchoredPosition - health.anchoredPosition + state.HealthOriginalPosition;
+            // The health bar hangs from the top of its nameplate and the
+            // star row sits on the middle, and a player's nameplate is
+            // shorter: measure both from the middle so the gap matches.
+            RectTransform playerHealth = state.HealthRect;
+            Vector2 baseBar = FromMiddle(health, health.anchoredPosition);
+            Vector2 playerBar = FromMiddle(playerHealth, state.HealthOriginalPosition);
+            r.anchoredPosition = FromMiddle(star, star.anchoredPosition) - baseBar + playerBar -
+                FromMiddle(r, Vector2.zero);
             state.IconRow = r;
             state.IconRowOriginal = r.anchoredPosition;
             state.LastStarY = float.NaN;
+        }
+
+        // Where a child's anchored position puts it, measured from the
+        // middle of its parent.
+        private static Vector2 FromMiddle(RectTransform r, Vector2 anchored)
+        {
+            RectTransform parent = r.parent as RectTransform;
+            if (parent == null) return anchored;
+            Vector2 a = (r.anchorMin + r.anchorMax) * 0.5f - new Vector2(0.5f, 0.5f);
+            return anchored + Vector2.Scale(a, parent.rect.size);
         }
 
         private void StartFlash(EnemyUiState state)

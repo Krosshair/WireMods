@@ -32,7 +32,21 @@ namespace EnemyHudRework
         {
             return weak && resist ? IconShow.Both : weak ? IconShow.WeaknessesOnly : resist ? IconShow.ResistancesOnly : IconShow.Off;
         }
-        private ConfigEntry<bool> _limitedMode;
+        // Your weapon in hand: Highlight makes the icons for the damage
+        // types it deals a little bigger and brighter; Limited shows only
+        // those.
+        private enum WeaponFocus { Off, Highlight, Limited }
+        private ConfigEntry<WeaponFocus> _limitedMode;
+        private bool LimitedOn => _limitedMode != null && _limitedMode.Value == WeaponFocus.Limited;
+        private bool HighlightOn => _limitedMode != null && _limitedMode.Value == WeaponFocus.Highlight;
+        private bool Highlighted(int kind) => HighlightOn && (_limitedNow & (1 << kind)) != 0;
+        private const float HighlightSize = 1.1f;
+        private static Color Brighter(Color c)
+        {
+            Color b = Color.Lerp(c, Color.white, 0.3f);
+            b.a = Mathf.Min(1f, c.a * 1.25f);
+            return b;
+        }
 
         private ConfigEntry<bool> _dynamicMode;
         private ConfigEntry<float> _dynamicDelay;
@@ -82,10 +96,17 @@ namespace EnemyHudRework
         // Called from equipment events of the local player.
         internal void OnLocalEquipmentChanged()
         {
-            if (_limitedMode == null || !_limitedMode.Value) return;
+            if (_limitedMode == null || _limitedMode.Value == WeaponFocus.Off) return;
             int now = DealableMask(Player.m_localPlayer);
             if (now == _limitedNow) return;
             _limitedNow = now;
+            if (HighlightOn)
+            {
+                // Highlighting follows the weapon right away.
+                _limitedShown = now;
+                MarkAllWeaknessDirty();
+                return;
+            }
             float delay = _limitedDelay != null ? _limitedDelay.Value : 0f;
             int shown = delay > 0f ? _limitedShown | now : now;
             CancelInvoke(nameof(ExpireLimited));
@@ -116,7 +137,7 @@ namespace EnemyHudRework
 
         private bool KindAllowed(int kind)
         {
-            return !_limitedMode.Value || (_limitedShown & (1 << kind)) != 0;
+            return !LimitedOn || (_limitedShown & (1 << kind)) != 0;
         }
 
         private void MarkAllWeaknessDirty()
@@ -571,7 +592,8 @@ namespace EnemyHudRework
                     float x = right - (n % perRow) * step;
                     float y = -(n / perRow) * step;
                     Color tint = IconTint(i, want);
-                    show[i] = Place(ui, i, x, y, size, fillRatio, tint, Color.black, false);
+                    bool hl = Highlighted(i);
+                    show[i] = Place(ui, i, x, y, hl ? size * HighlightSize : size, fillRatio, hl ? Brighter(tint) : tint, Color.black, false);
                     if (show[i]) n++;
                 }
             }
@@ -633,7 +655,8 @@ namespace EnemyHudRework
                         if (ui.Kind[i] != want || !KindAllowed(i) || !RankShown(want, i, mode)) continue;
                         float x = want > 0 ? -(edge + left * step) : edge + right * step;
                         Color tint = IconTint(i, want);
-                        show[i] = Place(ui, i, x, iconY, size, 12f / 15f, tint, Color.black, false);
+                        bool hl = Highlighted(i);
+                        show[i] = Place(ui, i, x, iconY, hl ? size * HighlightSize : size, 12f / 15f, hl ? Brighter(tint) : tint, Color.black, false);
                         if (!show[i]) continue;
                         if (want > 0) left++; else right++;
                     }
@@ -670,6 +693,7 @@ namespace EnemyHudRework
                 if (gr.sizeDelta != gsz) gr.sizeDelta = gsz;
                 if (gr.anchoredPosition != gpos) gr.anchoredPosition = gpos;
                 Color gc = ui.Kind[kind] > 0 ? Color.white : ui.Kind[kind] == Immune ? _immuneTint : _resistTint;
+                if (Highlighted(kind)) gc = Brighter(gc);
                 if (img.color != gc) img.color = gc;
                 return true;
             }

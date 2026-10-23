@@ -1,3 +1,19 @@
+## 0.8.6
+
+Other status effects: right of the health bar, the game's own icons for effects that change a creature or player itself (its resistances, speed, damage, stagger or armor), such as tarred or harpooned. Effects that don't, like cold or rested, aren't shown, except wet, since fire burns wet creatures faster. Shared in multiplayer like the others. New setting: Other status effects.
+
+On players, other status effects show only what you can't tell from where they are or what they wear: rested, encumbered, their Forsaken power, wet, then cold or freezing, in that order. Gear effects, shelter and the like, and mead effects are left out. New setting: Player nameplate effects (on by default; off uses the creature rule).
+
+Show far creatures you look at (new, on by default): a creature's bar also shows when you look at it from further than the game shows bars, and goes away when you look away.
+
+Limited mode is now a choice: Off, Highlight (new default: the icons for the damage types your weapon in hand deals are a little bigger and brighter, every other icon still shows) or Limited (only those). Damage icons only on hover is now off by default. Existing settings carry over.
+
+Item tooltips show each damage type's icon in front of its line, in your icon style and colors. New setting: Icons in item tooltips.
+
+Damage type icons on player nameplates now sit the same distance below the health bar as on creatures, instead of a little too high.
+
+The Vanilla preset now also turns off Resistances for player nameplates and the new settings above.
+
 ## 0.8.5
 
 Damage type icons now follow a creature's real resistances instead of being baked-in, including what its status effects change: if an effect makes a creature weak or resistant to something, its icons show it, and go back when the effect ends. Updated only when an effect starts or ends, and shared in multiplayer so everyone sees the same icons.

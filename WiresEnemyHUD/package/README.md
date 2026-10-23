@@ -25,6 +25,8 @@ The ORIGINAL Valheim 1.0 health bar mod. Weakness icons, a stagger bar, HP numbe
 
 ![Stuff added in 0.8.4](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.4.jpg)
 
+![Stuff added in 0.8.6](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.6.jpg)
+
 * Creatures and players that are burning, frozen, shocked, poisoned or hit by spirit show it next to their health bar.
 
 ## Health bars

@@ -39,6 +39,7 @@ namespace EnemyHudRework
         private ConfigEntry<bool> _showOnDamage;
         private ConfigEntry<bool> _showOnParry;
         private ConfigEntry<bool> _keepNameplatesOnScreen;
+        private ConfigEntry<bool> _farHover;
         private ConfigEntry<bool> _criticalHitFlash;
         private ConfigEntry<float> _hpFontScale;
 
@@ -670,9 +671,12 @@ namespace EnemyHudRework
             private static void Postfix(
                 Character c, ref bool __result)
             {
-                if (!__result && Instance != null &&
-                    Instance._healthSamples.Count > 0 &&
-                    Instance.ForceShowOnDamage(c))
+                if (__result || Instance == null || c == null) return;
+                if (Instance._healthSamples.Count > 0 && Instance.ForceShowOnDamage(c))
+                    __result = true;
+                // Past the game's show distance: while you look at it.
+                else if (Instance._farHover != null && Instance._farHover.Value && !c.IsPlayer() && !c.IsBoss() &&
+                    Instance.LookedAtRecently(c, Instance._lookAwayDelay.Value))
                     __result = true;
             }
         }

@@ -78,10 +78,15 @@ namespace EnemyHudRework
         {
             _starCount.Value = mine;
             _statusEffects.Value = mine;
+            _otherEffects.Value = mine;
+            _playerEffects.Value = mine;
+            _farHover.Value = mine;
+            _tooltipIcons.Value = mine;
             _hitResponse.Value = mine;
             _immunityShow.Value = mine ? ImmunityShow.Notable : ImmunityShow.Off;
-            _limitedMode.Value = mine;
-            _dynamicMode.Value = mine;
+            _limitedMode.Value = mine ? WeaponFocus.Highlight : WeaponFocus.Off;
+            _dynamicMode.Value = false;
+            _playerIcons.Value = mine;
             _dynamicHp.Value = false;
             _enemyAimFade.Value = false;
             _playerDynamicHp.Value = false;
