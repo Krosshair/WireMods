@@ -1,3 +1,9 @@
+## 0.8.8
+
+Player nameplate effects off now hides them on player nameplates completely, instead of switching players to the creature rule.
+
+In the config, creature and player versions of the same setting now sit next to each other (HP numbers, double size bars).
+
 ## 0.8.7
 
 Other status effects no longer check every nameplate each frame while nothing is shown: only when the shared data changes.

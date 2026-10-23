@@ -153,7 +153,7 @@ namespace EnemyHudRework
             Config.SettingChanged += (s, e) => { MarkAllWeaknessDirty(); InvalidatePredictions(); _layoutVersion++; };
 
             // ---- 02 Nameplates ----
-            // All bars, then creatures (look, then extras), then players.
+            // Creature and player versions of the same setting side by side.
             _order = 1000;
             _transparentBackground = Bind(SecEnemy, "Transparent background", true,
                 "Make the gray background behind every bar the mod touches (health, stagger, bubble) see-through, like your own HUD bars.",
@@ -162,9 +162,16 @@ namespace EnemyHudRework
                 "HP numbers on creature bars: current HP, current/max HP, percentage, or None.",
                 new AcceptableValueList<string>(HealthTextModes), null,
                 "Enemy Health Bar", "Health display");
+            _playerHealthDisplayMode = Bind(SecEnemy, "Player HP numbers", "Current HP/Max HP",
+                "HP numbers on other players' bars: current HP, current/max HP, percentage, or None.",
+                new AcceptableValueList<string>(HealthTextModes), null,
+                "Player Health Bar", "Health display");
             _doubleEnemyHealthBar = Bind(SecEnemy, "Double size creature bars", true,
                 "Doubles the thickness of creature health bars while keeping their width.",
                 null, null, "Enemy Health Bar", "Double size");
+            _doublePlayerHealthBar = Bind(SecEnemy, "Double size player bars", true,
+                "Doubles the thickness of other players' health bars while keeping their width.",
+                null, null, "Player Health Bar", "Double size");
             _uppercaseNames = Bind(SecEnemy, "Uppercase creature names", false,
                 "Show creature names in uppercase.",
                 null, null, "Enemy Health Bar", "Uppercase names");
@@ -183,22 +190,14 @@ namespace EnemyHudRework
                 "Icons left of a creature's or player's health bar while they're burning, frozen, shocked, poisoned or hit by spirit: the same icons as those damage types. With Icon style on Game icons, the game's own status icons instead. Other players need Enemy HUD for theirs to show.",
                 null, null);
             _otherEffects = Bind(SecEnemy, "Other status effects", true,
-                "The game's icons, right of the health bar, for other effects that change the creature or player itself: its resistances, speed, damage, stagger or armor (wet, tarred, harpooned, resistance meads...). Effects that don't (cold, rested...) aren't shown, except wet, which makes fire burn faster. Players follow Player nameplate effects.",
+                "The game's icons, right of the health bar, for other effects that change the creature or player itself: its resistances, speed, damage, stagger or armor (wet, tarred, harpooned, resistance meads...). Effects that don't (cold, rested...) aren't shown, except wet, which makes fire burn faster. Players have their own list, see Player nameplate effects.",
                 null, null);
             _playerEffects = Bind(SecEnemy, "Player nameplate effects", true,
-                "Other status effects on players show only what you can't tell from where they are or what they wear: rested, encumbered, their Forsaken power, wet, then cold or freezing, in that order. Off: players use the same rule as creatures. Set by each player for their own effects.",
+                "Status effect icons right of other players' health bars: rested, encumbered, their Forsaken power, wet, then cold or freezing, in that order. Other players need Enemy HUD for theirs to show.",
                 null, null);
-            _playerEffects.SettingChanged += (s, e) => ReshareLocalPlayerEffects();
             _nameColorMode = Bind(SecEnemy, "Awareness display", NameColorMode.Pastel,
                 "How a creature shows that it noticed you. Pastel: soft name colors. Normal: stronger Valheim name colors. Icons: the vanilla awareness icons. None: nothing.",
                 null, null, "Enemy Health Bar", "Awareness display");
-            _playerHealthDisplayMode = Bind(SecEnemy, "Player HP numbers", "Current HP/Max HP",
-                "HP numbers on other players' bars: current HP, current/max HP, percentage, or None.",
-                new AcceptableValueList<string>(HealthTextModes), null,
-                "Player Health Bar", "Health display");
-            _doublePlayerHealthBar = Bind(SecEnemy, "Double size player bars", true,
-                "Doubles the thickness of other players' health bars while keeping their width.",
-                null, null, "Player Health Bar", "Double size");
 
             if (oldAwareness != null)
                 _nameColorMode.Value =

@@ -58,7 +58,7 @@ namespace EnemyHudRework
             if (se == null || se.m_icon == null || StatusBit(se.NameHash()) != 0 || se is SE_Shield) return false;
             int h = se.NameHash();
             Player p = c as Player;
-            if (p == null || !_playerEffects.Value) return h == SEMan.s_statusEffectWet || AffectsTarget(se);
+            if (p == null) return h == SEMan.s_statusEffectWet || AffectsTarget(se);
             return PlayerSlot(se, p) >= 0;
         }
 
@@ -82,17 +82,7 @@ namespace EnemyHudRework
         private int OtherPriority(StatusEffect se, Character c)
         {
             Player p = c as Player;
-            return p != null && _playerEffects.Value ? PlayerSlot(se, p) : 0;
-        }
-
-        // The setting changes what your own list holds: share it again.
-        private void ReshareLocalPlayerEffects()
-        {
-            Player p = Player.m_localPlayer;
-            if (p == null) return;
-            ZNetView view = CharacterView(p);
-            if (view == null || !view.IsValid() || !view.IsOwner()) return;
-            ShareOtherEffects(p, view.GetZDO(), null);
+            return p != null ? PlayerSlot(se, p) : 0;
         }
 
         // ---- Owner side: when an effect starts or ends ----
@@ -128,7 +118,7 @@ namespace EnemyHudRework
         private void UpdateOtherEffects(EnemyUiState state, ZDO zdo, uint revision)
         {
             EffectUi ui = state.Effects;
-            if (!_otherEffects.Value)
+            if (!_otherEffects.Value || (state.Kind == HudKind.Player && !_playerEffects.Value))
             {
                 if (ui != null && ui.Root != null && ui.Root.gameObject.activeSelf) ui.Root.gameObject.SetActive(false);
                 if (ui != null) ui.Revision = uint.MaxValue;
