@@ -67,33 +67,49 @@ namespace WiresForgeOfGoodtential
     [HarmonyPatch(typeof(InventoryGui), "UpdateRecipe")]
     internal static class ForgeUiPatch
     {
+        // The selected recipe lives in a private struct field. Read through
+        // small compiled getters made once, not reflection every frame
+        // (which also boxed the struct each call).
         private static readonly FieldInfo SelectedRecipeField =
             AccessTools.Field(
                 typeof(InventoryGui),
                 "m_selectedRecipe");
 
-        private static readonly FieldInfo CraftTimerField =
-            AccessTools.Field(
-                typeof(InventoryGui),
-                "m_craftTimer");
+        private static readonly Func<InventoryGui, Recipe> GetSelectedRecipe =
+            StructGetter<Recipe>("Recipe");
 
-        private static readonly PropertyInfo SelectedRecipeProperty =
-            SelectedRecipeField != null
-                ? SelectedRecipeField.FieldType.GetProperty(
-                    "Recipe",
-                    BindingFlags.Instance |
-                    BindingFlags.Public |
-                    BindingFlags.NonPublic)
-                : null;
+        private static readonly Func<InventoryGui, ItemDrop.ItemData> GetSelectedItem =
+            StructGetter<ItemDrop.ItemData>("ItemData");
 
-        private static readonly PropertyInfo SelectedItemProperty =
-            SelectedRecipeField != null
-                ? SelectedRecipeField.FieldType.GetProperty(
-                    "ItemData",
-                    BindingFlags.Instance |
-                    BindingFlags.Public |
-                    BindingFlags.NonPublic)
-                : null;
+        private static readonly AccessTools.FieldRef<InventoryGui, float> CraftTimer =
+            AccessTools.FieldRefAccess<InventoryGui, float>("m_craftTimer");
+
+        // gui.m_selectedRecipe.<property>, as IL.
+        private static Func<InventoryGui, T> StructGetter<T>(string property)
+        {
+            try
+            {
+                if (SelectedRecipeField == null)
+                    return null;
+                MethodInfo getter = SelectedRecipeField.FieldType
+                    .GetProperty(property, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    ?.GetGetMethod(true);
+                if (getter == null)
+                    return null;
+                System.Reflection.Emit.DynamicMethod dm = new System.Reflection.Emit.DynamicMethod(
+                    "WireForge_Get" + property, typeof(T), new[] { typeof(InventoryGui) }, typeof(InventoryGui), true);
+                System.Reflection.Emit.ILGenerator il = dm.GetILGenerator();
+                il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+                il.Emit(System.Reflection.Emit.OpCodes.Ldflda, SelectedRecipeField);
+                il.Emit(System.Reflection.Emit.OpCodes.Call, getter);
+                il.Emit(System.Reflection.Emit.OpCodes.Ret);
+                return (Func<InventoryGui, T>)dm.CreateDelegate(typeof(Func<InventoryGui, T>));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
 
         internal static bool TryGetSelected(
             InventoryGui gui,
@@ -104,28 +120,14 @@ namespace WiresForgeOfGoodtential
             item = null;
 
             if (gui == null ||
-                SelectedRecipeField == null ||
-                SelectedRecipeProperty == null ||
-                SelectedItemProperty == null)
+                GetSelectedRecipe == null ||
+                GetSelectedItem == null)
             {
                 return false;
             }
 
-            object selected =
-                SelectedRecipeField.GetValue(gui);
-
-            if (selected == null)
-                return false;
-
-            recipe =
-                SelectedRecipeProperty.GetValue(
-                    selected,
-                    null) as Recipe;
-
-            item =
-                SelectedItemProperty.GetValue(
-                    selected,
-                    null) as ItemDrop.ItemData;
+            recipe = GetSelectedRecipe(gui);
+            item = GetSelectedItem(gui);
 
             return recipe != null &&
                 item != null;
@@ -134,17 +136,8 @@ namespace WiresForgeOfGoodtential
         internal static bool IsRefining(
             InventoryGui gui)
         {
-            if (gui == null ||
-                CraftTimerField == null)
-            {
-                return false;
-            }
-
-            object value =
-                CraftTimerField.GetValue(gui);
-
-            return value is float &&
-                (float)value >= 0f;
+            return gui != null &&
+                CraftTimer(gui) >= 0f;
         }
 
         [HarmonyPrefix]

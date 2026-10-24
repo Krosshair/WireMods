@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.16
+- The crafting panel no longer creates garbage every frame while it's open.
+
 ## 0.1.15
 - Protection idol type text now displays the full word Protection instead of clipping to Protect.
 - Renamed the displayed risky outcome from destroy to destruction.
