@@ -41,6 +41,29 @@ namespace WiresBalancedCraftFromNearbyChests
             List<Container> containers =
                 ContainerRegistry.GetMatching(context);
 
+            // The same item is asked about many times per frame (every
+            // requirement of every recipe or piece): the containers' part
+            // is counted once per frame, and again only if something in an
+            // inventory changed or the container list was rebuilt. Your
+            // own inventory is always counted fresh.
+            if (_cacheFrame != Time.frameCount ||
+                _cacheMatching != ContainerRegistry.MatchingVersion ||
+                _cacheInventories != InventoryVersion ||
+                !ReferenceEquals(_cacheRoute, context.Definition))
+            {
+                CountCache.Clear();
+                _cacheFrame = Time.frameCount;
+                _cacheMatching = ContainerRegistry.MatchingVersion;
+                _cacheInventories = InventoryVersion;
+                _cacheRoute = context.Definition;
+            }
+
+            CountKey key = new CountKey(name, quality, matchWorldLevel);
+            int stored;
+            if (CountCache.TryGetValue(key, out stored))
+                return total + stored;
+
+            int inContainers = 0;
             for (int i = 0; i < containers.Count; i++)
             {
                 Inventory chest =
@@ -48,14 +71,58 @@ namespace WiresBalancedCraftFromNearbyChests
 
                 if (chest != null)
                 {
-                    total += chest.CountItems(
+                    inContainers += chest.CountItems(
                         name,
                         quality,
                         matchWorldLevel);
                 }
             }
 
-            return total;
+            CountCache[key] = inContainers;
+            return total + inContainers;
+        }
+
+        // Bumped by any inventory change (patch below).
+        internal static int InventoryVersion;
+
+        private static int _cacheFrame = -1;
+        private static int _cacheMatching = -1;
+        private static int _cacheInventories = -1;
+        private static RouteDefinition _cacheRoute;
+
+        private static readonly Dictionary<CountKey, int> CountCache =
+            new Dictionary<CountKey, int>();
+
+        private struct CountKey : System.IEquatable<CountKey>
+        {
+            private readonly string _name;
+            private readonly int _quality;
+            private readonly bool _world;
+
+            internal CountKey(string name, int quality, bool world)
+            {
+                _name = name;
+                _quality = quality;
+                _world = world;
+            }
+
+            public bool Equals(CountKey other)
+            {
+                return _quality == other._quality &&
+                       _world == other._world &&
+                       string.Equals(_name, other._name);
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is CountKey && Equals((CountKey)obj);
+            }
+
+            public override int GetHashCode()
+            {
+                int h = _name != null ? _name.GetHashCode() : 0;
+                return (h * 397) ^ (_quality * 31) ^ (_world ? 1 : 0);
+            }
         }
 
         public static bool HaveItem(
@@ -403,6 +470,15 @@ namespace WiresBalancedCraftFromNearbyChests
                 inventory,
                 item,
                 1);
+        }
+    }
+
+    [HarmonyLib.HarmonyPatch(typeof(Inventory), "Changed")]
+    internal static class InventoryChangedVersionPatch
+    {
+        private static void Postfix()
+        {
+            InventoryBridge.InventoryVersion++;
         }
     }
 }

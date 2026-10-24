@@ -702,6 +702,13 @@ namespace WiresBalancedCraftFromNearbyChests
             _refillContext = null;
         }
 
+        // The game asks for item counts many times per frame while the
+        // crafting panel or build menu is open. One context per frame and
+        // kind instead of a new one for every call. A context handed out
+        // is never changed afterwards (pending MUC actions keep theirs).
+        private static int _toolFrame = -1, _stationFrame = -1;
+        private static RouteContext _toolContext, _stationContext;
+
         internal static bool TryGet(out RouteContext context)
         {
             context = null;
@@ -728,6 +735,14 @@ namespace WiresBalancedCraftFromNearbyChests
                     tool.m_shared != null &&
                     tool.m_shared.m_buildPieces != null)
                 {
+                    if (_toolFrame == Time.frameCount &&
+                        _toolContext != null &&
+                        _toolContext.Tool == tool)
+                    {
+                        context = _toolContext;
+                        return true;
+                    }
+
                     RouteDefinition route =
                         RouteRegistry.EnsureTool(tool);
 
@@ -740,6 +755,8 @@ namespace WiresBalancedCraftFromNearbyChests
                             Range = RangeProvider.GetSharedStationRadius(),
                             Tool = tool
                         };
+                        _toolContext = context;
+                        _toolFrame = Time.frameCount;
                         return true;
                     }
                 }
@@ -750,6 +767,14 @@ namespace WiresBalancedCraftFromNearbyChests
 
             if (station == null)
                 return false;
+
+            if (_stationFrame == Time.frameCount &&
+                _stationContext != null &&
+                _stationContext.Station == station)
+            {
+                context = _stationContext;
+                return true;
+            }
 
             RouteDefinition stationRoute =
                 RouteRegistry.EnsureStation(station);
@@ -764,6 +789,8 @@ namespace WiresBalancedCraftFromNearbyChests
                 Range = station.GetStationBuildRange(),
                 Station = station
             };
+            _stationContext = context;
+            _stationFrame = Time.frameCount;
 
             return true;
         }

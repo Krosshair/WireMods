@@ -1,7 +1,7 @@
 {
     "name": "WiresBalancedCraftFromNearbyChests",
     "description": "Craft, build, refuel and feed machines from deliberately named nearby chests.",
-    "version_number": "0.1.9",
+    "version_number": "0.1.10",
     "website_url": "",
     "dependencies": []
 }

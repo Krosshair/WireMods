@@ -37,11 +37,21 @@ namespace WiresBalancedCraftFromNearbyChests
         private static readonly List<Container> Matching =
             new List<Container>();
 
-        private static readonly MethodInfo CheckAccessMethod =
-            AccessTools.Method(
-                typeof(Container),
-                "CheckAccess",
-                new[] { typeof(long) });
+        // Container.CheckAccess is private: called through a delegate, not
+        // reflection, since it runs for every nearby container on refresh.
+        private static readonly Func<Container, long, bool> CheckAccess =
+            AccessTools.MethodDelegate<Func<Container, long, bool>>(
+                AccessTools.Method(
+                    typeof(Container),
+                    "CheckAccess",
+                    new[] { typeof(long) }));
+
+        // Bumped whenever the matching list is rebuilt, so callers caching
+        // per-list results (InventoryBridge) know to start over.
+        internal static int MatchingVersion;
+
+        private static readonly Dictionary<Container, string> SortTitles =
+            new Dictionary<Container, string>();
 
         private static float _nextRefresh;
         private static float _nextReconcile;
@@ -305,10 +315,18 @@ namespace WiresBalancedCraftFromNearbyChests
 
         internal static bool IsUsable(Container container)
         {
-            Player player = Player.m_localPlayer;
+            if (Player.m_localPlayer == null || Game.instance == null)
+                return false;
+
+            return IsUsable(
+                container,
+                Game.instance.GetPlayerProfile().GetPlayerID());
+        }
+
+        internal static bool IsUsable(Container container, long playerId)
+        {
             if (container == null ||
-                player == null ||
-                Game.instance == null ||
+                Player.m_localPlayer == null ||
                 container.GetInventory() == null)
                 return false;
 
@@ -316,19 +334,9 @@ namespace WiresBalancedCraftFromNearbyChests
             if (nview == null || !nview.IsValid())
                 return false;
 
-            long playerId =
-                Game.instance.GetPlayerProfile().GetPlayerID();
-
-            if (CheckAccessMethod != null)
-            {
-                object allowed =
-                    CheckAccessMethod.Invoke(
-                        container,
-                        new object[] { playerId });
-
-                if (!(allowed is bool) || !(bool)allowed)
-                    return false;
-            }
+            if (CheckAccess != null &&
+                !CheckAccess(container, playerId))
+                return false;
 
             if (container.m_checkGuardStone &&
                 !PrivateArea.CheckAccess(
@@ -521,6 +529,7 @@ namespace WiresBalancedCraftFromNearbyChests
         private static void Refresh(RouteContext context)
         {
             Matching.Clear();
+            MatchingVersion++;
 
             float rangeSqr = context.Range * context.Range;
 
@@ -529,6 +538,12 @@ namespace WiresBalancedCraftFromNearbyChests
                     context.Definition.Id,
                     out candidates))
                 return;
+
+            if (Player.m_localPlayer == null || Game.instance == null)
+                return;
+
+            long playerId =
+                Game.instance.GetPlayerProfile().GetPlayerID();
 
             foreach (Container container in candidates)
             {
@@ -544,17 +559,22 @@ namespace WiresBalancedCraftFromNearbyChests
                 if (delta.sqrMagnitude > rangeSqr)
                     continue;
 
-                if (!IsUsable(container))
+                if (!IsUsable(container, playerId))
                     continue;
 
                 Matching.Add(container);
             }
 
+            // Each title read once, not on every comparison.
+            SortTitles.Clear();
+            for (int i = 0; i < Matching.Count; i++)
+                SortTitles[Matching[i]] = GetCustomTitle(Matching[i]);
+
             Matching.Sort(
                 delegate(Container a, Container b)
                 {
-                    string titleA = GetCustomTitle(a);
-                    string titleB = GetCustomTitle(b);
+                    string titleA = SortTitles[a];
+                    string titleB = SortTitles[b];
 
                     int byTitle =
                         WindowsLogicalCompare(

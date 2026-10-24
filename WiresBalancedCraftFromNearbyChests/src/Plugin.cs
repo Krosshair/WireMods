@@ -10,7 +10,7 @@ namespace WiresBalancedCraftFromNearbyChests
     {
         public const string Guid = "wire.valheim.balancedcraftfromnearbychests";
         public const string Name = "Wire's Balanced Craft From Nearby Chests";
-        public const string Version = "0.1.9";
+        public const string Version = "0.1.10";
 
         internal static Plugin Instance;
         internal static ManualLogSource Log;
