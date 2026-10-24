@@ -1,7 +1,7 @@
 {
     "name": "WiresWeightedSlots",
     "description": "See your item slot's current weight at a glance.",
-    "version_number": "0.1.1",
+    "version_number": "0.1.2",
     "website_url": "",
     "dependencies": []
 }

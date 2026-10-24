@@ -19,12 +19,17 @@ namespace WiresWeightedSlots
     {
         internal const string Guid = "wire.valheim.weightedslots";
         internal const string Name = "Wire's Weighted Slots";
-        internal const string Version = "0.1.1";
+        internal const string Version = "0.1.2";
 
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<float> MaxDarkness;
         internal static ConfigEntry<float> CurveWeight;
         internal static ConfigEntry<float> BorderInset;
+
+        // Bumped on any inventory change or config change: the slot shades
+        // are only worked out again when one of these moved.
+        internal static int InventoryVersion;
+        internal static int ConfigVersion;
         private Harmony _harmony;
 
         private void Awake()
@@ -40,6 +45,8 @@ namespace WiresWeightedSlots
             BorderInset = Config.Bind("Weighted Slot Backgrounds", "Border inset (pixels)", 3.5f,
                 new ConfigDescription("Keep the dark shade away from the original slot border, rarity, and selection indicators.",
                     new AcceptableValueRange<float>(0f, 12f)));
+
+            Config.SettingChanged += (sender, args) => ConfigVersion++;
 
             _harmony = new Harmony(Guid);
             _harmony.PatchAll();
@@ -191,6 +198,18 @@ namespace WiresWeightedSlots
         private static readonly AccessTools.FieldRef<InventoryGrid, List<InventoryElement>>
             Elements = AccessTools.FieldRefAccess<InventoryGrid, List<InventoryElement>>("m_elements");
 
+        private sealed class Seen
+        {
+            public object Elements;
+            public int Count;
+            public Inventory Inventory;
+            public int InventoryVersion;
+            public int ConfigVersion;
+        }
+
+        private static readonly Dictionary<InventoryGrid, Seen> Last =
+            new Dictionary<InventoryGrid, Seen>();
+
         [HarmonyPostfix]
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(InventoryGrid __instance)
@@ -200,6 +219,26 @@ namespace WiresWeightedSlots
 
             List<InventoryElement> elements = Elements(__instance);
             if (elements == null || elements.Count == 0) return;
+
+            // UpdateGui runs every frame while the inventory is open: only
+            // redo the shades when the items, the slots or the settings
+            // changed since the last time.
+            Seen seen;
+            if (!Last.TryGetValue(__instance, out seen))
+            {
+                if (Last.Count > 16) Last.Clear(); // grids that are gone
+                Last[__instance] = seen = new Seen();
+            }
+            if (ReferenceEquals(seen.Elements, elements) && seen.Count == elements.Count &&
+                ReferenceEquals(seen.Inventory, inventory) &&
+                seen.InventoryVersion == Plugin.InventoryVersion &&
+                seen.ConfigVersion == Plugin.ConfigVersion)
+                return;
+            seen.Elements = elements;
+            seen.Count = elements.Count;
+            seen.Inventory = inventory;
+            seen.InventoryVersion = Plugin.InventoryVersion;
+            seen.ConfigVersion = Plugin.ConfigVersion;
 
             int width = Mathf.Max(1, inventory.GetWidth());
 
@@ -301,6 +340,10 @@ namespace WiresWeightedSlots
             return start >= 0;
         }
 
+        private static object _lastElements;
+        private static int _lastCount = -1, _lastInventoryVersion = -1, _lastConfigVersion = -1, _lastPlayer;
+        private static HotkeyBar _lastBar;
+
         [HarmonyPostfix]
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(HotkeyBar __instance, Player player)
@@ -309,6 +352,23 @@ namespace WiresWeightedSlots
 
             IList elements = ElementsField.GetValue(__instance) as IList;
             if (elements == null || elements.Count == 0) return;
+
+            // UpdateIcons runs every frame: only redo the shades when the
+            // items, the slots or the settings changed since last time.
+            // (One bar is remembered; with two bars, as with Azu's, each
+            // redoes its shades when the other one ran last.)
+            int playerId = player.GetInstanceID();
+            if (ReferenceEquals(_lastBar, __instance) && ReferenceEquals(_lastElements, elements) &&
+                _lastCount == elements.Count && _lastPlayer == playerId &&
+                _lastInventoryVersion == Plugin.InventoryVersion &&
+                _lastConfigVersion == Plugin.ConfigVersion)
+                return;
+            _lastBar = __instance;
+            _lastElements = elements;
+            _lastCount = elements.Count;
+            _lastPlayer = playerId;
+            _lastInventoryVersion = Plugin.InventoryVersion;
+            _lastConfigVersion = Plugin.ConfigVersion;
 
             // Stamp occupied slots first, then clear only those that became
             // empty. Existing weights do not change or dirty the UI each frame.
@@ -345,6 +405,15 @@ namespace WiresWeightedSlots
                 WeightShade existing = root.GetComponent<WeightShade>();
                 if (existing != null) existing.ClearIfNotSeen(stamp);
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(Inventory), "Changed")]
+    internal static class InventoryChangedPatch
+    {
+        private static void Postfix()
+        {
+            Plugin.InventoryVersion++;
         }
     }
 }
