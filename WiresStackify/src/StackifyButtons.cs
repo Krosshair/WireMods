@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
+using System.Text;
 using BepInEx.Configuration;
 using HarmonyLib;
 using TMPro;
@@ -15,20 +17,30 @@ namespace WiresStackify
     // with the game's coin pouch (the trader's map icon, as My Little UI
     // uses it) and how many stacks are in that inventory or chest. The
     // inventory one works with nearby chests, the chest one with that chest.
-    // Left click quick stacks, right click restocks, middle click sorts by
-    // type, shift + middle click sorts by weight.
+    // What each click does is set in the config (Controls). Holding an item
+    // and clicking a pouch quick stacks every stack of that item; the pouch
+    // opens while you hold one.
     internal static class StackifyButtons
     {
         private const string Name = "WireStackify";
-        private const string Topic = "Quick stack & restock";
+        private const string Topic = "Stackify", ChestTopic = "Stackify (Container)";
 
         private sealed class PendingIcon { public Image Image; public Color Color; public bool Chest; }
         private static readonly List<PendingIcon> Pending = new List<PendingIcon>();
-        private static Sprite _pouch;
+        private static readonly List<KeyValuePair<Image, bool>> Icons = new List<KeyValuePair<Image, bool>>();
+        private static bool _openInv, _openChest;
+        private static Sprite _pouch, _open, _closed;
+        private static bool _openTried, _closedTried;
+        private static bool _flashInv, _flashChest;
+        private static int _flashToken;
         private static readonly List<KeyValuePair<UITooltip, bool>> Tips = new List<KeyValuePair<UITooltip, bool>>();
         private static RectTransform _tooltipAnchor;
         private static readonly AccessTools.FieldRef<InventoryGui, InventoryGrid> ContainerGrid =
             AccessTools.FieldRefAccess<InventoryGui, InventoryGrid>("m_containerGrid");
+        internal static readonly AccessTools.FieldRef<InventoryGui, ItemDrop.ItemData> DragItem =
+            AccessTools.FieldRefAccess<InventoryGui, ItemDrop.ItemData>("m_dragItem");
+        private static readonly AccessTools.FieldRef<InventoryGui, Inventory> DragInventory =
+            AccessTools.FieldRefAccess<InventoryGui, Inventory>("m_dragInventory");
 
         // Acts the moment the button goes down, not when it's let go.
         internal sealed class ClickHandler : MonoBehaviour, IPointerDownHandler
@@ -37,78 +49,254 @@ namespace WiresStackify
 
             public void OnPointerDown(PointerEventData e)
             {
-                Player p = Player.m_localPlayer;
-                if (p == null) return;
-                if (e.button == PointerEventData.InputButton.Middle)
+                InventoryGui gui = InventoryGui.instance;
+                if (Player.m_localPlayer == null || gui == null) return;
+                ItemDrop.ItemData held = Holding(gui);
+                if (held != null)
                 {
-                    if (!StackifyPlugin.MiddleClickSort.Value) return;
-                    // Shift: by weight, and the weight icon next to it shakes.
-                    // The pouch wiggles round one way for type, the other for
-                    // weight. Nothing moved: the empty bag.
-                    bool weight = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-                    if (Sorting.Run(Chest, weight ? Sorting.Mode.Weight : Sorting.Mode.Type))
-                    {
-                        ButtonFeel.Wiggle(Chest, weight ? -1f : 1f);
-                        if (weight) WeightShake.Shake(Chest);
-                    }
-                    else Nothing(Chest);
+                    Actions.DropOn(Chest, held, DragInventory(gui));
                     return;
                 }
-                bool left = e.button == PointerEventData.InputButton.Left;
-                if (!left && e.button != PointerEventData.InputButton.Right) return;
-                // Shift + either click: quick stack, then restock, one trip.
-                if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
-                {
-                    int stacked = QuickStack.Run(p, Chest, null, true);
-                    int restocked = Restock.Run(p, Chest, true);
-                    if (stacked > 0 || restocked > 0)
-                        StackifyEffects.SpawnLocal(stacked > 0 ? p.m_pickupEffects : p.m_dropEffects, StackifyEffects.Ear(), Quaternion.identity);
-                    if (stacked == 0 && restocked == 0) Nothing(Chest);
-                    if (StackifyPlugin.QuickStackMessage.Value || StackifyPlugin.RestockMessage.Value)
-                        StackifyPlugin.Message(p, stacked == 0 && restocked == 0 ? "Nothing to quickstack or restock"
-                            : stacked == 0 ? "Restocked " + restocked
-                            : restocked == 0 ? "Quickstacked " + stacked
-                            : "Quickstacked " + stacked + ", restocked " + restocked);
-                    return;
-                }
-                int done = left ? QuickStack.Run(p, Chest) : Restock.Run(p, Chest);
-                // Only when something happened. Quick stack: the sound of
-                // picking an item up. Restock: the sound of dropping one.
-                if (done > 0) StackifyEffects.SpawnLocal(left ? p.m_pickupEffects : p.m_dropEffects, StackifyEffects.Ear(), Quaternion.identity);
+                int button = e.button == PointerEventData.InputButton.Left ? 0
+                    : e.button == PointerEventData.InputButton.Right ? 1
+                    : e.button == PointerEventData.InputButton.Middle ? 2 : -1;
+                Actions.Do(Actions.ForButton(button, Actions.Shift()), Chest);
             }
         }
 
-        // After a quick stack or restock: only the button that did it
-        // answers (the chest one also for the game's Place stacks).
+        // The item in your hand, when dropping items on the pouch is on.
+        private static ItemDrop.ItemData Holding(InventoryGui gui)
+        {
+            if (gui == null || !StackifyPlugin.DropOnPouch.Value || StackifyPlugin.DragGo(gui) == null) return null;
+            return DragItem(gui);
+        }
+
+        // After a quick stack or restock that moved something: the button
+        // that did it answers (the chest one also for the game's Place
+        // stacks).
         internal static void Feedback(StackifyEffects.Kind kind, int count, bool chest)
         {
-            if (count > 0) ButtonFeel.Result(kind, count, chest);
-            else Nothing(chest);
+            if (count <= 0) return;
+            ButtonFeel.Result(kind, count, chest);
+            Flash(chest);
         }
 
-        // Nothing to do: the sound of shaking an empty bag (the game's
-        // inventory closing rustle, light and quick), and the pouch gives a
-        // quick squeeze. Only while the button can be seen.
-        internal static void Nothing(bool chest)
+        // ---- Hover: the
+        // stacks a quick stack would take get a faint frame ----
+        private static bool _hovering, _hoverChest;
+        private static string _previewChest = "", _previewInv = "";
+
+        internal static void Enter(bool chest)
         {
-            if (!ButtonFeel.Squeeze(chest)) return;
-            InventoryGui gui = InventoryGui.instance;
-            if (gui == null || gui.m_closeInventoryEffects == null) return;
-            foreach (EffectList.EffectData d in gui.m_closeInventoryEffects.m_effectPrefabs)
-                if (d != null && d.m_enabled && d.m_prefab != null && d.m_prefab.GetComponentInChildren<ZSFX>(true) != null)
-                {
-                    StackifyEffects.PlayUi(d.m_prefab, 1.25f);
-                    break;
-                }
+            _hovering = true;
+            _hoverChest = chest;
+            ButtonFeel.Hover(chest, true);
+            RefreshHover();
         }
 
+        internal static void Exit(bool chest)
+        {
+            if (!_hovering || _hoverChest != chest) return;
+            _hovering = false;
+            ButtonFeel.Hover(chest, false);
+            Favorites.ClearPreview();
+        }
+
+        // After anything changes while a pouch is hovered: what it would do
+        // now. Only on hover and after a click, never every frame.
+        internal static void RefreshHover()
+        {
+            if (!_hovering) return;
+            Player p = Player.m_localPlayer;
+            string text = "";
+            if (p != null && StackifyPlugin.HoverPreview.Value)
+            {
+                try
+                {
+                    ItemDrop.ItemData held = Holding(InventoryGui.instance);
+                    int chests = 0;
+                    bool chestDrop = held != null && _hoverChest;
+                    List<ItemDrop.ItemData> items = chestDrop ? null : QuickStack.Preview(p, _hoverChest, out chests, held);
+                    int sources = 0;
+                    float gain = 0f;
+                    List<ItemDrop.ItemData> restock = held == null ? Restock.Preview(p, _hoverChest, out sources, out gain)
+                        : chestDrop ? Restock.PreviewOnly(p, StackifyPlugin.CurrentContainer(InventoryGui.instance), held, out gain) : null;
+                    float loss = 0f;
+                    if (items != null) foreach (ItemDrop.ItemData it in items) loss += it.GetWeight();
+                    Favorites.ShowPreview(items, restock);
+                    if (chestDrop && restock.Count > 0) sources = 1;
+                    string yellow = Favorites.YellowHex(), blue = Favorites.BlueHex();
+                    text = "\n";
+                    if (items != null)
+                        text += "\n" + (items.Count == 0 ? "Quick stack: nothing"
+                            : "Quick stack: <color=#" + yellow + ">" + Stacks(items.Count) + "</color> into " + Containers(chests) + Weight(-loss, yellow));
+                    if (restock != null)
+                        text += "\n" + (restock.Count == 0 ? "Restock: nothing"
+                            : "Restock: <color=#" + blue + ">" + Stacks(restock.Count) + "</color> from " + Containers(sources) + Weight(gain, blue));
+                }
+                catch (Exception e) { StackifyPlugin.Log.LogWarning("Stackify preview failed: " + e); }
+            }
+            else Favorites.ClearPreview();
+            if (_hoverChest) _previewChest = text; else _previewInv = text;
+            UpdateTips(_hoverChest ? 1 : 0);
+        }
+
+        private static string Stacks(int n) { return n == 1 ? "1 stack" : n + " stacks"; }
+        // On its own line: "-86.5 weight", the number in the action's
+        // colour, one decimal at most like the game's item weights.
+        private static string Weight(float w, string hex)
+        {
+            if (Mathf.Abs(w) < 0.05f) return "";
+            return "\n<color=#" + hex + ">" + (w > 0f ? "+" : "-") +
+                Mathf.Abs(w).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "</color> weight";
+        }
+
+        private static string Containers(int n) { return "<color=orange>" + n + "</color>" + (n == 1 ? " container" : " containers"); }
+
+        // ---- The open pouch while you hold an item ----
+        // Only the pouch that would do something with it opens: the
+        // inventory one when the open chest or a nearby one would take it,
+        // the chest one when the open chest can top up your stacks of it.
+        // Worked out once, when you pick it up.
+        [HarmonyPatch(typeof(InventoryGui), "SetupDragItem")]
+        private static class DragPatch
+        {
+            private static void Postfix(InventoryGui __instance)
+            {
+                UpdateOpen(__instance);
+                RefreshHover();
+            }
+        }
+
+        private static void UpdateOpen(InventoryGui gui)
+        {
+            bool inv = false, chest = false;
+            Player p = Player.m_localPlayer;
+            ItemDrop.ItemData held = Holding(gui);
+            if (held != null && p != null)
+            {
+                try
+                {
+                    int n;
+                    inv = QuickStack.Preview(p, false, out n, held).Count > 0;
+                    float g;
+                    chest = Restock.PreviewOnly(p, StackifyPlugin.CurrentContainer(gui), held, out g).Count > 0;
+                }
+                catch (Exception e) { StackifyPlugin.Log.LogWarning("Stackify open pouch: " + e.Message); }
+            }
+            if (inv != _openInv) { _openInv = inv; Refresh(false); }
+            if (chest != _openChest) { _openChest = chest; Refresh(true); }
+        }
+
+        // Open while you hold something it would take, and for a moment
+        // after it quick stacks or restocks something.
+        internal static void Flash(bool chest)
+        {
+            if (chest) _flashChest = true; else _flashInv = true;
+            int token = ++_flashToken;
+            Refresh(chest);
+            StackifyEffects.Runner.Get().StartCoroutine(Actions.After(FlashTime, () =>
+            {
+                if (token != _flashToken) return;
+                _flashInv = _flashChest = false;
+                Refresh(false);
+                Refresh(true);
+            }));
+        }
+
+        private const float FlashTime = 0.7f;
+
+        private static void Refresh(bool chest)
+        {
+            if (_pouch == null) return;
+            bool open = chest ? (_openChest || _flashChest) : (_openInv || _flashInv);
+            Sprite sprite = open ? OpenPouch() : Closed();
+            if (sprite == null) sprite = Closed();
+            for (int i = Icons.Count - 1; i >= 0; i--)
+            {
+                Image img = Icons[i].Key;
+                if (img == null) { Icons.RemoveAt(i); continue; }
+                if (Icons[i].Value != chest || img.sprite == sprite) continue;
+                img.sprite = sprite;
+                ButtonFeel.Pop(chest, open);
+            }
+        }
+
+        // The pouch without the map icon's drop shadow (the armor and weight
+        // icons next to it have none), and its open version. Both drawn at
+        // the map icon's own size, so they sit exactly where it does.
+        private static Sprite Closed()
+        {
+            if (_closed != null || _closedTried || _pouch == null) return _closed != null ? _closed : _pouch;
+            _closedTried = true;
+            _closed = LoadSprite("pouch_closed");
+            return _closed != null ? _closed : _pouch;
+        }
+
+        private static Sprite OpenPouch()
+        {
+            if (_open != null || _openTried || _pouch == null) return _open;
+            _openTried = true;
+            _open = LoadSprite("pouch_open");
+            return _open;
+        }
+
+        private static Sprite LoadSprite(string name)
+        {
+            try
+            {
+                using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("WiresStackify.Assets." + name + ".png"))
+                {
+                    if (s == null) return null;
+                    byte[] data = new byte[s.Length];
+                    int read = 0;
+                    while (read < data.Length)
+                    {
+                        int n = s.Read(data, read, data.Length - read);
+                        if (n <= 0) break;
+                        read += n;
+                    }
+                    Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                    // By reflection: the overloads taking spans don't resolve here.
+                    MethodInfo load = typeof(ImageConversion).GetMethod("LoadImage", new[] { typeof(Texture2D), typeof(byte[]) });
+                    if (load == null || !(bool)load.Invoke(null, new object[] { tex, data })) return null;
+                    tex.wrapMode = TextureWrapMode.Clamp;
+                    if (_pouch.texture != null) tex.filterMode = _pouch.texture.filterMode;
+                    Rect r = _pouch.rect;
+                    Vector2 pivot = new Vector2(_pouch.pivot.x / r.width, _pouch.pivot.y / r.height);
+                    Sprite sp = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), pivot,
+                        _pouch.pixelsPerUnit * tex.width / r.width);
+                    sp.name = "WireStackify_" + name;
+                    return sp;
+                }
+            }
+            catch (Exception e) { StackifyPlugin.Log.LogWarning("Couldn't load " + name + ": " + e.Message); return null; }
+        }
+
+        // Wire's Native Cursor Support, when it's there: the hand over the
+        // pouches, like over an item.
+        private static void CursorHand(GameObject go)
+        {
+            try
+            {
+                foreach (Assembly a in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    if (a.GetName().Name != "WiresNativeCursorSupport") continue;
+                    Type t = a.GetType("WiresNativeCursorSupport.NativeCursorApi");
+                    MethodInfo m = t != null ? t.GetMethod("SetHand", BindingFlags.Public | BindingFlags.Static) : null;
+                    if (m != null) m.Invoke(null, new object[] { go });
+                    return;
+                }
+            }
+            catch (Exception e) { StackifyPlugin.Log.LogDebug("Native Cursor Support hand: " + e.Message); }
+        }
 
         // The minimap loads separately: set the icon the first time the
         // inventory opens after it's there.
         [HarmonyPatch(typeof(InventoryGui), "Show")]
         private static class ShowPatch
         {
-            private static void Postfix() { SetIcons(); UpdateCounts(); }
+            private static void Postfix(InventoryGui __instance) { SetIcons(); UpdateCounts(); UpdateOpen(__instance); }
         }
 
         // ---- The count: stacks in your inventory, or in the open chest ----
@@ -160,10 +348,11 @@ namespace WiresStackify
             for (int i = Pending.Count - 1; i >= 0; i--)
             {
                 PendingIcon p = Pending[i];
-                Sprite sprite = _pouch;
+                Sprite sprite = Closed();
                 if (p.Image == null) { Pending.RemoveAt(i); continue; }
                 if (sprite == null) continue;
                 p.Image.sprite = sprite;
+                Icons.Add(new KeyValuePair<Image, bool>(p.Image, p.Chest));
                 p.Image.color = p.Color; // the weight or armor icon's own color
                 // The map icon has some empty space around it: drawn a bit
                 // bigger, like My Little UI does (38 instead of 32).
@@ -211,7 +400,7 @@ namespace WiresStackify
                 chest.localPosition = chestWeight.localPosition + (inv.localPosition - weight.localPosition);
             }
             UpdateTips();
-            StackifyPlugin.MiddleClickSort.SettingChanged += (s, e) => UpdateTips();
+            StackifyPlugin.Instance.Config.SettingChanged += (s, e) => UpdateTips();
             SetIcons();
         }
 
@@ -268,8 +457,8 @@ namespace WiresStackify
             // slot's tooltip, shown where item tooltips show).
             foreach (UITooltip old in go.GetComponentsInChildren<UITooltip>(true))
                 UnityEngine.Object.DestroyImmediate(old);
-            // Runs before the tooltip on hover, so the chest count is fresh.
-            if (!chest) go.AddComponent<TipRefresh>();
+            // Runs before the tooltip on hover, so its text is fresh.
+            go.AddComponent<TipRefresh>().Chest = chest;
             UITooltip tip = go.AddComponent<UITooltip>();
             if (template != null)
                 foreach (FieldInfo f in typeof(UITooltip).GetFields(BindingFlags.Public | BindingFlags.Instance))
@@ -281,21 +470,24 @@ namespace WiresStackify
             go.AddComponent<FeelReset>().Feel = feel;
             feel.Setup(icon != null ? icon.rectTransform : null, label != null ? label.rectTransform : null, icon, chest);
             go.AddComponent<ClickHandler>().Chest = chest;
+            CursorHand(go);
             return r;
         }
 
-        // Hovering the inventory button: how many chests it would use right
-        // now, counted once as the tooltip opens.
-        internal sealed class TipRefresh : MonoBehaviour, IPointerEnterHandler
+        // Hover start and end, before the tooltip sees them.
+        internal sealed class TipRefresh : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
         {
-            public void OnPointerEnter(PointerEventData e) { UpdateTips(); }
+            public bool Chest;
+            public void OnPointerEnter(PointerEventData e) { Enter(Chest); }
+            public void OnPointerExit(PointerEventData e) { Exit(Chest); }
+            private void OnDisable() { Exit(Chest); }
         }
 
         private static string NearbyLine()
         {
             Player p = Player.m_localPlayer;
             if (p == null) return "";
-            if (!NearbyChests.AreaAllowed()) return "\nNearby chests: only with Multi User Chest in multiplayer";
+            if (!NearbyChests.AreaAllowed()) return "\nNearby containers: only with Multi User Chest in multiplayer";
             float range = Mathf.Max(StackifyPlugin.QuickStackRange.Value, StackifyPlugin.RestockRange.Value);
             if (range <= 0f) return "";
             bool single = NearbyChests.IsTrueSingleplayer();
@@ -303,25 +495,62 @@ namespace WiresStackify
             int n = 0;
             foreach (Container c in NearbyChests.InRange(p.transform.position, range))
                 if (NearbyChests.CanUse(c, id, single)) n++;
-            return "\nChests in range: <color=orange>" + n + "</color>";
+            return "\nContainers in range: <color=orange>" + n + "</color>";
         }
 
-        private static void UpdateTips()
+        // which: -1 both, 0 the inventory's, 1 the chest's.
+        // The tooltip: one line per action, in this order, each with the
+        // click(s) it's on. Actions nothing is bound to are left out.
+        private static readonly StackAction[] TipOrder =
         {
+            StackAction.QuickStack, StackAction.Restock, StackAction.QuickStackAndRestock,
+            StackAction.Sort, StackAction.SortByWeight, StackAction.Everything
+        };
+
+        private static void UpdateTips(int which = -1)
+        {
+            List<KeyValuePair<string, StackAction>> binds = Bindings();
             foreach (KeyValuePair<UITooltip, bool> t in Tips)
             {
-                if (t.Key == null) continue;
-                string where = t.Value ? "this chest" : "nearby chests";
-                string text =
-                    "<color=orange>Left click</color>: quick stack into " + where + "\n" +
-                    "<color=orange>Right click</color>: restock from " + where + "\n" +
-                    "<color=orange>Shift + click</color>: both, quick stack then restock";
-                if (StackifyPlugin.MiddleClickSort.Value)
-                    text += "\n<color=orange>Middle click</color>: sort by type" +
-                            "\n<color=orange>Shift + middle click</color>: sort by weight";
-                if (!t.Value) text += "\n" + NearbyLine();
-                t.Key.Set(Topic, text, _tooltipAnchor);
+                if (t.Key == null || (which >= 0 && t.Value != (which == 1))) continue;
+                bool chest = t.Value;
+                StringBuilder text = new StringBuilder();
+                foreach (StackAction a in TipOrder)
+                {
+                    string clicks = null;
+                    foreach (KeyValuePair<string, StackAction> b in binds)
+                        if (b.Value == a) clicks = clicks == null ? b.Key : clicks + " or " + b.Key;
+                    if (clicks != null)
+                        text.Append("\n<color=orange>").Append(clicks).Append("</color>: ").Append(Actions.Describe(a));
+                }
+                if (StackifyPlugin.DropOnPouch.Value)
+                    text.Append(chest ? "\n<color=orange>Click while holding an item</color>: restock held item type"
+                        : "\n<color=orange>Click while holding an item</color>: quick stack held item type");
+                text.Append("\n").Append(chest ? "\nOnly works in this container." : NearbyLine());
+                text.Append(chest ? _previewChest : _previewInv);
+                t.Key.Set(chest ? ChestTopic : Topic, text.ToString().TrimStart('\n'), _tooltipAnchor);
             }
+        }
+
+        // Each click and what it's set to; the shift clicks as one when
+        // they're all the same.
+        private static List<KeyValuePair<string, StackAction>> Bindings()
+        {
+            List<KeyValuePair<string, StackAction>> b = new List<KeyValuePair<string, StackAction>>
+            {
+                new KeyValuePair<string, StackAction>("Left click", StackifyPlugin.LeftClick.Value),
+                new KeyValuePair<string, StackAction>("Right click", StackifyPlugin.RightClick.Value),
+                new KeyValuePair<string, StackAction>("Middle click", StackifyPlugin.MiddleClick.Value),
+            };
+            StackAction sl = StackifyPlugin.ShiftLeftClick.Value, sr = StackifyPlugin.ShiftRightClick.Value, sm = StackifyPlugin.ShiftMiddleClick.Value;
+            if (sl == sr && sr == sm) b.Add(new KeyValuePair<string, StackAction>("Shift + click", sl));
+            else
+            {
+                b.Add(new KeyValuePair<string, StackAction>("Shift + left click", sl));
+                b.Add(new KeyValuePair<string, StackAction>("Shift + right click", sr));
+                b.Add(new KeyValuePair<string, StackAction>("Shift + middle click", sm));
+            }
+            return b;
         }
 
         private static string RelativePath(Transform t, Transform root)
@@ -343,7 +572,6 @@ namespace WiresStackify
     //  nothing:     a quick squeeze, smaller and back
     //  quick stack: the icon hops and wobbles and flashes
     //  restock:     the icon bounces up and down and flashes
-    //  nothing done:  no movement at all
     // Runs only while something is moving, then switches itself off.
     internal sealed class ButtonFeel : MonoBehaviour
     {
@@ -367,6 +595,8 @@ namespace WiresStackify
         private Vector3 _iconPos, _iconScale;
         private Color _iconColor, _labelColor;
         private bool _hasBase, _iconColorKnown;
+
+        internal static bool AnyHovered { get; private set; }
 
         private Spring _grow, _hop, _tilt;
         private float _bounceAge = -1f, _flash, _wiggleAge = -1f, _wiggleDir = 1f, _squeezeAge = -1f;
@@ -410,6 +640,20 @@ namespace WiresStackify
         {
             ButtonFeel f = For(chest);
             if (f != null) f.Play(kind, count);
+        }
+
+        // Only remembered (a middle click over the pouch isn't also a panel
+        // click); the tab itself doesn't change on hover.
+        internal static void Hover(bool chest, bool on) { AnyHovered = on; }
+
+        // The pouch opening (a little puff up) or closing (settling back).
+        internal static void Pop(bool chest, bool open)
+        {
+            ButtonFeel f = For(chest);
+            if (f == null) return;
+            f.Wake();
+            f._grow.V += open ? 1.3f : -0.7f;
+            if (open) f._hop.V += 3f;
         }
 
         internal static void Wiggle(bool chest, float dir)
@@ -501,7 +745,10 @@ namespace WiresStackify
                 _icon.localRotation = Quaternion.Euler(0f, 0f, _tilt.X + _wiggle);
             }
             if (_iconImage != null && _iconColorKnown)
-                _iconImage.color = Color.Lerp(_iconColor, new Color(1f, 1f, 1f, _iconColor.a), _flash);
+            {
+                Color white = new Color(1f, 1f, 1f, _iconColor.a);
+                _iconImage.color = Color.Lerp(_iconColor, white, _flash);
+            }
             if (_labelText != null) _labelText.color = Color.Lerp(_labelColor, Color.white, _flash);
         }
 
@@ -509,6 +756,7 @@ namespace WiresStackify
         {
             _grow = default(Spring); _hop = default(Spring); _tilt = default(Spring);
             _bounceAge = -1f; _flash = 0f; _wiggleAge = -1f; _squeezeAge = -1f; _wiggle = 0f; _squeeze = 1f;
+            AnyHovered = false;
             Apply(0f);
             enabled = false;
         }

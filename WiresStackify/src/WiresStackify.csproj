@@ -49,6 +49,7 @@
     <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(ValheimManaged)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
     
     <Reference Include="netstandard"><HintPath>$(ValheimManaged)\netstandard.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>$(ValheimManaged)\UnityEngine.ParticleSystemModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AudioModule"><HintPath>$(ValheimManaged)\UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.UIModule">
       <HintPath>$(ValheimManaged)\UnityEngine.UIModule.dll</HintPath>
@@ -67,5 +68,8 @@
       <HintPath>$(ValheimManaged)\Unity.TextMeshPro.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\*.png" LogicalName="WiresStackify.Assets.%(Filename).png" />
   </ItemGroup>
 </Project>

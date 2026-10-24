@@ -24,8 +24,13 @@ namespace WiresStackify
         private static GameObject _connection;
         private static bool _searched;
 
+        // Every chest a quick stack or restock used, for the do-everything
+        // click to sort afterwards.
+        internal static readonly HashSet<Container> Used = new HashSet<Container>();
+
         internal static void Play(Kind kind, List<Hit> hits, Container open, Player player, bool chestButton)
         {
+            foreach (Hit h in hits) if (h.Chest != null) Used.Add(h.Chest);
             if (hits.Count == 0 || player == null) return;
             Vector3 from = player.transform.position;
             hits.Sort((a, b) =>
@@ -54,6 +59,8 @@ namespace WiresStackify
 
         private static IEnumerable Steps(Kind kind, Hit[] hits, Player player)
         {
+            // After the rustle and the result sound.
+            yield return new WaitForSecondsRealtime(Actions.ResultDelay + 0.08f);
             for (int i = 0; i < hits.Length; i++)
             {
                 if (i > 0) yield return new WaitForSecondsRealtime(Random.Range(0.105f, 0.24f));
@@ -66,7 +73,7 @@ namespace WiresStackify
             {
                 yield return new WaitForSecondsRealtime(0.15f);
                 if (player == null) yield break;
-                Burst(player.GetCenterPoint());
+                Burst(player.GetCenterPoint(), true);
             }
         }
 
@@ -187,11 +194,11 @@ namespace WiresStackify
 
         // Just the burst from the crafting station connection effect: its
         // "poff" part, without the beam or the glow.
-        private static GameObject _poff;
+        private static GameObject _poff, _poffBlue;
 
-        private static void Burst(Vector3 pos)
+        private static void Burst(Vector3 pos, bool blue = false)
         {
-            GameObject template = Poff();
+            GameObject template = blue ? BluePoff() : Poff();
             if (template == null) return;
             GameObject go = Object.Instantiate(template, pos, Quaternion.identity);
             go.SetActive(true);
@@ -209,13 +216,27 @@ namespace WiresStackify
             _poff.SetActive(false);
             _poff.name = "WireStackifyBurst";
             Object.DontDestroyOnLoad(_poff);
-            _poff.transform.localScale = Vector3.one;
             for (int i = _poff.transform.childCount - 1; i >= 0; i--)
             {
                 Transform child = _poff.transform.GetChild(i);
                 if (child.name != "poff") Object.DestroyImmediate(child.gameObject);
             }
+            _poff.transform.localScale = Vector3.one;
             return _poff;
+        }
+
+        private static GameObject BluePoff()
+        {
+            if (_poffBlue != null) return _poffBlue;
+            GameObject source = Poff();
+            if (source == null) return null;
+            _poffBlue = Object.Instantiate(source);
+            _poffBlue.SetActive(false);
+            _poffBlue.name = "WireStackifyBurstBlue";
+            Object.DontDestroyOnLoad(_poffBlue);
+            _poffBlue.transform.localScale = source.transform.localScale;
+            MakeBlue(_poffBlue);
+            return _poffBlue;
         }
 
         private static GameObject Connection()
@@ -232,6 +253,42 @@ namespace WiresStackify
                 if (_connection.name == "vfx_ExtensionConnection") break; // the plain one, not the mage table's
             }
             return _connection;
+        }
+
+        // A copy turned the game's blue. The effect's yellow is the glow
+        // colour of its material (an HDR orange-yellow); the copy gets its
+        // own material with that glow turned blue, just as bright.
+        internal static readonly Color Blue = new Color(0.376f, 0.66f, 0.897f, 1f);
+        private static readonly int EmissionId = Shader.PropertyToID("_EmissionColor");
+        private static void MakeBlue(GameObject go)
+        {
+            Dictionary<Material, Material> made = new Dictionary<Material, Material>();
+            foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                Material[] mats = r.sharedMaterials;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    Material m = mats[i];
+                    if (m == null || !m.HasProperty(EmissionId)) continue;
+                    Material blue;
+                    if (!made.TryGetValue(m, out blue))
+                    {
+                        blue = new Material(m) { name = m.name + " (Stackify blue)" };
+                        Color e = m.GetColor(EmissionId);
+                        float v = Mathf.Max(e.r, Mathf.Max(e.g, e.b));
+                        if (v > 0f)
+                        {
+                            float k = v / Mathf.Max(Blue.r, Mathf.Max(Blue.g, Blue.b));
+                            blue.SetColor(EmissionId, new Color(Blue.r * k, Blue.g * k, Blue.b * k, e.a));
+                        }
+                        made[m] = blue;
+                    }
+                    mats[i] = blue;
+                }
+                r.sharedMaterials = mats;
+            }
+            foreach (Light l in go.GetComponentsInChildren<Light>(true))
+                l.color = new Color(Blue.r, Blue.g, Blue.b, l.color.a);
         }
 
         // A little above the middle of the chest.

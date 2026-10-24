@@ -7,13 +7,12 @@ using UnityEngine;
 
 namespace WiresStackify
 {
-    // Middle click the Stackify button: sort by type. Shift + middle click:
-    // sort by weight, heaviest first. The inventory's button sorts your
-    // inventory, the chest's sorts the chest.
-    // Filled from the bottom row up like Quick Stack Store, stacks merged,
-    // ties broken by type, name, quality and stack size. Favorites and the
-    // hotbar aren't part of it at all: they never move and nothing is put on
-    // their slots.
+    // Sorting, from a pouch or a panel (see Actions for which click does
+    // it). Filled from the bottom row up like Quick Stack Store, stacks
+    // merged, by type (or by weight, heaviest first), ties broken by type,
+    // name, quality and stack size. Favorites, the hotbar and Equipment and
+    // Quick Slots' rows aren't part of it at all: they never move and
+    // nothing is put on their slots.
     internal static class Sorting
     {
         internal enum Mode { Type, Weight }
@@ -39,7 +38,7 @@ namespace WiresStackify
         {
             InventoryGui gui = InventoryGui.instance;
             Player player = Player.m_localPlayer;
-            if (!StackifyPlugin.MiddleClickSort.Value || gui == null || player == null || player.IsTeleporting()) return false;
+            if (gui == null || player == null || player.IsTeleporting()) return false;
             try
             {
                 if (!chest) return SortInventory(gui, player, mode);
@@ -47,6 +46,42 @@ namespace WiresStackify
                 return c != null && SortChest(gui, c, mode);
             }
             catch (Exception e) { StackifyPlugin.Log.LogWarning("Sorting failed: " + e); return false; }
+        }
+
+        // Your inventory and every chest given, in one go: one move sound,
+        // and the items that moved pop in your inventory and the open chest.
+        // Returns how many items moved.
+        internal static int RunAll(IEnumerable<Container> chests, Mode mode)
+        {
+            InventoryGui gui = InventoryGui.instance;
+            Player player = Player.m_localPlayer;
+            if (gui == null || player == null || player.IsTeleporting()) return 0;
+            int moved = 0;
+            try
+            {
+                StackifyPlugin.DropDragItem();
+                Inventory inv = player.GetInventory();
+                List<ItemDrop.ItemData> mine = Sort(inv, Favorites.For(player), StackifyPlugin.MainRows(inv, player), mode);
+                moved += mine.Count;
+                if (mine.Count > 0) StackifyEffects.Runner.Get().StartCoroutine(Ripple(gui.m_playerGrid, mine));
+                Container open = StackifyPlugin.CurrentContainer(gui);
+                foreach (Container c in chests)
+                {
+                    if (c == null) continue;
+                    ZNetView nv = NearbyChests.NView(c);
+                    if (nv == null || !nv.IsValid()) continue;
+                    if (StackifyPlugin.HasMuc || nv.IsOwner())
+                    {
+                        List<ItemDrop.ItemData> m = Sort(c.GetInventory(), null, c.GetInventory().GetHeight(), mode);
+                        moved += m.Count;
+                        if (m.Count > 0 && c == open) StackifyEffects.Runner.Get().StartCoroutine(Ripple(ContainerGrid(gui), m));
+                    }
+                    else nv.InvokeRPC(RpcName, (int)mode); // whoever has it sorts it
+                }
+            }
+            catch (Exception e) { StackifyPlugin.Log.LogWarning("Sorting failed: " + e); }
+            if (moved > 0) Feedback(null, null);
+            return moved;
         }
 
         // ---- Sorting ----
@@ -209,7 +244,8 @@ namespace WiresStackify
             InventoryGui gui = InventoryGui.instance;
             if (gui == null || Player.m_localPlayer == null) return;
             if (moved != null && moved.Count == 0) return;
-            StackifyEffects.PlayUi(MoveSound(gui));
+            GameObject move = MoveSound(gui);
+            StackifyEffects.Runner.Get().StartCoroutine(Actions.After(Actions.ResultDelay, () => StackifyEffects.PlayUi(move)));
             if (moved != null) StackifyEffects.Runner.Get().StartCoroutine(Ripple(grid, moved)); // null: the chest's owner sorts it
         }
 

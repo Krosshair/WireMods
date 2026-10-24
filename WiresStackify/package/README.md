@@ -6,13 +6,20 @@ Quick stack, restock and sort, all from one little pouch that sits right next to
 
 ## The pouch
 
-* **Left click:** quick stack. Everything you carry goes into nearby chests that already hold the same item.
-* **Right click:** restock. Tops your ammo and food back up from nearby chests.
-* **Shift + click:** both in one trip, quick stack then restock.
+* **Left click:** quick stack. Everything you carry goes into nearby containers that already hold the same item.
+* **Shift + left click:** restock. Tops your ammo and food back up from nearby containers, never past what you can carry.
 * **Middle click:** sort by type. **Shift + middle click:** sort by weight.
-* With a chest open, the chest gets its own pouch that works with just that chest.
-* The number on the pouch is how many stacks you're carrying (or how many the chest holds).
-* Hover it to see how many chests are in range.
+* **Shift + right click:** everything at once. Quick stack, restock, then sort your inventory and every container it used.
+* **Click while holding an item:** quick stacks every stack of that item. On a container's pouch it tops your stacks of it up from that container instead. A pouch opens up when it can do something with what you're holding.
+* **Hover** to see what a click would do: stacks a quick stack would take get a yellow ring, stacks a restock would top up get a blue inner ring, and the tooltip says how many stacks, how many containers and how much weight.
+* With a container open, it gets its own pouch. Same clicks, but only with that container. Yours still works with every container around you, the open one included.
+* The number on the pouch is how many stacks you're carrying (or how many the container holds).
+* Every click can be changed in the config.
+
+## Sorting
+
+* Middle click almost anywhere with your inventory open to sort it, no need to aim.
+* With a container open, the top of the screen sorts your inventory and the bottom sorts the container.
 
 ## Favorites
 
@@ -22,15 +29,16 @@ Quick stack, restock and sort, all from one little pouch that sits right next to
 
 ## Feels good
 
-* Every chest you stack into or take from opens with its own sound, one after another, with a little burst of sparks.
-* The pouch hops, bounces, wiggles or shrugs depending on what just happened, and your items pop into place when sorted.
+* Every container you stack into or take from opens with its own sound, one after another, with a burst of sparks (blue ones when restocking).
+* The pouch opens up for a moment when it quick stacks or restocks, and hops, bounces, wiggles or shrugs depending on what just happened. Your items pop into place when sorted.
+* With Wire's Native Cursor Support, the pointer turns into a hand over the pouch.
 * All of it is only on your side, nobody else hears or sees it.
 
 ## Compatibility
 
-* Works with Multi User Chest. Without it, nearby chests are only used in single player, so nobody loses items.
+* Works with Multi User Chest. Without it, nearby containers are only used in single player, so nobody loses items.
 * Leaves Equipment and Quick Slots' slots alone.
-* Doesn't need to be on the server. In multiplayer, sorting a chest someone else is holding needs them to have it too.
+* Doesn't need to be on the server. In multiplayer, sorting a container someone else is holding needs them to have it too.
 
 Quick stacking, restocking and sorting work the way Goldenrevolver's Quick Stack - Store - Sort - Trash - Restock does (MIT licensed), rebuilt with a new interface.
 

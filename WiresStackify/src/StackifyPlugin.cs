@@ -14,7 +14,7 @@ namespace WiresStackify
     {
         public const string PluginGuid = "kajetan.valheim.stackify";
         public const string PluginName = "Wire's Stackify";
-        public const string PluginVersion = "0.1.0";
+        public const string PluginVersion = "0.1.1";
 
         internal static StackifyPlugin Instance;
         internal static BepInEx.Logging.ManualLogSource Log;
@@ -25,30 +25,33 @@ namespace WiresStackify
             public int Order { get; set; }
         }
 
-        internal enum ChestOpen { OnlyThatChest, AlsoNearbyChests }
 
+        private const string SecControls = "00 - Controls";
         private const string SecStack = "01 - Quick Stacking";
         private const string SecRestock = "02 - Restocking";
-        private const string SecNearby = "03 - Nearby Chests";
+        private const string SecNearby = "03 - Nearby Containers";
+        private const string OldSecNearby = "03 - Nearby Chests";
         private const string SecFavorites = "04 - Favoriting";
         private const string SecSort = "05 - Sorting";
 
+        internal static ConfigEntry<StackAction> LeftClick, RightClick, MiddleClick;
+        internal static ConfigEntry<StackAction> ShiftLeftClick, ShiftRightClick, ShiftMiddleClick;
+        internal static ConfigEntry<StackAction> PanelMiddleClick, PanelShiftMiddleClick;
+        internal static ConfigEntry<bool> DropOnPouch;
+        internal static ConfigEntry<bool> HoverPreview;
+
         internal static ConfigEntry<float> QuickStackRange;
         internal static ConfigEntry<bool> QuickStackHotbar;
-        internal static ConfigEntry<ChestOpen> QuickStackChestOpen;
         internal static ConfigEntry<bool> TrophiesTogether;
         internal static ConfigEntry<bool> HoldToStack;
-        internal static ConfigEntry<bool> QuickStackMessage;
 
         internal static ConfigEntry<float> RestockRange;
         internal static ConfigEntry<bool> RestockHotbar;
-        internal static ConfigEntry<ChestOpen> RestockChestOpen;
         internal static ConfigEntry<bool> RestockOnlyAmmoAndFood;
         internal static ConfigEntry<bool> RestockOnlyFavorites;
         internal static ConfigEntry<int> RestockLimitAmmo;
         internal static ConfigEntry<int> RestockLimitConsumables;
         internal static ConfigEntry<int> RestockLimitGeneral;
-        internal static ConfigEntry<bool> RestockMessage;
 
         internal static ConfigEntry<bool> MultiplayerWithoutMuc;
         internal static ConfigEntry<bool> NonPhysicalContainers;
@@ -61,7 +64,6 @@ namespace WiresStackify
         internal static ConfigEntry<Color> ColorSlot;
         internal static ConfigEntry<bool> FavoriteTooltip;
 
-        internal static ConfigEntry<bool> MiddleClickSort;
         internal static ConfigEntry<bool> SortHotbar;
         internal static ConfigEntry<bool> SortMergeStacks;
 
@@ -90,29 +92,65 @@ namespace WiresStackify
             return e;
         }
 
+        // A setting that was renamed keeps the value it had under its old
+        // name (BepInEx keeps unknown lines as orphans until saved).
+        private void Renamed<T>(ConfigEntry<T> entry, string oldSection, string oldKey)
+        {
+            try
+            {
+                Dictionary<ConfigDefinition, string> orphans = AccessTools.Property(typeof(ConfigFile), "OrphanedEntries")
+                    ?.GetValue(Config) as Dictionary<ConfigDefinition, string>;
+                if (orphans == null) return;
+                ConfigDefinition old = new ConfigDefinition(oldSection, oldKey);
+                string value;
+                if (!orphans.TryGetValue(old, out value)) return;
+                entry.SetSerializedValue(value);
+                orphans.Remove(old);
+                Config.Save();
+            }
+            catch (Exception e) { Log.LogWarning("Couldn't carry over " + oldKey + ": " + e.Message); }
+        }
+
         private void BindConfig()
         {
+            const string actions = " Sort, SortByWeight, QuickStack, Restock, QuickStackAndRestock, Everything (quick stack, restock, then sort your inventory and every container used) or None.";
+            LeftClick = Bind(SecControls, "Left click", StackAction.QuickStack,
+                "What left clicking a pouch does." + actions);
+            RightClick = Bind(SecControls, "Right click", StackAction.None,
+                "What right clicking a pouch does." + actions);
+            MiddleClick = Bind(SecControls, "Middle click", StackAction.Sort,
+                "What middle clicking a pouch does." + actions);
+            ShiftLeftClick = Bind(SecControls, "Shift + left click", StackAction.Restock,
+                "What shift + left clicking a pouch does." + actions);
+            ShiftRightClick = Bind(SecControls, "Shift + right click", StackAction.Everything,
+                "What shift + right clicking a pouch does." + actions);
+            ShiftMiddleClick = Bind(SecControls, "Shift + middle click", StackAction.SortByWeight,
+                "What shift + middle clicking a pouch does." + actions);
+            PanelMiddleClick = Bind(SecControls, "Middle click on a panel", StackAction.Sort,
+                "What middle clicking your inventory or an open container does, for that one. Counts almost anywhere on screen: with a container open, the top part is your inventory and the bottom part the container; not over other windows." + actions);
+            PanelShiftMiddleClick = Bind(SecControls, "Shift + middle click on a panel", StackAction.SortByWeight,
+                "The same with shift held." + actions);
+            MigrateControls();
+            DropOnPouch = Bind(SecControls, "Drop items on the pouch", true,
+                "Holding an item, click your pouch to quick stack every stack of it into the open and nearby containers, or a container's pouch to top up your stacks of it from that container.");
+            HoverPreview = Bind(SecControls, "Hover preview", true,
+                "Hovering a pouch rings the stacks a quick stack (yellow, outer ring) or restock (blue, inner ring) would move, and shows the counts in its tooltip.");
+
             QuickStackRange = Bind(SecStack, "Range", 10f,
-                "How far away, in meters, a chest can be. 0: only the chest you have open.",
+                "How far away, in meters, a container can be. 0: only the container you have open.",
                 new AcceptableValueRange<float>(0f, 50f));
             QuickStackHotbar = Bind(SecStack, "Include hotbar", false,
                 "Items on your hotbar can be quick stacked too.");
-            QuickStackChestOpen = Bind(SecStack, "With a chest open", ChestOpen.OnlyThatChest,
-                "Only that chest: the inventory button only stacks into the chest you have open. Also nearby chests: into it first, then the chests around you.");
             TrophiesTogether = Bind(SecStack, "Trophies together", false,
-                "All trophies go into a chest that already holds any trophy, not only the same one.");
+                "All trophies go into a container that already holds any trophy, not only the same one.");
             HoldToStack = Bind(SecStack, "Place stacks uses quick stack", true,
-                "The game's Place stacks (button and holding the use key on a chest) works like quick stacking into that chest, so favorites and the hotbar are left alone.");
-            QuickStackMessage = Bind(SecStack, "Result message", true,
-                "A message in the middle of the screen saying how many stacks were moved.");
+                "The game's Place stacks (button and holding the use key on a container) works like quick stacking into that container, so favorites and the hotbar are left alone.");
 
             RestockRange = Bind(SecRestock, "Range", 10f,
-                "How far away, in meters, a chest can be. 0: only the chest you have open.",
+                "How far away, in meters, a container can be. 0: only the container you have open.",
                 new AcceptableValueRange<float>(0f, 50f));
             RestockHotbar = Bind(SecRestock, "Include hotbar", false,
                 "Stacks on your hotbar are topped up too.");
-            RestockChestOpen = Bind(SecRestock, "With a chest open", ChestOpen.OnlyThatChest,
-                "Only that chest: the inventory button only takes from the chest you have open. Also nearby chests: from it first, then the chests around you.");
             RestockOnlyAmmoAndFood = Bind(SecRestock, "Only ammo and consumables", true,
                 "Only arrows, bolts and the like, and food, meads and other consumables are topped up.");
             RestockOnlyFavorites = Bind(SecRestock, "Only favorites", false,
@@ -126,17 +164,19 @@ namespace WiresStackify
             RestockLimitGeneral = Bind(SecRestock, "Stack limit", 0,
                 "Everything else is topped up to this many at most. 0: a full stack.",
                 new AcceptableValueRange<int>(0, 1000));
-            RestockMessage = Bind(SecRestock, "Result message", true,
-                "A message in the middle of the screen saying how many stacks were topped up.");
 
-            MultiplayerWithoutMuc = Bind(SecNearby, "Nearby chests in multiplayer", false,
-                "Use nearby chests in multiplayer even without Multi User Chest. Without it, two players using the same chest at once can lose items. With Multi User Chest installed this is always allowed. Single player always uses nearby chests.");
-            NonPhysicalContainers = Bind(SecNearby, "Containers without a chest", true,
-                "Containers that aren't a placed chest (carts, for example) count as nearby chests.");
-            NonPlayerBuilt = Bind(SecNearby, "Chests not built by players", false,
-                "Chests you find in the world (dungeons, villages) count as nearby chests.");
-            QuietChests = Bind(SecNearby, "Quiet chests", true,
-                "Nearby chests you quick stack into or restock from don't open and close for other players. You still hear each chest you used.");
+            MultiplayerWithoutMuc = Bind(SecNearby, "Nearby containers in multiplayer", false,
+                "Use nearby containers in multiplayer even without Multi User Chest. Without it, two players using the same container at once can lose items. With Multi User Chest installed this is always allowed. Single player always uses nearby containers.");
+            Renamed(MultiplayerWithoutMuc, OldSecNearby, "Nearby chests in multiplayer");
+            NonPhysicalContainers = Bind(SecNearby, "Carts, ships and other containers", true,
+                "Containers that aren't a building piece (carts and ships, for example) count as nearby containers.");
+            Renamed(NonPhysicalContainers, OldSecNearby, "Containers without a chest");
+            NonPlayerBuilt = Bind(SecNearby, "Containers not built by players", false,
+                "Containers you find in the world (dungeons, villages) count as nearby containers.");
+            Renamed(NonPlayerBuilt, OldSecNearby, "Chests not built by players");
+            QuietChests = Bind(SecNearby, "Quiet containers", true,
+                "Nearby containers you quick stack into or restock from don't open and close for other players. You still hear each container you used.");
+            Renamed(QuietChests, OldSecNearby, "Quiet chests");
 
             FavoriteKey1 = Bind(SecFavorites, "Favorite key", new KeyboardShortcut(KeyCode.LeftAlt),
                 "Hold and left click an item to favorite it (every item of that kind), right click to favorite the slot. Favorites are never quick stacked.");
@@ -156,8 +196,6 @@ namespace WiresStackify
             FavoriteTooltip = Bind(SecFavorites, "Tooltip line", true,
                 "Favorited items say so in their tooltip.");
 
-            MiddleClickSort = Bind(SecSort, "Middle click to sort", true,
-                "Middle click the Stackify button to sort by type, shift + middle click to sort by weight (heaviest first). The inventory's button sorts your inventory, the chest's sorts the chest.");
             SortHotbar = Bind(SecSort, "Include hotbar", false,
                 "Your hotbar is sorted too.");
             SortMergeStacks = Bind(SecSort, "Merge stacks", true,
@@ -170,6 +208,17 @@ namespace WiresStackify
         // ---- Shared helpers ----
 
         private static bool? _hasMuc;
+        // A test build had other defaults (left sort, right quick stack,
+        // middle restock, shift: both). Still exactly those: the new ones.
+        private static void MigrateControls()
+        {
+            if (LeftClick.Value != StackAction.Sort || RightClick.Value != StackAction.QuickStack ||
+                MiddleClick.Value != StackAction.Restock || ShiftLeftClick.Value != StackAction.QuickStackAndRestock ||
+                ShiftRightClick.Value != StackAction.QuickStackAndRestock || ShiftMiddleClick.Value != StackAction.QuickStackAndRestock) return;
+            foreach (ConfigEntry<StackAction> e in new[] { LeftClick, RightClick, MiddleClick, ShiftLeftClick, ShiftRightClick, ShiftMiddleClick })
+                e.Value = (StackAction)e.DefaultValue;
+        }
+
         internal static bool HasMuc
         {
             get
@@ -211,10 +260,6 @@ namespace WiresStackify
             InventoryChanged(inv, false, false);
         }
 
-        internal static void Message(Player player, string text)
-        {
-            player.Message(MessageHud.MessageType.Center, text);
-        }
 
         // Bottom row first, then left to right, like Quick Stack Store.
         internal static int CompareSlotOrder(Vector2i a, Vector2i b)

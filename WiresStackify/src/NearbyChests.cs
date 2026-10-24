@@ -47,6 +47,20 @@ namespace WiresStackify
             return list;
         }
 
+        // The chests a pouch works with: the open one first, then (for your
+        // own pouch) every usable chest in range.
+        internal static List<Container> ForPouch(Player player, bool onlyThisChest, Container current, float range)
+        {
+            List<Container> list = new List<Container>();
+            if (current != null) list.Add(current);
+            if (onlyThisChest || range <= 0f || !AreaAllowed()) return list;
+            bool single = IsTrueSingleplayer();
+            long id = player.GetPlayerID();
+            foreach (Container c in InRange(player.transform.position, range))
+                if (c != current && CanUse(c, id, single)) list.Add(c);
+            return list;
+        }
+
         internal static bool IsTrueSingleplayer()
         {
             return !ZNet.IsOpenServer() && !PublicServer() && ZNet.instance != null &&

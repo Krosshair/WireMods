@@ -289,9 +289,9 @@ namespace WiresStackify
         private static Image Frame(InventoryElement e, string name, float inset)
         {
             if (e == null || e.m_queued == null) return null;
-            int k = name == SlotFrame ? 0 : 1;
+            int k = name == SlotFrame ? 0 : name == ItemFrame ? 1 : name == StackRing ? 2 : 3;
             Image[] pair;
-            if (!Frames.TryGetValue(e, out pair)) Frames[e] = pair = new Image[2];
+            if (!Frames.TryGetValue(e, out pair)) Frames[e] = pair = new Image[4];
             if (pair[k] != null) return pair[k];
             Transform t = e.m_queued.transform.Find(name);
             if (t != null) return pair[k] = t.GetComponent<Image>();
@@ -348,6 +348,72 @@ namespace WiresStackify
             tex.Apply();
             _border = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f), 100f);
             return _border;
+        }
+
+        // ---- Hover preview ----
+        // While a pouch is hovered: the outer ring in the game's yellow (its
+        // stamina bar) on stacks a quick stack would take, the inner ring
+        // in the game's blue (its equipped item) on stacks a restock would
+        // top up. Drawn above the favorite frames, gone when you move off.
+        private const string StackRing = "WireStackifyStackRing";
+        private const string RestockRing = "WireStackifyRestockRing";
+        private static readonly List<Image> Previewing = new List<Image>();
+        private static readonly AccessTools.FieldRef<GuiBar, Color> BarColor =
+            AccessTools.FieldRefAccess<GuiBar, Color>("m_originalColor");
+
+        // The stamina bar's own yellow, read from the HUD.
+        private static Color Yellow()
+        {
+            try
+            {
+                if (Hud.instance != null && Hud.instance.m_staminaBar2Fast != null)
+                {
+                    Color c = BarColor(Hud.instance.m_staminaBar2Fast);
+                    if (c.a > 0f) { c.a = 1f; return c; }
+                }
+            }
+            catch (Exception) { }
+            return new Color(1f, 0.848f, 0f, 1f);
+        }
+        private static readonly Color Blue = new Color(0.376f, 0.66f, 0.897f, 1f);
+
+        internal static string BlueHex() { return ColorUtility.ToHtmlStringRGB(Blue); }
+        internal static string YellowHex() { return ColorUtility.ToHtmlStringRGB(Yellow()); }
+
+        internal static void ShowPreview(List<ItemDrop.ItemData> stack, List<ItemDrop.ItemData> restock)
+        {
+            ClearPreview();
+            InventoryGui gui = InventoryGui.instance;
+            Player p = Player.m_localPlayer;
+            if (gui == null || gui.m_playerGrid == null || p == null) return;
+            Inventory inv = p.GetInventory();
+            if (GridInventory(gui.m_playerGrid) != inv) return;
+            List<InventoryElement> elements = GridElements(gui.m_playerGrid);
+            if (elements == null) return;
+            int w = inv.GetWidth();
+            if (stack != null) Mark(stack, elements, w, StackRing, 0f, Yellow());
+            if (restock != null) Mark(restock, elements, w, RestockRing, 3f, Blue);
+        }
+
+        private static void Mark(List<ItemDrop.ItemData> items, List<InventoryElement> elements, int w, string ring, float inset, Color c)
+        {
+            foreach (ItemDrop.ItemData it in items)
+            {
+                int i = it.m_gridPos.y * w + it.m_gridPos.x;
+                if (i < 0 || i >= elements.Count) continue;
+                Image img = Frame(elements[i], ring, inset);
+                if (img == null) continue;
+                if (img.color != c) img.color = c;
+                img.transform.SetAsLastSibling();
+                img.enabled = true;
+                Previewing.Add(img);
+            }
+        }
+
+        internal static void ClearPreview()
+        {
+            foreach (Image img in Previewing) if (img != null) img.enabled = false;
+            Previewing.Clear();
         }
 
         // ---- Tooltip line ----

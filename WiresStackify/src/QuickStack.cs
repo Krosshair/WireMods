@@ -14,26 +14,74 @@ namespace WiresStackify
             return item.m_shared.m_maxStackSize > 1 && (item.m_gridPos.y > 0 || hotbar) && item.m_gridPos.y < rows && !fav.IsFavorited(item);
         }
 
-        // onlyThisChest: the chest's own button, or Place stacks.
-        // Returns how many stacks moved.
-        internal static int Run(Player player, bool onlyThisChest, Container chestOverride = null, bool quiet = false)
+        // What a quick stack would take from your inventory. only: just
+        // this kind (an item dropped on the pouch): every stack of it in
+        // your inventory, the one you hold even if it's favorited or on the
+        // hotbar.
+        internal static List<ItemDrop.ItemData> Candidates(Player player, ItemDrop.ItemData only = null)
         {
-            if (player.IsTeleporting() || InventoryGui.instance == null || InventoryGui.instance.m_container == null) return 0;
-            StackifyPlugin.DropDragItem();
             Favorites fav = Favorites.For(player);
             Inventory inv = player.GetInventory();
             bool hotbar = StackifyPlugin.QuickStackHotbar.Value;
-
             int rows = StackifyPlugin.MainRows(inv, player);
             List<ItemDrop.ItemData> items = new List<ItemDrop.ItemData>();
             foreach (ItemDrop.ItemData it in inv.GetAllItems())
-                if (ShouldStack(it, fav, hotbar, rows)) items.Add(it);
-            if (items.Count == 0)
             {
-                if (!quiet && StackifyPlugin.QuickStackMessage.Value) StackifyPlugin.Message(player, "Nothing to quickstack");
-                if (!quiet) StackifyButtons.Feedback(StackifyEffects.Kind.Stack, 0, onlyThisChest);
-                return 0;
+                if (only == null) { if (ShouldStack(it, fav, hotbar, rows)) items.Add(it); }
+                else if (it == only || (it.m_shared.m_name == only.m_shared.m_name && it.m_gridPos.y < rows &&
+                         (it.m_gridPos.y > 0 || hotbar) && !fav.IsSlotFavorited(it.m_gridPos)))
+                    items.Add(it);
             }
+            return items;
+        }
+
+        // Hover preview: which of your stacks would go, and into how many
+        // chests, without moving anything.
+        internal static List<ItemDrop.ItemData> Preview(Player player, bool onlyThisChest, out int chests, ItemDrop.ItemData only = null)
+        {
+            chests = 0;
+            List<ItemDrop.ItemData> result = new List<ItemDrop.ItemData>();
+            if (InventoryGui.instance == null) return result;
+            Container current = StackifyPlugin.CurrentContainer(InventoryGui.instance);
+            if (onlyThisChest && current == null) return result;
+            if (only != null && !player.GetInventory().ContainsItem(only)) return result;
+            List<ItemDrop.ItemData> items = Candidates(player, only);
+            if (items.Count == 0) return result;
+            HashSet<Container> used = new HashSet<Container>();
+            foreach (Container c in NearbyChests.ForPouch(player, onlyThisChest, current, StackifyPlugin.QuickStackRange.Value))
+            {
+                Inventory chest = c.GetInventory();
+                Names.Clear();
+                bool trophy = false;
+                foreach (ItemDrop.ItemData it in chest.GetAllItems())
+                {
+                    Names.Add(it.m_shared.m_name);
+                    if (it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Trophy) trophy = true;
+                }
+                for (int i = items.Count - 1; i >= 0; i--)
+                {
+                    ItemDrop.ItemData it = items[i];
+                    bool match = Names.Contains(it.m_shared.m_name) ||
+                        (trophy && StackifyPlugin.TrophiesTogether.Value && it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Trophy);
+                    if (!match || !chest.CanAddItem(it)) continue;
+                    result.Add(it);
+                    items.RemoveAt(i);
+                    used.Add(c);
+                }
+            }
+            chests = used.Count;
+            return result;
+        }
+
+        // onlyThisChest: the chest's own button, or Place stacks.
+        // Returns how many stacks moved.
+        internal static int Run(Player player, bool onlyThisChest, Container chestOverride = null, ItemDrop.ItemData only = null)
+        {
+            if (player.IsTeleporting() || InventoryGui.instance == null || InventoryGui.instance.m_container == null) return 0;
+            if (only == null) StackifyPlugin.DropDragItem();
+            Inventory inv = player.GetInventory();
+            List<ItemDrop.ItemData> items = Candidates(player, only);
+            if (items.Count == 0) return 0;
             items.Sort((a, b) => -StackifyPlugin.CompareSlotOrder(a.m_gridPos, b.m_gridPos));
 
             List<ItemDrop.ItemData> trophies = null;
@@ -51,34 +99,23 @@ namespace WiresStackify
             int moved = 0;
             Container current = chestOverride != null ? chestOverride : StackifyPlugin.CurrentContainer(InventoryGui.instance);
             List<StackifyEffects.Hit> hits = new List<StackifyEffects.Hit>();
-            if (current != null) { moved = IntoChest(trophies, items, inv, current.GetInventory(), true); if (moved > 0) hits.Add(new StackifyEffects.Hit { Chest = current, Count = moved }); }
-
-            bool area = StackifyPlugin.QuickStackRange.Value > 0f &&
-                (current == null || StackifyPlugin.QuickStackChestOpen.Value == StackifyPlugin.ChestOpen.AlsoNearbyChests) &&
-                NearbyChests.AreaAllowed();
-            if (!onlyThisChest && area)
+            foreach (Container c in NearbyChests.ForPouch(player, onlyThisChest, current, StackifyPlugin.QuickStackRange.Value))
             {
-                List<Container> chests = NearbyChests.InRange(player.transform.position, StackifyPlugin.QuickStackRange.Value);
-                bool single = NearbyChests.IsTrueSingleplayer();
-                long id = player.GetPlayerID();
-                foreach (Container c in chests)
+                int n;
+                // The open chest is already yours; others are claimed while
+                // items go in, unless Multi User Chest looks after that.
+                if (c == current || StackifyPlugin.HasMuc) n = IntoChest(trophies, items, inv, c.GetInventory(), false);
+                else
                 {
-                    if (c == current || !NearbyChests.CanUse(c, id, single)) continue;
-                    int n;
-                    if (StackifyPlugin.HasMuc) n = IntoChest(trophies, items, inv, c.GetInventory(), false);
-                    else
-                    {
-                        NearbyChests.Claim(c, true);
-                        n = IntoChest(trophies, items, inv, c.GetInventory(), false);
-                        NearbyChests.Claim(c, false);
-                    }
-                    if (n > 0) { moved += n; hits.Add(new StackifyEffects.Hit { Chest = c, Count = n }); }
+                    NearbyChests.Claim(c, true);
+                    n = IntoChest(trophies, items, inv, c.GetInventory(), false);
+                    NearbyChests.Claim(c, false);
                 }
-                StackifyPlugin.Changed(inv);
+                if (n > 0) { moved += n; hits.Add(new StackifyEffects.Hit { Chest = c, Count = n }); }
             }
-            if (!quiet || moved > 0) StackifyButtons.Feedback(StackifyEffects.Kind.Stack, moved, onlyThisChest);
+            if (moved > 0) StackifyPlugin.Changed(inv);
+            if (moved > 0) StackifyButtons.Feedback(StackifyEffects.Kind.Stack, moved, onlyThisChest);
             StackifyEffects.Play(StackifyEffects.Kind.Stack, hits, current, player, onlyThisChest);
-            if (!quiet) Report(player, moved);
             return moved;
         }
 
@@ -118,12 +155,6 @@ namespace WiresStackify
             }
             if (changed) StackifyPlugin.Changed(inv);
             return moved;
-        }
-
-        private static void Report(Player player, int moved)
-        {
-            if (!StackifyPlugin.QuickStackMessage.Value) return;
-            StackifyPlugin.Message(player, moved == 0 ? "Nothing to quickstack" : "Quickstacked " + moved);
         }
 
         // Place stacks (the game's button and holding use on a chest).
