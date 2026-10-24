@@ -1,3 +1,7 @@
+## 0.8.9
+
+Limited mode set to Limited no longer goes back to Highlight when you restart the game.
+
 ## 0.8.8
 
 Player nameplate effects off now hides them on player nameplates completely, instead of switching players to the creature rule.

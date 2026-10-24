@@ -284,8 +284,12 @@ namespace EnemyHudRework
             bool hw0 = TakeOrphan("Enemy Health Bar", "Weakness icons", out ow0), hr0 = TakeOrphan("Enemy Health Bar", "Resistance icons", out or0);
             // On/off behaviors first, then each choice under its own divider.
             // 0.8.6: on/off became Off / Highlight / Limited.
+            // Only an old true/false value is taken over; a saved Off /
+            // Highlight / Limited is left for Bind to load.
             string oldLimited;
-            bool hadLimited = TakeOrphan(SecWeak, "Limited mode", out oldLimited);
+            bool hadLimited = PeekOrphan(SecWeak, "Limited mode", out oldLimited) &&
+                (oldLimited == "true" || oldLimited == "false") &&
+                TakeOrphan(SecWeak, "Limited mode", out oldLimited);
             _limitedMode = Bind(SecWeak, "Limited mode", WeaponFocus.Highlight,
                 "The damage types your weapon in hand (plus its ammo) can deal. Highlight: their icons are a little bigger and brighter, every other icon still shows. Limited: only their icons show. Off: all icons the same.",
                 null, null);
@@ -477,6 +481,14 @@ namespace EnemyHudRework
         private static bool IsTrue(string v)
         {
             return string.Equals(v != null ? v.Trim() : null, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool PeekOrphan(string section, string key, out string value)
+        {
+            value = null;
+            var orphans = AccessTools.Property(typeof(ConfigFile), "OrphanedEntries")
+                ?.GetValue(Config) as Dictionary<ConfigDefinition, string>;
+            return orphans != null && orphans.TryGetValue(new ConfigDefinition(section, key), out value);
         }
 
         private bool TakeOrphan(string section, string key, out string value)
