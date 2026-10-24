@@ -1,3 +1,7 @@
+## 0.1.3
+
+- Picked up items skip favorited slots and go to the next free slot. They still stack onto what's already in a favorited slot, favorited items can still go there, and if nothing else is free a favorited slot is used.
+
 ## 0.1.2
 
 - did a oopsie dw bout it
