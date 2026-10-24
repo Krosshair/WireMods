@@ -15,7 +15,7 @@ namespace WiresComfortInfo
     {
         public const string Guid = "wire.valheim.comfortinfo";
         public const string Name = "Wire's Comfort Info";
-        public const string Version = "0.1.1";
+        public const string Version = "0.1.2";
 
         private Harmony _harmony;
 
@@ -245,6 +245,10 @@ namespace WiresComfortInfo
         private static float _nextRefresh;
         private static float _nextLegacyRefresh;
 
+        // Looked up once, not on every refresh.
+        private static readonly AccessTools.FieldRef<BuildUi, List<BuildUiPieceButton>> PieceButtons =
+            AccessTools.FieldRefAccess<BuildUi, List<BuildUiPieceButton>>("m_pieceButtons");
+
         internal static void UpdateAdvanced(BuildUi ui)
         {
             Player player = Player.m_localPlayer;
@@ -255,9 +259,7 @@ namespace WiresComfortInfo
 
             _nextRefresh = Time.unscaledTime + 0.45f;
 
-            List<BuildUiPieceButton> buttons =
-                AccessTools.Field(typeof(BuildUi), "m_pieceButtons")
-                    ?.GetValue(ui) as List<BuildUiPieceButton>;
+            List<BuildUiPieceButton> buttons = PieceButtons(ui);
 
             if (buttons == null)
                 return;
