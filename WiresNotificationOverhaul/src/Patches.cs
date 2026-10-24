@@ -21,7 +21,7 @@ namespace WiresNotificationOverhaul
             internal bool Finished;
         }
 
-        internal sealed class ActivePotion
+        internal struct ActivePotion
         {
             internal int Hash;
             internal StatusEffect Effect;
@@ -30,6 +30,11 @@ namespace WiresNotificationOverhaul
 
         private static readonly Dictionary<int, TrackedPotion> Tracked =
             new Dictionary<int, TrackedPotion>();
+
+        // SEMan.Update runs every frame: one state and one list, reused,
+        // instead of new ones each frame while a potion is tracked.
+        private static readonly UpdateState Shared = new UpdateState();
+        private static readonly List<int> Stale = new List<int>();
 
         internal static void Track(
             Player player,
@@ -67,8 +72,10 @@ namespace WiresNotificationOverhaul
                 Tracked.Count == 0)
                 return null;
 
-            UpdateState state = new UpdateState();
-            List<int> stale = null;
+            UpdateState state = Shared;
+            state.Active.Clear();
+            state.Finished = false;
+            Stale.Clear();
 
             foreach (KeyValuePair<int, TrackedPotion> pair in Tracked)
             {
@@ -77,10 +84,7 @@ namespace WiresNotificationOverhaul
 
                 if (effect == null)
                 {
-                    if (stale == null)
-                        stale = new List<int>();
-
-                    stale.Add(pair.Key);
+                    Stale.Add(pair.Key);
                     continue;
                 }
 
@@ -98,11 +102,8 @@ namespace WiresNotificationOverhaul
                 effect.m_stopMessage = "";
             }
 
-            if (stale != null)
-            {
-                for (int i = 0; i < stale.Count; i++)
-                    Tracked.Remove(stale[i]);
-            }
+            for (int i = 0; i < Stale.Count; i++)
+                Tracked.Remove(Stale[i]);
 
             return state;
         }

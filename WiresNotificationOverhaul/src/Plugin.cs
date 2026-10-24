@@ -12,7 +12,7 @@ namespace WiresNotificationOverhaul
     {
         public const string PluginGuid = "wire.valheim.notificationoverhaul";
         public const string PluginName = "Wire's Notification Overhaul";
-        public const string PluginVersion = "1.1.7";
+        public const string PluginVersion = "1.1.8";
 
         internal enum Toggle
         {
