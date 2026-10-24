@@ -1,3 +1,7 @@
+## 0.1.2
+
+- did a oopsie dw bout it
+
 ## 0.1.1
 
 - New controls: left click quick stacks, shift + left click restocks, middle click sorts by type, shift + middle click by weight. Every click can be changed in the new Controls section of the config.

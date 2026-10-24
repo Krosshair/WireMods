@@ -1,7 +1,7 @@
 {
     "name": "WiresStackify",
     "description": "Quick stack, restock and sort from one little pouch next to your armor and weight. Favorites stay put.",
-    "version_number": "0.1.1",
+    "version_number": "0.1.2",
     "website_url": "",
     "dependencies": []
 }
