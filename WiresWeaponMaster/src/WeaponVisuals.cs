@@ -22,6 +22,12 @@ namespace WiresWeaponMaster
 
             internal readonly int[] Metas =
                 new int[LaneCount];
+
+            // What the last network sync was based on: skipped while the
+            // player's synced data and the enabled lanes are the same.
+            internal bool Synced;
+            internal uint Revision;
+            internal int LaneMask;
         }
 
         private static readonly Dictionary<VisEquipment, VisualState> States =
@@ -150,6 +156,26 @@ namespace WiresWeaponMaster
 
             VisualState state = GetOrCreateState(vis);
             ZDO zdo = MultiplayerSync.GetZdo(vis);
+
+            // Runs every frame for every player: only read and apply the
+            // synced holster data again when it (or the enabled lanes)
+            // changed since last time.
+            int laneMask = 0;
+            for (int laneValue = 1; laneValue < LaneCount; laneValue++)
+                if (WeaponMasterConfig.IsLaneEnabled((HolsterLane)laneValue))
+                    laneMask |= 1 << laneValue;
+            if (zdo != null && state.Synced &&
+                state.Revision == zdo.DataRevision &&
+                state.LaneMask == laneMask)
+                return;
+            if (zdo != null)
+            {
+                state.Synced = true;
+                state.Revision = zdo.DataRevision;
+                state.LaneMask = laneMask;
+            }
+            else state.Synced = false;
+
             int vanillaLeftBack =
                 zdo != null ? zdo.GetInt(ZDOVars.s_leftBackItem) : 0;
             int vanillaRightBack =

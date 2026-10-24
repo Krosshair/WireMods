@@ -1,7 +1,7 @@
 {
     "name": "WiresWeaponMaster",
     "description": "See the weapons and tools you use on your character",
-    "version_number": "0.3.0",
+    "version_number": "0.3.1",
     "website_url": "",
     "dependencies": []
 }

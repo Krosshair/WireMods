@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.1
+- Holstered weapons on players are only re-checked when their gear changes, instead of every frame.
+
 ## 0.3.0
 - The weapons and tools shown on your character are now remembered per character across logouts and game restarts, the same way Helmet Hider remembers hidden helmets. Stored in BepInEx/config/wire.valheim.weaponmaster.shown.txt, written only when your character saves.
 - The main menu character preview shows your remembered weapons too.
