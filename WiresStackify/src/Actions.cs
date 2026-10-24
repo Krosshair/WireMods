@@ -166,72 +166,63 @@ namespace WiresStackify
 
         // ---- Middle click on a panel ----
         // Almost anywhere on screen counts. With a chest open the screen is
-        // split halfway between your inventory and the chest: above is your
-        // inventory, below is the chest. Over other windows (crafting, the
-        // split dialog, other mods' panels) nothing happens.
-        // Only a mouse button check each frame; the rest happens on the click.
-        [HarmonyPatch(typeof(InventoryGui), "Update")]
-        private static class PanelClickPatch
+        // split halfway between your inventory and the chest. Nothing runs
+        // per frame: it listens to the clicks themselves, on the game's
+        // full-screen backdrop behind the panels, on the two panels, and on
+        // anything inside them that takes clicks (slots).
+        internal sealed class PanelMiddleClick : MonoBehaviour, IPointerDownHandler
+        {
+            public void OnPointerDown(PointerEventData e)
+            {
+                if (e.button == PointerEventData.InputButton.Middle) Clicked(gameObject, e.position);
+            }
+        }
+
+        [HarmonyPatch(typeof(InventoryGui), "Awake")]
+        private static class PanelClickSetup
         {
             private static void Postfix(InventoryGui __instance)
             {
-                if (!Input.GetMouseButtonDown(2)) return;
-                StackAction a = (Shift() ? StackifyPlugin.PanelShiftMiddleClick : StackifyPlugin.PanelMiddleClick).Value;
-                if (a == StackAction.None || !InventoryGui.IsVisible() || ButtonFeel.AnyHovered) return;
-                if (StackifyPlugin.DragGo(__instance) != null) return;
-                int target = Region(__instance, Input.mousePosition);
-                if (target != 0) Do(a, target == 2);
+                if (__instance.m_dropButton != null) Add(__instance.m_dropButton.gameObject);
+                if (__instance.m_player != null) Add(__instance.m_player.gameObject);
+                if (__instance.m_container != null) Add(__instance.m_container.gameObject);
             }
-        }
 
-        private static readonly List<RaycastResult> Hits = new List<RaycastResult>();
-
-        // 0: nothing, 1: your inventory, 2: the open chest.
-        private static int Region(InventoryGui gui, Vector2 mouse)
-        {
-            RectTransform inv = gui.m_player, chest = gui.m_container;
-            if (inv == null) return 0;
-            bool chestOpen = StackifyPlugin.CurrentContainer(gui) != null && chest != null && chest.gameObject.activeInHierarchy;
-            // On the panels themselves, always that panel (the chest's sits
-            // inside the inventory's, so it comes first).
-            if (chestOpen && Over(chest, mouse)) return 2;
-            if (Over(inv, mouse)) return 1;
-            GameObject hit = TopHit(mouse);
-            if (hit != null)
+            private static void Add(GameObject go)
             {
-                // The chest panel sits inside the inventory's: chest first.
-                if (chestOpen && hit.transform.IsChildOf(chest)) return 2;
-                if (hit.transform.IsChildOf(inv)) return 1;
-                if (!Backdrop(hit)) return 0;
+                if (go.GetComponent<PanelMiddleClick>() == null) go.AddComponent<PanelMiddleClick>();
             }
-            if (!chestOpen) return 1;
-            float split = (Edge(inv, false) + Edge(chest, true)) * 0.5f;
-            return mouse.y >= split ? 1 : 2;
         }
 
-        private static GameObject TopHit(Vector2 mouse)
+        // Slots and other clickable things inside the panels take the click
+        // themselves; the game's own click handler tells us about it.
+        [HarmonyPatch(typeof(UIInputHandler), "OnPointerDown")]
+        private static class SlotMiddleClick
         {
-            EventSystem es = EventSystem.current;
-            if (es == null) return null;
-            PointerEventData e = new PointerEventData(es) { position = mouse };
-            Hits.Clear();
-            es.RaycastAll(e, Hits);
-            GameObject top = Hits.Count > 0 ? Hits[0].gameObject : null;
-            Hits.Clear();
-            return top;
+            private static void Postfix(UIInputHandler __instance, PointerEventData eventData)
+            {
+                if (eventData.button == PointerEventData.InputButton.Middle && __instance.GetComponent<PanelMiddleClick>() == null)
+                    Clicked(__instance.gameObject, eventData.position);
+            }
         }
 
-        // Something covering most of the screen (a dimmer or a click
-        // catcher) is not a window.
-        private static bool Backdrop(GameObject go)
+        private static void Clicked(GameObject source, Vector2 mouse)
         {
-            RectTransform r = go.transform as RectTransform;
-            if (r == null) return false;
-            Vector3[] c = new Vector3[4];
-            r.GetWorldCorners(c);
-            Camera cam = Cam(r);
-            Vector2 a = RectTransformUtility.WorldToScreenPoint(cam, c[0]), b = RectTransformUtility.WorldToScreenPoint(cam, c[2]);
-            return Mathf.Abs(b.x - a.x) >= Screen.width * 0.8f && Mathf.Abs(b.y - a.y) >= Screen.height * 0.8f;
+            InventoryGui gui = InventoryGui.instance;
+            if (gui == null || !InventoryGui.IsVisible() || source == null) return;
+            StackAction a = (Shift() ? StackifyPlugin.PanelShiftMiddleClick : StackifyPlugin.PanelMiddleClick).Value;
+            if (a == StackAction.None || StackifyPlugin.DragGo(gui) != null) return;
+            RectTransform inv = gui.m_player, chest = gui.m_container;
+            if (inv == null) return;
+            bool chestOpen = StackifyPlugin.CurrentContainer(gui) != null && chest != null && chest.gameObject.activeInHierarchy;
+            Transform t = source.transform;
+            bool backdrop = gui.m_dropButton != null && t == gui.m_dropButton.transform;
+            int target;
+            if (chestOpen && t.IsChildOf(chest)) target = 2;          // the chest's panel sits inside the inventory's
+            else if (t.IsChildOf(inv)) target = 1;
+            else if (backdrop) target = !chestOpen ? 1 : mouse.y >= (Edge(inv, false) + Edge(chest, true)) * 0.5f ? 1 : 2;
+            else return; // another window
+            Do(a, target == 2);
         }
 
         // A panel's top or bottom edge in screen pixels.
