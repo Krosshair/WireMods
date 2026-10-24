@@ -108,6 +108,10 @@ namespace WiresNativeCursorSupport
                 return NativeCursorKind.Text;
             }
 
+            // Objects another mod marked as clickable.
+            if (NativeCursorApi.IsHand(hit))
+                return NativeCursorKind.Hand;
+
             // An occupied inventory cell represents an item that can
             // actually be picked up. Empty cells and ordinary clickable
             // desktop-style UI remain Arrow.
