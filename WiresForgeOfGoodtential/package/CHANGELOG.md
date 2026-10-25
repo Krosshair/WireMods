@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.0
+- Failed refinements (ignore, quality loss, reset or destruction) have a 50% chance not to consume the idol. Trophy offerings are still always consumed.
+
 ## 0.1.16
 - The crafting panel no longer creates garbage every frame while it's open.
 
