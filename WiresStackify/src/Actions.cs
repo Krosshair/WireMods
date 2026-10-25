@@ -121,7 +121,7 @@ namespace WiresStackify
         internal static void Later(EffectList sound)
         {
             StackifyEffects.Runner.Get().StartCoroutine(After(ResultDelay, () =>
-                StackifyEffects.SpawnLocal(sound, StackifyEffects.Ear(), Quaternion.identity)));
+                StackifyEffects.PlayUi(sound)));
         }
 
         internal static IEnumerator After(float seconds, Action then)

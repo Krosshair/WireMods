@@ -15,7 +15,7 @@ namespace WiresStackify
     internal sealed class Favorites
     {
         private static readonly Dictionary<long, Favorites> ByPlayer = new Dictionary<long, Favorites>();
-        private static int _version;
+
 
         private readonly string _path;
         private readonly HashSet<Vector2i> _slots = new HashSet<Vector2i>();
@@ -29,7 +29,15 @@ namespace WiresStackify
             return f;
         }
 
-        internal static void MarkDirty() { _version++; }
+        internal static void MarkDirty()
+        {
+            // Loading/importing a character's saved favorites happens
+            // inside For()'s constructor, before it enters the cache.
+            // Do not recursively create Favorites while loading.
+            Player player = Player.m_localPlayer;
+            if (player != null && ByPlayer.ContainsKey(player.GetPlayerID()))
+                RefreshVisible();
+        }
 
         private Favorites(long id)
         {
@@ -184,7 +192,7 @@ namespace WiresStackify
                 ButtonSfx sfx = gui.m_takeAllButton.GetComponent<ButtonSfx>();
                 if (sfx != null) _click = sfx.m_sfxPrefab;
             }
-            if (_click != null) StackifyEffects.PlayNow(_click, StackifyEffects.Ear(), Quaternion.identity, null, on ? 0.82f : 1.18f);
+            if (_click != null) StackifyEffects.PlayUi(_click, on ? 0.82f : 1.18f);
         }
 
         // The frame drops in from a little bigger and fades in, overshoots
@@ -218,54 +226,106 @@ namespace WiresStackify
         // ---- Borders: redone only when favorites or the inventory change ----
 
                 private static Sprite _border;
-        private static int _drawnVersion = -1;
-        private static List<InventoryElement> _drawnElements;
-        private static int _drawnCount;
+
+        private static void RefreshVisible()
+        {
+            Player player = Player.m_localPlayer;
+            InventoryGui gui = InventoryGui.instance;
+            if (player == null || gui == null) return;
+
+            Favorites fav = For(player);
+            DrawGrid(gui.m_playerGrid, player.GetInventory(), fav, true);
+            Container container = StackifyPlugin.CurrentContainer(gui);
+            if (container != null)
+                DrawGrid(gui.ContainerGrid, container.GetInventory(), fav, false);
+        }
+
+        private static void DrawGrid(InventoryGrid grid, Inventory inventory,
+            Favorites fav, bool personal)
+        {
+            if (grid == null || inventory == null) return;
+            List<InventoryElement> elements = GridElements(grid);
+            if (elements == null) return;
+            foreach (InventoryElement element in elements)
+                DrawSlot(element, inventory, fav, personal);
+        }
+
+        private static void DrawSlot(InventoryElement element, Inventory inventory,
+            Favorites fav, bool personal)
+        {
+            if (element == null || inventory == null) return;
+            Vector2i position = element.Position;
+            if (position.x < 0 || position.y < 0 ||
+                position.x >= inventory.GetWidth() ||
+                position.y >= inventory.GetHeight()) return;
+
+            ItemDrop.ItemData item = inventory.GetItemAt(position.x, position.y);
+            // Only the player's own inventory can have protected slots.
+            if (personal)
+                Show(Frame(element, SlotFrame, 0f),
+                    fav.IsSlotFavorited(position), StackifyPlugin.ColorSlot.Value);
+            // Item-type favorites are shared across inventory and containers.
+            Show(Frame(element, ItemFrame, 3f),
+                item != null && fav.IsItemFavorited(item.m_shared),
+                StackifyPlugin.ColorItem.Value);
+        }
 
         [HarmonyPatch(typeof(Inventory), "Changed")]
         private static class InventoryChangedPatch
         {
             private static void Postfix(Inventory __instance)
             {
-                if (Player.m_localPlayer != null && __instance == Player.m_localPlayer.GetInventory()) _version++;
+                Player player = Player.m_localPlayer;
+                if (player == null) return;
+                InventoryGui gui = InventoryGui.instance;
+                Container container = gui != null
+                    ? StackifyPlugin.CurrentContainer(gui) : null;
+                if (__instance == player.GetInventory() ||
+                    (container != null && __instance == container.GetInventory()))
+                    RefreshVisible();
             }
         }
 
-        [HarmonyPatch(typeof(InventoryGrid), "UpdateGui")]
-        private static class BorderPatch
+        [HarmonyPatch(typeof(InventoryGui), nameof(InventoryGui.Show))]
+        private static class InventoryOpenedPatch
         {
-            private static void Postfix(InventoryGrid __instance, Player player)
+            private static void Postfix()
             {
-                if (player == null || InventoryGui.instance == null || __instance != InventoryGui.instance.m_playerGrid) return;
-                Inventory inv = GridInventory(__instance);
-                if (inv != player.GetInventory()) return;
-                List<InventoryElement> elements = GridElements(__instance);
-                if (_drawnVersion == _version && ReferenceEquals(_drawnElements, elements) && _drawnCount == elements.Count) return;
-                if (!ReferenceEquals(_drawnElements, elements)) Frames.Clear(); // the grid was rebuilt
-                _drawnVersion = _version;
-                _drawnElements = elements;
-                _drawnCount = elements.Count;
-                Draw(inv, elements, For(player));
+                RefreshVisible();
             }
         }
 
-        private static void Draw(Inventory inv, List<InventoryElement> elements, Favorites fav)
+        // One-time slot construction callback, not a per-frame HUD hook.
+        // Handles initial grids and resized grids before Inventory.Changed.
+        [HarmonyPatch(typeof(InventoryElement), nameof(InventoryElement.Initialize))]
+        private static class SlotCreatedPatch
         {
-            int w = inv.GetWidth(), h = inv.GetHeight();
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
+            private static void Postfix(InventoryElement __instance)
+            {
+                Player player = Player.m_localPlayer;
+                InventoryGui gui = InventoryGui.instance;
+                if (player == null || gui == null || __instance == null)
+                    return;
+
+                InventoryGrid grid = __instance.GetComponentInParent<InventoryGrid>();
+                if (grid == null) return;
+                bool personal = grid == gui.m_playerGrid;
+                if (!personal && grid != gui.ContainerGrid) return;
+
+                Inventory inventory;
+                if (personal) inventory = player.GetInventory();
+                else
                 {
-                    int i = y * w + x;
-                    if (i >= elements.Count) break;
-                    Show(Frame(elements[i], SlotFrame, 0f), fav.IsSlotFavorited(new Vector2i(x, y)), StackifyPlugin.ColorSlot.Value);
-                    Show(Frame(elements[i], ItemFrame, 3f), false, StackifyPlugin.ColorItem.Value);
+                    Container container = StackifyPlugin.CurrentContainer(gui);
+                    if (container == null) return;
+                    inventory = container.GetInventory();
                 }
-            foreach (ItemDrop.ItemData it in inv.GetAllItems())
-            {
-                if (!fav.IsItemFavorited(it.m_shared)) continue;
-                int i = it.m_gridPos.y * w + it.m_gridPos.x;
-                if (i < 0 || i >= elements.Count) continue;
-                Show(Frame(elements[i], ItemFrame, 3f), true, StackifyPlugin.ColorItem.Value);
+
+                // A slot at (0,0) begins each grid rebuild. Clear stale
+                // lookup entries; attached border objects remain intact.
+                if (__instance.Position.x == 0 && __instance.Position.y == 0)
+                    Frames.Clear();
+                DrawSlot(__instance, inventory, For(player), personal);
             }
         }
 

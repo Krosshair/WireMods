@@ -1,3 +1,11 @@
+## 0.1.5
+
+- UI sounds use the game's GUI audio channel and bypass environmental reverb.
+- Carts, ships and other containers without their own opening sounds now play the vanilla chest sounds when used by Stackify.
+- Favorited items and items in favorited slots cannot be dropped, including with MouseTweaks' Ctrl + click. They can still be moved between inventories.
+- Favorited items show their inner frame in containers. Favorited slots remain exclusive to your inventory.
+- Favorite frames now refresh when inventories change or slots are created, without per-frame UI hooks.
+
 ## 0.1.4
 
 - Middle click sorting now only reacts to the click itself, nothing runs every frame anymore.

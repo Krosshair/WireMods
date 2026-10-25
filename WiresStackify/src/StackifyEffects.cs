@@ -66,7 +66,7 @@ namespace WiresStackify
                 if (i > 0) yield return new WaitForSecondsRealtime(Random.Range(0.105f, 0.24f));
                 Container c = hits[i].Chest;
                 if (c == null) continue;
-                SpawnLocal(c.m_openEffects, Near(c.transform.position), c.transform.rotation, ChestClips());
+                PlayContainerOpening(c);
                 if (kind == Kind.Stack) Burst(ChestPoint(c));
             }
             if (kind == Kind.Restock && player != null)
@@ -113,6 +113,13 @@ namespace WiresStackify
             if (go == null) return;
             foreach (ZSFX sfx in go.GetComponentsInChildren<ZSFX>(true))
             {
+                // Locally created container action sounds are feedback,
+                // not environmental SFX. Keep their spatial direction,
+                // but route them through Valheim's dry GUI mixer.
+                AudioSource source = sfx.GetComponent<AudioSource>();
+                AudioMan audio = AudioMan.instance;
+                if (source != null && audio != null)
+                    source.outputAudioMixerGroup = audio.m_guiMixer;
                 sfx.m_maxConcurrentSources = 0;
                 if (clips != null && clips.Length > 0) sfx.m_audioClips = clips;
                 if (pitch > 0f) { sfx.m_minPitch *= pitch; sfx.m_maxPitch *= pitch; }
@@ -141,11 +148,28 @@ namespace WiresStackify
                 _ui = Runner.Get().gameObject.AddComponent<AudioSource>();
                 _ui.playOnAwake = false;
                 _ui.spatialBlend = 0f;
+                // Valheim's ZSFX.UpdateReverb does this for 2D sounds.
+                // A raw AudioSource does not, so every UI click picked up
+                // an environmental reverb tail even through the GUI mixer.
+                _ui.bypassReverbZones = true;
+                _ui.reverbZoneMix = 0f;
             }
-            AudioSource src = z.GetComponent<AudioSource>();
-            if (src != null) _ui.outputAudioMixerGroup = src.outputAudioMixerGroup;
+            // UI sounds use the native GUI mixer, not a world SFX
+            // channel that adds environmental reverb.
+            AudioMan audio = AudioMan.instance;
+            _ui.outputAudioMixerGroup = audio != null ? audio.m_guiMixer : null;
             _ui.pitch = pitch * Random.Range(z.m_minPitch, z.m_maxPitch);
             _ui.PlayOneShot(clip, Random.Range(z.m_minVol, z.m_maxVol));
+        }
+
+        // The player's pickup/drop result sounds are UI feedback.
+        // Keep their original clips, volumes and pitches on the UI channel.
+        internal static void PlayUi(EffectList effects)
+        {
+            if (effects == null || effects.m_effectPrefabs == null) return;
+            foreach (EffectList.EffectData effect in effects.m_effectPrefabs)
+                if (effect != null && effect.m_enabled && effect.m_prefab != null)
+                    PlayUi(effect.m_prefab);
         }
 
         // Where you hear from (the camera). A sound placed here is as loud as
@@ -167,8 +191,45 @@ namespace WiresStackify
             return m < 0.01f ? ear : ear + d / m * Mathf.Min(m, 1.5f);
         }
 
+        // Continue playing a container's own effects as before. If it has
+        // no opening sound, play one of the vanilla chest opening sounds
+        // instead. Carts, ships and other containers need no special case.
+        private static void PlayContainerOpening(Container container)
+        {
+            if (container == null) return;
+            AudioClip[] clips = ChestClips();
+            EffectList effects = container.m_openEffects;
+            bool hasOpeningSound = false;
+            if (effects != null && effects.m_effectPrefabs != null)
+            {
+                foreach (EffectList.EffectData effect in effects.m_effectPrefabs)
+                {
+                    if (effect == null || !effect.m_enabled ||
+                        effect.m_prefab == null) continue;
+                    foreach (ZSFX sfx in effect.m_prefab.GetComponentsInChildren<ZSFX>(true))
+                    {
+                        if (sfx != null && sfx.enabled && sfx.m_playOnAwake &&
+                            sfx.m_audioClips != null && sfx.m_audioClips.Length > 0)
+                        {
+                            hasOpeningSound = true;
+                            break;
+                        }
+                    }
+                    if (hasOpeningSound) break;
+                }
+            }
+
+            Vector3 pos = Near(container.transform.position);
+            Quaternion rot = container.transform.rotation;
+            SpawnLocal(effects, pos, rot, clips);
+
+            if (!hasOpeningSound && _chestSoundPrefab != null)
+                PlayNow(_chestSoundPrefab, pos, rot, clips);
+        }
+
         // Every chest opening sound in the game (all placeable chests), gathered once.
         private static AudioClip[] _chestClips;
+        private static GameObject _chestSoundPrefab;
         private static AudioClip[] ChestClips()
         {
             if (_chestClips != null || ZNetScene.instance == null) return _chestClips;
@@ -182,10 +243,15 @@ namespace WiresStackify
                 if (c == null || c.m_openEffects == null || c.m_openEffects.m_effectPrefabs == null) continue;
                 foreach (EffectList.EffectData d in c.m_openEffects.m_effectPrefabs)
                 {
-                    if (d == null || d.m_prefab == null) continue;
+                    if (d == null || !d.m_enabled || d.m_prefab == null) continue;
                     foreach (ZSFX sfx in d.m_prefab.GetComponentsInChildren<ZSFX>(true))
+                    {
+                        if (sfx.m_audioClips == null || sfx.m_audioClips.Length == 0) continue;
+                        if (_chestSoundPrefab == null && sfx.m_playOnAwake)
+                            _chestSoundPrefab = d.m_prefab;
                         foreach (AudioClip clip in sfx.m_audioClips)
                             if (clip != null && seen.Add(clip)) clips.Add(clip);
+                    }
                 }
             }
             _chestClips = clips.ToArray();
