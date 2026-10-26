@@ -29,7 +29,7 @@ namespace WiresSmoothUI
     {
         public const string PluginGuid = "wire.valheim.smoothui";
         public const string PluginName = "Wire's Smooth UI";
-        public const string PluginVersion = "0.5.5";
+        public const string PluginVersion = "0.6.0";
 
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<bool> HudEnabled;
@@ -53,6 +53,9 @@ namespace WiresSmoothUI
         internal static ConfigEntry<float> MluiFadeSeconds;
 
         internal static ConfigEntry<bool> ItemAnimations;
+        internal static ConfigEntry<bool> EquipProgressFill;
+        internal static ConfigEntry<bool> PanelAnimations;
+        internal static ConfigEntry<bool> CraftingAnimations;
         internal static ConfigEntry<bool> SlotAnimations;
         internal static ConfigEntry<float> DropTargetScale;
         internal static ConfigEntry<float> GamepadSelectionScale;
@@ -175,8 +178,30 @@ namespace WiresSmoothUI
                 Logger.LogInfo("Legacy Wire's Dynamic Reticles detected; its patches were disabled because the feature is now built into Smooth UI.");
             }
 
+            Enabled.SettingChanged += (_, __) => SmoothUIDriver.Wake();
+            // Buttons can rest at their hover size without ticking; put them
+            // back when the setting is turned off.
+            ButtonAnimations.SettingChanged += (_, __) =>
+            {
+                if (!ButtonAnimations.Value)
+                    ButtonAnimationSystem.RestoreAll();
+            };
+            SmoothUIDriver.Wake();
+
             _harmony = new Harmony(PluginGuid);
-            _harmony.PatchAll();
+            // Patch class by class: if a game update breaks one patch, the rest
+            // still load instead of the whole mod going dark.
+            foreach (System.Type type in AccessTools.GetTypesFromAssembly(typeof(WiresSmoothUIPlugin).Assembly))
+            {
+                try
+                {
+                    _harmony.CreateClassProcessor(type).Patch();
+                }
+                catch (System.Exception e)
+                {
+                    Logger.LogError($"Couldn't apply {type.Name}: {e.Message}");
+                }
+            }
             Logger.LogInfo($"{PluginName} {PluginVersion} loaded.");
         }
 
@@ -189,7 +214,8 @@ namespace WiresSmoothUI
             BuildMenuAnimationSystem.Shutdown();
             MapPinAnimationSystem.Shutdown();
             DynamicReticleSystem.Shutdown();
-            MicroMotionSystem.Shutdown();
+            EquipFillSystem.RestoreAll();
+            UiMotion.RestoreAll();
             HudVisibilityReworkSystem.Shutdown();
             MapStatusVisibilitySystem.Shutdown();
             SmoothScrollSystem.Shutdown();
@@ -814,17 +840,6 @@ namespace WiresSmoothUI
             float smooth = EaseOutCubic(t);
             float overshoot = Mathf.Sin(t * Mathf.PI) * 0.055f;
             return Mathf.Lerp(startScale, 1f, smooth) + overshoot;
-        }
-    }
-
-    [HarmonyPatch(typeof(InventoryGui), "Awake")]
-    internal static class InventoryGuiAwakePatch
-    {
-        [HarmonyPostfix]
-        private static void Postfix(InventoryGui __instance)
-        {
-            if (__instance.GetComponent<SmoothUIDriver>() == null)
-                __instance.gameObject.AddComponent<SmoothUIDriver>();
         }
     }
 

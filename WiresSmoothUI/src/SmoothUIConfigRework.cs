@@ -101,7 +101,7 @@ namespace WiresSmoothUI
             Move(config, ref WiresSmoothUIPlugin.SwayDegrees, "Inventory Slots (Animations)", "Inertia rotation", "Maximum hovered-slot rotation caused by mouse inertia, in degrees.", 30);
             Move(config, ref WiresSmoothUIPlugin.DropTargetScale, "Inventory Slots (Animations)", "Valid drop target scale", "How large a valid destination slot becomes while dragging an item over it.", 20);
             Move(config, ref WiresSmoothUIPlugin.GamepadSelectionScale, "Inventory Slots (Animations)", "Gamepad selection scale", "How large the currently selected inventory slot becomes when using a gamepad.", 10);
-            Move(config, ref WiresSmoothUIPlugin.ItemAnimations, "Item Feedback (Animations)", "Enabled", "Animate item appearance, moves, landing, stack changes, equip state, and queued actions.", 40);
+            Move(config, ref WiresSmoothUIPlugin.ItemAnimations, "Item Feedback (Animations)", "Enabled", "Animate item appearance, moves, landing, stack changes, equip state, and queued actions, and pop the armor number when armor goes on or off.", 40);
             Move(config, ref WiresSmoothUIPlugin.ItemMoveDuration, "Item Feedback (Animations)", "Move and landing duration", "How long moved or swapped items glide into the destination and settle.", 30);
             Move(config, ref WiresSmoothUIPlugin.ItemAppearDuration, "Item Feedback (Animations)", "Appear and grab duration", "How long new items and newly grabbed drag icons take to pop into place.", 20);
             Move(config, ref WiresSmoothUIPlugin.StackPulseScale, "Item Feedback (Animations)", "Stack change pulse", "Peak item scale when a stack amount changes. The number itself receives a slightly stronger pop.", 10);
@@ -115,6 +115,13 @@ namespace WiresSmoothUI
             Move(config, ref WiresSmoothUIPlugin.BuildMenuHoverScale, "Build & Dish Menus (Animations)", "Hover scale", "How large a hovered build/dish selection tile becomes.", 30);
             Move(config, ref WiresSmoothUIPlugin.BuildMenuResponse, "Build & Dish Menus (Animations)", "Response", "How quickly build/dish tile motion responds.", 20);
             Move(config, ref WiresSmoothUIPlugin.BuildMenuInertia, "Build & Dish Menus (Animations)", "Mouse inertia", "Let hovered build/dish selection tiles lean slightly with mouse movement.", 10);
+            NewBool(config, ref WiresSmoothUIPlugin.EquipProgressFill, "Item Feedback (Animations)", "Equip progress fill", true, "Fill an item's slot background from the bottom up while it's being equipped, and drain it while it's being unequipped. Works in the inventory and on the hotbar.", 15);
+            NewBool(config, ref WiresSmoothUIPlugin.PanelAnimations, "Menus (Animations)", "Panels", true, "Fade and scale menus in when they open: texts, the split, variant and sign dialogs, the big map and pin name box, the craft progress bar, the pause menu, and settings and its tabs. Skills, trophies and achievements fade in with their rows rising in one after another.", 20);
+            NewBool(config, ref WiresSmoothUIPlugin.CraftingAnimations, "Menus (Animations)", "Crafting panel", true, "Slide the visible recipe rows in when the panel opens or you switch Craft/Upgrade, and pop the tab label. When you pick a recipe, pop its icon, fade the selection in and slide its details, style button and requirements in; the required station level pops when it changes. Pop the requirement icons when a craft finishes.", 10);
+            // Entries from test builds of 0.6.0 that didn't make it.
+            foreach (string stale in new[] { "Crafting list", "Hotbar slots" })
+                config.Remove(config.Bind("Menus (Animations)", stale, true, "Removed.").Definition);
+            config.Remove(config.Bind("Item Feedback (Animations)", "Hotbar, armor and food pops", true, "Removed.").Definition);
             Move(config, ref WiresSmoothUIPlugin.ButtonAnimations, "Buttons (Animations)", "Enabled", "Give ordinary Valheim UI buttons a subtle hover and press response. Inventory slots use their own animation system.", 30);
             Move(config, ref WiresSmoothUIPlugin.ButtonHoverScale, "Buttons (Animations)", "Hover scale", "Relative scale of hovered non-inventory buttons.", 20);
             Move(config, ref WiresSmoothUIPlugin.ButtonResponse, "Buttons (Animations)", "Response", "How quickly button hover and press motion responds.", 10);
@@ -211,7 +218,7 @@ namespace WiresSmoothUI
                 "Minimap (Dynamic HUD)", "Status Effects (Dynamic HUD)",
                 "Inventory Slots (Animations)", "Item Feedback (Animations)",
                 "Map Pins (Animations)", "Tooltips (Animations)",
-                "Build & Dish Menus (Animations)", "Buttons (Animations)",
+                "Build & Dish Menus (Animations)", "Menus (Animations)", "Buttons (Animations)",
                 "Dragging (Animations)", "Mod support", "Internal"
             };
 

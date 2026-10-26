@@ -96,6 +96,23 @@ namespace WiresSmoothUI
         private static readonly List<ItemState> Active = new List<ItemState>();
         // Items still gliding when their inventory changes again, with the
         // spot they are drawn at right now.
+        private struct DropRecord
+        {
+            internal Vector3 World;
+            internal float Time;
+        }
+
+        // Where a dragged item was let go, so it glides in from the cursor.
+        private static readonly Dictionary<ItemDrop.ItemData, DropRecord> Dropped =
+            new Dictionary<ItemDrop.ItemData, DropRecord>();
+
+        internal static void NotifyDropped(ItemDrop.ItemData item, Vector3 world)
+        {
+            if (Dropped.Count > 16)
+                Dropped.Clear();
+            Dropped[item] = new DropRecord { World = world, Time = UnityEngine.Time.unscaledTime };
+        }
+
         private static readonly Dictionary<ItemDrop.ItemData, Vector3> InFlight =
             new Dictionary<ItemDrop.ItemData, Vector3>(RefComparer<ItemDrop.ItemData>.Instance);
         private static readonly HashSet<ItemState> QueuedStates = new HashSet<ItemState>();
@@ -337,6 +354,16 @@ namespace WiresSmoothUI
                 {
                     fromWorld = drawn;
                     moved = (fromWorld - currentWorld).sqrMagnitude > 1f;
+                }
+
+                if (Dropped.TryGetValue(item, out DropRecord drop))
+                {
+                    Dropped.Remove(item);
+                    if (Time.unscaledTime - drop.Time < 0.5f)
+                    {
+                        fromWorld = drop.World;
+                        moved = (fromWorld - currentWorld).sqrMagnitude > 1f;
+                    }
                 }
 
                 if (moved)
@@ -597,6 +624,8 @@ namespace WiresSmoothUI
             }
         }
 
+        internal static bool Busy => Active.Count > 0;
+
         internal static void Tick()
         {
             if (!WiresSmoothUIPlugin.ItemAnimations.Value)
@@ -827,6 +856,7 @@ namespace WiresSmoothUI
 
             state.ActiveIndex = Active.Count;
             Active.Add(state);
+            SmoothUIDriver.Wake();
         }
 
         private static void Deactivate(ItemState state)
@@ -1016,6 +1046,7 @@ namespace WiresSmoothUI
             if (__result && __instance == Player.m_localPlayer)
             {
                 ItemAnimationSystem.NotifyEquipment(item, true);
+                ArmorPop.EquipChanged(item);
                 HudVisibilityReworkSystem
                     .NotifyHotbarEquipmentChanged();
             }
@@ -1037,6 +1068,7 @@ namespace WiresSmoothUI
             if (__state && item != null && !item.m_equipped && __instance == Player.m_localPlayer)
             {
                 ItemAnimationSystem.NotifyEquipment(item, false);
+                ArmorPop.EquipChanged(item);
                 HudVisibilityReworkSystem
                     .NotifyHotbarEquipmentChanged();
             }
@@ -1053,6 +1085,7 @@ namespace WiresSmoothUI
             {
                 bool queued = __instance.IsEquipActionQueued(item);
                 ItemAnimationSystem.NotifyQueue(item, queued);
+                EquipFillSystem.Begin();
             }
         }
     }
@@ -1067,6 +1100,7 @@ namespace WiresSmoothUI
             {
                 bool queued = __instance.IsEquipActionQueued(item);
                 ItemAnimationSystem.NotifyQueue(item, queued);
+                EquipFillSystem.Begin();
             }
         }
     }

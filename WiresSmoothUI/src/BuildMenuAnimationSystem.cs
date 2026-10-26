@@ -124,7 +124,10 @@ namespace WiresSmoothUI
             state.Rotation = 0f;
             state.ActiveIndex = Active.Count;
             Active.Add(state);
+            SmoothUIDriver.Wake();
         }
+
+        internal static bool Busy => Active.Count > 0;
 
         internal static void Tick()
         {

@@ -9,6 +9,9 @@ namespace WiresSmoothUI
             AccessTools.FieldRefAccess<InventoryGui, GameObject>("m_dragGo");
 
         private static GameObject _current;
+        private static ItemDrop.ItemData _currentItem;
+        private static readonly AccessTools.FieldRef<InventoryGui, ItemDrop.ItemData> DragItem =
+            AccessTools.FieldRefAccess<InventoryGui, ItemDrop.ItemData>("m_dragItem");
         private static Vector3 _smoothPosition;
         private static Vector3 _baseScale = Vector3.one;
         private static Quaternion _baseRotation = Quaternion.identity;
@@ -39,8 +42,17 @@ namespace WiresSmoothUI
 
             if (drag == null)
             {
+                // Dropped: the item glides from where it was let go into its
+                // slot, instead of from the slot it was picked up from.
+                if (_current != null && _currentItem != null)
+                {
+                    Transform icon = _current.transform.Find("icon");
+                    ItemAnimationSystem.NotifyDropped(_currentItem, (icon != null ? icon : _current.transform).position);
+                }
+
                 Restore();
                 _current = null;
+                _currentItem = null;
                 return;
             }
 
@@ -49,6 +61,8 @@ namespace WiresSmoothUI
 
             Restore();
             _current = drag;
+            _currentItem = DragItem(gui);
+            SmoothUIDriver.Wake();
             _smoothPosition = ZInput.instance != null && ZInput.IsMouseActive()
                 ? (Vector3)ZInput.pointerPosition
                 : drag.transform.position;

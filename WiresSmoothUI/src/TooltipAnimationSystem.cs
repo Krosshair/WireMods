@@ -31,7 +31,10 @@ namespace WiresSmoothUI
             _timer = 0f;
             _started = false;
             _finished = false;
+            SmoothUIDriver.Wake();
         }
+
+        internal static bool Busy => _tooltip != null && !_finished;
 
         internal static void Tick()
         {

@@ -89,6 +89,18 @@ namespace WiresSmoothUI
 
             scroll.StopMovement();
             state.Active = true;
+            SmoothUIDriver.Wake();
+        }
+
+        internal static bool Busy
+        {
+            get
+            {
+                foreach (KeyValuePair<int, State> pair in States)
+                    if (pair.Value.Active)
+                        return true;
+                return false;
+            }
         }
 
         internal static void Tick()

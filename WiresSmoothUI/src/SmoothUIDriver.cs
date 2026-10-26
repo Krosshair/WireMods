@@ -1,9 +1,30 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 namespace WiresSmoothUI
 {
+    // Only runs while something is animating. Each system wakes it when an
+    // animation starts, and it switches itself off the frame everything settles.
     internal sealed class SmoothUIDriver : MonoBehaviour
-    {        private bool _wasEnabled;
+    {
+        private static SmoothUIDriver _instance;
+        private bool _wasEnabled = true;
+
+        internal static void Wake()
+        {
+            if (_instance == null)
+            {
+                GameObject go = new GameObject("WiresSmoothUIDriver");
+                Object.DontDestroyOnLoad(go);
+                go.hideFlags = HideFlags.HideAndDontSave;
+                _instance = go.AddComponent<SmoothUIDriver>();
+            }
+
+            if (!_instance.enabled)
+            {
+                PointerMotion.Reset();
+                _instance.enabled = true;
+            }
+        }
 
         private void LateUpdate()
         {
@@ -15,6 +36,7 @@ namespace WiresSmoothUI
                     VisualSystems.RestoreEverything();
 
                 _wasEnabled = false;
+                enabled = false;
                 return;
             }
 
@@ -28,8 +50,22 @@ namespace WiresSmoothUI
             BuildMenuAnimationSystem.Tick();
             ButtonAnimationSystem.Tick();
             TooltipAnimationSystem.Tick();
-            MicroMotionSystem.Tick();
             SmoothScrollSystem.Tick();
+            EquipFillSystem.Tick();
+            UiMotion.Tick();
+
+            bool busy = DragAnimationSystem.IsDragging
+                || SlotAnimationSystem.Busy
+                || ItemAnimationSystem.Busy
+                || BuildMenuAnimationSystem.Busy
+                || ButtonAnimationSystem.Busy
+                || TooltipAnimationSystem.Busy
+                || SmoothScrollSystem.Busy
+                || EquipFillSystem.Busy
+                || UiMotion.Busy;
+
+            if (!busy)
+                enabled = false;
         }
 
         private void OnDestroy()
@@ -45,6 +81,12 @@ namespace WiresSmoothUI
 
         internal static Vector2 Position { get; private set; }
         internal static Vector2 Delta { get; private set; }
+
+        internal static void Reset()
+        {
+            _initialized = false;
+            Delta = Vector2.zero;
+        }
 
         internal static void Tick()
         {
@@ -79,7 +121,8 @@ namespace WiresSmoothUI
             BuildMenuAnimationSystem.RestoreAll();
             ButtonAnimationSystem.RestoreAll();
             TooltipAnimationSystem.Restore();
-            MicroMotionSystem.RestoreAll();
+            EquipFillSystem.RestoreAll();
+            UiMotion.RestoreAll();
         }
     }
 }

@@ -84,6 +84,8 @@ namespace WiresSmoothUI
                 Activate(state);
         }
 
+        internal static bool Busy => Active.Count > 0;
+
         internal static void Tick()
         {
             if (!WiresSmoothUIPlugin.ButtonAnimations.Value)
@@ -132,6 +134,18 @@ namespace WiresSmoothUI
                     continue;
                 }
 
+                // Reached the hover/press size: hold it without ticking until the
+                // pointer leaves or lets go.
+                if (Mathf.Abs(state.Scale - target) < 0.001f)
+                {
+                    state.Scale = target;
+                    state.AppliedScale = target;
+                    button.transform.localScale = state.BaseScale * target;
+                    state.Applied = true;
+                    DeactivateAt(i);
+                    continue;
+                }
+
                 state.AppliedScale = state.Scale;
                 button.transform.localScale = state.BaseScale * state.AppliedScale;
                 state.Applied = true;
@@ -161,6 +175,7 @@ namespace WiresSmoothUI
 
             state.ActiveIndex = Active.Count;
             Active.Add(state);
+            SmoothUIDriver.Wake();
         }
 
         private static void Deactivate(State state)
@@ -197,9 +212,17 @@ namespace WiresSmoothUI
             }
         }
 
+        // Also settles buttons resting at their hover size.
         internal static void RestoreAll()
         {
             RestoreActive();
+            foreach (State state in States.Values)
+            {
+                RestoreState(state);
+                state.Scale = 1f;
+                state.Hovered = false;
+                state.Pressed = false;
+            }
         }
 
         internal static void Shutdown()

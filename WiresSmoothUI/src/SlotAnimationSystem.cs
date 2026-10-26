@@ -135,8 +135,20 @@ namespace WiresSmoothUI
             if (state == null)
                 return;
 
-            state.Pressed = value && state.Hovered;
+            // Only push in when the click picks up or places an item. Modifier
+            // clicks like Stackify's Alt favoriting, or clicking an empty slot
+            // with nothing in hand, leave the slot alone.
+            state.Pressed = value && state.Hovered && ClickActs(state);
             ActivateWithFreshBase(state);
+        }
+
+        private static bool ClickActs(State state)
+        {
+            if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || Input.GetKey(KeyCode.AltGr))
+                return false;
+            if (DragAnimationSystem.IsDragging)
+                return true;
+            return state.Element != null && state.Element.m_used;
         }
 
         private static void ActivateWithFreshBase(State state)
@@ -149,6 +161,7 @@ namespace WiresSmoothUI
                 state.Rotation = 0f;
                 state.ActiveIndex = Active.Count;
                 Active.Add(state);
+                SmoothUIDriver.Wake();
             }
         }
 
@@ -188,6 +201,8 @@ namespace WiresSmoothUI
                 }
             }
         }
+
+        internal static bool Busy => Active.Count > 0;
 
         internal static void Tick()
         {

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0
+
+* Equipping something fills its slot from the bottom up as it equips, and unequipping drains it. Works in the inventory and on the hotbar.
+* Menus fade and scale in when they open: texts, the split, variant and sign dialogs, the big map and pin name box, the craft progress bar, the pause menu, and settings and its tabs.
+* Skills, trophies and achievements fade in with their rows rising in one after another.
+* Crafting panel: the recipe list slides in when it opens or you switch tabs (including tabs other mods add, like Recycler's), and the tab label pops. Picking a recipe pops its icon, fades the selection onto the new row and slides its details, style button, required station level and requirements in from the right. The station level star pops when the level changes. The requirement icons pop when a craft finishes.
+* The armor number pops when you put armor on or take it off.
+* A dropped item glides into its slot from where you let go of it.
+* Smooth scrolling works in the main menu too, and gamepad or keyboard navigation glides lists to the selected entry instead of jumping.
+* Slots only push in when a click actually picks up or places an item, so favoriting with Stackify (or clicking an empty slot) doesn't press them.
+* If a game update breaks one of Smooth UI's patches, the rest still load.
+* Animations no longer cost anything while nothing is animating.
+
 ## 0.5.5
 
 * Sorting your inventory now slides items to their new slots like containers do. Items that get moved again mid-slide keep gliding from where they are instead of jumping.
