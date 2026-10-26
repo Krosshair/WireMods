@@ -99,7 +99,7 @@ namespace WiresForgeOfGoodtential
             {
                 SelectedTrophy = null;
                 SelectedIdolTier =
-                    FindLowestOwnedValidIdol(
+                    FindHighestOwnedIdol(
                         player,
                         family,
                         requiredTier);
@@ -126,7 +126,7 @@ namespace WiresForgeOfGoodtential
                     SelectedIdolTier))
             {
                 SelectedIdolTier =
-                    FindLowestOwnedValidIdol(
+                    FindHighestOwnedIdol(
                         player,
                         Family,
                         RequiredTier);
@@ -141,11 +141,17 @@ namespace WiresForgeOfGoodtential
                 return;
             }
 
-            if (SelectedTrophy == null ||
-                player == null)
+            if (SelectedTrophy == null)
+                return;
+
+            if (ForgeTrophyEligibility.IsBossTrophy(SelectedTrophy))
             {
+                SelectedTrophy = null;
                 return;
             }
+
+            if (player == null)
+                return;
 
             Inventory inventory =
                 player.GetInventory();
@@ -173,7 +179,9 @@ namespace WiresForgeOfGoodtential
             IdolFamily family,
             int tier)
         {
-            if (player == null)
+            if (player == null ||
+                tier < 0 ||
+                tier > ForgeData.MaxTier)
                 return false;
 
             ItemDrop idol =
@@ -192,18 +200,14 @@ namespace WiresForgeOfGoodtential
                 idol.m_itemData.m_shared.m_name) > 0;
         }
 
-        internal static int FindLowestOwnedValidIdol(
+        internal static int FindHighestOwnedIdol(
             Player player,
             IdolFamily family,
             int requiredTier)
         {
-            for (int tier =
-                    Mathf.Clamp(
-                        requiredTier,
-                        0,
-                        ForgeData.MaxTier);
-                 tier <= ForgeData.MaxTier;
-                 tier++)
+            for (int tier = ForgeData.MaxTier;
+                 tier >= 0;
+                 tier--)
             {
                 if (PlayerHasIdol(
                     player,
@@ -214,11 +218,9 @@ namespace WiresForgeOfGoodtential
                 }
             }
 
-            // Show the actual minimum requirement even when it is missing.
-            return Mathf.Clamp(
-                requiredTier,
-                0,
-                ForgeData.MaxTier);
+            // -1 explicitly means no compatible idol in inventory.
+            // Never imply the player owns a missing safe-tier idol.
+            return -1;
         }
 
         internal static List<int> GetOwnedValidIdolTiers(
@@ -255,8 +257,8 @@ namespace WiresForgeOfGoodtential
 
             if (tiers.Count == 0)
             {
-                SelectedIdolTier =
-                    RequiredTier;
+                SelectedIdolTier = -1;
+                SelectedTrophy = null;
                 return;
             }
 
@@ -275,6 +277,7 @@ namespace WiresForgeOfGoodtential
             SelectedIdolTier =
                 tiers[current];
 
+            // Trophy offerings are exclusive to safe idol attempts.
             if (SelectedIdolTier < RequiredTier)
                 SelectedTrophy = null;
         }
@@ -310,7 +313,8 @@ namespace WiresForgeOfGoodtential
 
                 if (trophy == null ||
                     trophy.m_shared == null ||
-                    trophy.m_stack <= 0)
+                    trophy.m_stack <= 0 ||
+                    ForgeTrophyEligibility.IsBossTrophy(trophy))
                 {
                     continue;
                 }
@@ -409,8 +413,12 @@ namespace WiresForgeOfGoodtential
             if (SelectedTrophy == null)
                 return true;
 
+            if (SelectedIdolTier < RequiredTier)
+                return false;
+
             if (player == null ||
-                SelectedTrophy.m_shared == null)
+                SelectedTrophy.m_shared == null ||
+                ForgeTrophyEligibility.IsBossTrophy(SelectedTrophy))
             {
                 return false;
             }

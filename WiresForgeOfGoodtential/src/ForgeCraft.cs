@@ -24,7 +24,10 @@ namespace WiresForgeOfGoodtential
         internal static int Delta;
         internal static ForgeOutcome Outcome;
         internal static ForgeOdds Odds;
+        internal static ItemDrop.ItemData OfferedTrophy;
+        internal static bool ForceConsumeIdol;
         internal static float IdolKeepChance;
+        internal static bool IdolSpared;
         internal static float OldUpgradeChance;
         internal static float OldBreakChance;
         internal static CraftingStation Station;
@@ -81,7 +84,10 @@ namespace WiresForgeOfGoodtential
             Delta = 0;
             Outcome = ForgeOutcome.None;
             Odds = null;
+            OfferedTrophy = null;
+            ForceConsumeIdol = false;
             IdolKeepChance = 0f;
+            IdolSpared = false;
             Station = null;
             OldFailEffects = null;
             AttemptExecuted = false;
@@ -122,7 +128,12 @@ namespace WiresForgeOfGoodtential
                     ___m_craftRecipe,
                     ___m_craftUpgradeItem);
 
-            if (selection == null)
+            if (selection == null ||
+                selection.IdolTier < 0 ||
+                !ForgeSelection.PlayerHasIdol(
+                    player,
+                    selection.Family,
+                    selection.IdolTier))
                 return;
 
             ItemDrop selectedIdol =
@@ -138,10 +149,19 @@ namespace WiresForgeOfGoodtential
             }
 
             ItemDrop.ItemData selectedTrophy =
-                selection.IdolTier <
-                    selection.RequiredTier
-                    ? null
-                    : selection.Trophy;
+                selection.Trophy;
+
+            // An under-tier idol never sacrifices a trophy, even
+            // if a stale selection was locked externally. Do not
+            // abort the Goodtential interception and fall back to
+            // vanilla crafting; simply discard the invalid offering.
+            if (selection.IdolTier < selection.RequiredTier)
+                selectedTrophy = null;
+
+            // Reject even stale locked selections or other mods
+            // attempting to inject a boss offering.
+            if (ForgeTrophyEligibility.IsBossTrophy(selectedTrophy))
+                return;
 
             Piece.Requirement[] originalResources =
                 ___m_craftRecipe.m_resources;
@@ -224,7 +244,9 @@ namespace WiresForgeOfGoodtential
                      ForgeOutcome.CompleteLoss)
             {
                 targetQuality =
-                    naturalMax;
+                    originalQuality < naturalMax
+                        ? 1
+                        : naturalMax;
 
                 delta =
                     targetQuality -
@@ -265,6 +287,11 @@ namespace WiresForgeOfGoodtential
                 outcome;
             ForgeContext.Odds =
                 odds;
+            ForgeContext.OfferedTrophy =
+                selectedTrophy;
+            ForgeContext.ForceConsumeIdol =
+                outcome == ForgeOutcome.CompleteLoss &&
+                originalQuality < naturalMax;
             ForgeContext.IdolKeepChance =
                 ForgeRules.GetIdolKeepChance(
                     selectedTrophy,
@@ -296,6 +323,16 @@ namespace WiresForgeOfGoodtential
 
                 selectedIdol.m_itemData
                     .m_shared.m_breakChance = -1f;
+            }
+            else if (outcome == ForgeOutcome.Destroyed)
+            {
+                // Use Valheim's real destructive upgrader branch,
+                // including its normal item-loss/material-return logic.
+                selectedIdol.m_itemData
+                    .m_shared.m_upgradeChance = -1f;
+
+                selectedIdol.m_itemData
+                    .m_shared.m_breakChance = 2f;
             }
             else
             {
@@ -364,16 +401,43 @@ namespace WiresForgeOfGoodtential
                         Quaternion.identity);
                 }
 
+                // Separate, gentle reward cue for a spared idol.
+                // The jackpot effect above remains unchanged.
+                if (ForgeContext.IdolSpared)
+                    ForgeIdolSound.Play(player);
+
                 ShowResult(player);
             }
             finally
             {
-                ForgeContext.Restore();
+                // Only completed crafts count. Always restore the
+                // transient recipe/upgrade settings, even if persistence
+                // encounters an unexpected save-data exception.
+                try
+                {
+                    if (executed &&
+                        ForgeContext.OfferedTrophy != null)
+                    {
+                        TrophyFatigue.RecordUse(
+                            ForgeContext.Player,
+                            ForgeContext.OfferedTrophy);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning(
+                        "Goodtential: trophy fatigue save failed: " +
+                        ex.Message);
+                }
+                finally
+                {
+                    ForgeContext.Restore();
 
-                if (executed)
-                    ForgeSelection.AfterAttempt();
-                else
-                    ForgeSelection.CancelPending();
+                    if (executed)
+                        ForgeSelection.AfterAttempt();
+                    else
+                        ForgeSelection.CancelPending();
+                }
             }
         }
 
@@ -615,6 +679,14 @@ namespace WiresForgeOfGoodtential
                         0,
                         null,
                         true);
+                    break;
+
+                case ForgeOutcome.Destroyed:
+                    player.Message(
+                        MessageHud.MessageType.Center,
+                        "Refinement failed. " +
+                        itemName + " was destroyed.",
+                        0, null, true);
                     break;
 
                 case ForgeOutcome.CompleteLoss:

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using UnityEngine;
 
 namespace WiresForgeOfGoodtential
 {
@@ -51,11 +52,22 @@ namespace WiresForgeOfGoodtential
                 ForgeSelection.CurrentRecipe != null &&
                 ForgeSelection.CurrentItem != null)
             {
-                // Every Goodtential attempt preserves the actual item.
-                // Even an under-tier idol may only lower its quality,
-                // never invoke vanilla destruction/material returns.
-                // The old four-slot reserve is therefore unnecessary.
-                return int.MaxValue;
+                int potential =
+                    ForgeSelection.CurrentItem.m_quality -
+                    Mathf.Max(1, ForgeSelection.CurrentRecipe
+                        .m_item.m_itemData.m_shared.m_maxQuality);
+
+                ForgeOdds odds = ForgeRules.GetOdds(
+                    Mathf.Max(0, potential),
+                    ForgeSelection.RequiredTier,
+                    ForgeSelection.SelectedIdolTier,
+                    ForgeSelection.SelectedTrophy,
+                    ForgeSelection.ItemReferencePrestige);
+
+                // Preserve vanilla's inventory-space reserve only when
+                // the chosen offering can actually destroy equipment.
+                if (odds.Destruction <= 0f)
+                    return int.MaxValue;
             }
 
             return inventory != null

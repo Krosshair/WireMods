@@ -17,7 +17,8 @@ namespace WiresForgeOfGoodtential
         Jackpot,
         Ignore,
         Loss,
-        CompleteLoss
+        CompleteLoss,
+        Destroyed
     }
 
     internal enum GearArchetype
@@ -49,13 +50,14 @@ namespace WiresForgeOfGoodtential
         internal float Success;
         internal float OrdinaryFailure;
         internal float CompleteLoss;
+        internal float Destruction;
         internal float JackpotChance = 0.20f;
         internal bool FailureIsIgnore;
         internal float CascadeChance;
 
         internal float TotalBad
         {
-            get { return OrdinaryFailure + CompleteLoss; }
+            get { return OrdinaryFailure + CompleteLoss + Destruction; }
         }
     }
 
@@ -695,7 +697,8 @@ namespace WiresForgeOfGoodtential
             ItemDrop.ItemData trophy,
             float itemReferencePrestige)
         {
-            if (trophy == null)
+            if (trophy == null ||
+                ForgeTrophyEligibility.IsBossTrophy(trophy))
                 return 1f;
 
             float delta =
@@ -714,10 +717,9 @@ namespace WiresForgeOfGoodtential
             float multiplier =
                 Mathf.Exp(-0.17f * (delta + 14f));
 
-            return Mathf.Clamp(
-                multiplier,
-                0.005f,
-                0.995f);
+            return TrophyFatigue.AdjustMultiplier(
+                trophy,
+                Mathf.Clamp(multiplier, 0.005f, 0.995f));
         }
 
         internal static string GetFavorDescription(

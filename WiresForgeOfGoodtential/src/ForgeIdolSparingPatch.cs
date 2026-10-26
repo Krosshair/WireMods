@@ -49,6 +49,7 @@ namespace WiresForgeOfGoodtential
             }
 
             if (idolIndex < 0 ||
+                ForgeContext.ForceConsumeIdol ||
                 UnityEngine.Random.value >=
                     ForgeContext.IdolKeepChance)
                 return;
@@ -66,6 +67,7 @@ namespace WiresForgeOfGoodtential
                     remaining, idolIndex, after);
 
             requirements = remaining;
+            ForgeContext.IdolSpared = true;
         }
     }
 }

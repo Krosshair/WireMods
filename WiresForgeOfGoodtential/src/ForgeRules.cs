@@ -20,7 +20,8 @@ namespace WiresForgeOfGoodtential
             ItemDrop.ItemData trophy,
             float itemReferencePrestige)
         {
-            if (trophy == null)
+            if (trophy == null ||
+                ForgeTrophyEligibility.IsBossTrophy(trophy))
                 return 0.50f;
 
             float badOutcomeMultiplier =
@@ -35,6 +36,28 @@ namespace WiresForgeOfGoodtential
             return 0.50f * (1f + 0.35f * favor);
         }
 
+        internal static bool IsTrophyDestructionProtection(
+            ItemDrop.ItemData trophy,
+            float itemReferencePrestige)
+        {
+            if (trophy == null ||
+                ForgeTrophyEligibility.IsBossTrophy(trophy))
+                return false;
+
+            // Common, weak trophies cannot rescue an ultra-risky
+            // gamble from genuine vanilla item destruction.
+            // Useful trophies do, even when suffering fatigue.
+            float prestige = ForgeData.GetTrophyPrestige(trophy);
+
+            // Fatigue diminishes the favor percentage, but cannot
+            // suddenly remove an already qualifying trophy's ability
+            // to turn destruction into a reset.
+            return prestige >= 13f &&
+                Mathf.Exp(-0.17f *
+                    (prestige - itemReferencePrestige + 14f))
+                    <= 0.75f;
+        }
+
         internal static bool LossRiskActive(int potential)
         {
             return potential >= 2;
@@ -47,7 +70,8 @@ namespace WiresForgeOfGoodtential
 
         internal static bool CompleteLossRiskActive(int potential)
         {
-            // Complete reset is a late-stage risk, never item destruction.
+            // The +8 threshold also activates destruction for
+            // extremely under-tier idol gambles.
             return potential >= 8;
         }
 
@@ -72,8 +96,13 @@ namespace WiresForgeOfGoodtential
 
             if (underTier > 0)
             {
-                // An under-tier idol still risks more lost refinement,
-                // but can NEVER delete the item or scrap its materials.
+                // Under-tier idols cannot accept trophies. Ignore an
+                // injected offering even when odds are queried outside
+                // the UI / regular craft-selection path.
+                trophy = null;
+
+                // Under-tier idols reduce success and can trigger a
+                // severe outcome at +8; 3+ tiers too weak can destroy.
                 ForgeOdds risky = new ForgeOdds();
 
                 risky.Success =
@@ -87,7 +116,7 @@ namespace WiresForgeOfGoodtential
                 // Most failed rolls reduce gained quality. A complete
                 // reset only becomes possible at +8 beyond the natural
                 // cap, then remains a small fraction of failures.
-                risky.CompleteLoss =
+                float severe =
                     CompleteLossRiskActive(potential)
                         ? Mathf.Min(
                             0.07f,
@@ -95,20 +124,27 @@ namespace WiresForgeOfGoodtential
                             (potential - 8) * 0.005f)
                         : 0f;
 
+                // The under-tier branch always discards trophies,
+                // so there is no separate trophy-protection path.
+                bool ultraRisk =
+                    underTier >= 3 &&
+                    CompleteLossRiskActive(potential);
+
+                risky.Destruction =
+                    ultraRisk ? severe : 0f;
+                risky.CompleteLoss =
+                    severe - risky.Destruction;
                 risky.OrdinaryFailure =
-                    failure - risky.CompleteLoss;
+                    failure - severe;
 
                 // At Qmax or Qmax+1 there isn't enough extra quality
                 // for the ordinary loss rule to become meaningful.
                 risky.FailureIsIgnore =
                     !LossRiskActive(potential);
 
-                // Under-tier failures are more likely to cascade into
-                // multi-level quality losses than safe idol failures.
-                risky.CascadeChance =
-                    Mathf.Clamp01(
-                        baseBad *
-                        (1f + 0.35f * underTier));
+                // Regular failures always remove exactly one quality.
+                // The separate reset/destruction outcomes remain.
+                risky.CascadeChance = 0f;
 
                 risky.JackpotChance =
                     Mathf.Clamp01(
@@ -177,6 +213,7 @@ namespace WiresForgeOfGoodtential
             ForgeOdds odds = new ForgeOdds();
             odds.OrdinaryFailure = ordinary;
             odds.CompleteLoss = complete;
+            odds.Destruction = 0f;
             odds.JackpotChance = 0.20f;
             odds.Success =
                 Mathf.Clamp01(
@@ -184,16 +221,9 @@ namespace WiresForgeOfGoodtential
             odds.FailureIsIgnore =
                 !LossRiskActive(potential);
 
-            float totalStabilizer =
-                idolOrdinaryMultiplier *
-                trophyMultiplier;
-
-            odds.CascadeChance =
-                Mathf.Clamp01(
-                    baseBad *
-                    Mathf.Sqrt(
-                        Mathf.Clamp01(
-                            totalStabilizer)));
+            // No anti-jackpots: ordinary failed refinements no longer
+            // cascade through several hard-earned quality levels.
+            odds.CascadeChance = 0f;
 
             return odds;
         }
@@ -216,29 +246,28 @@ namespace WiresForgeOfGoodtential
                     : ForgeOutcome.Loss;
             }
 
-            return ForgeOutcome.CompleteLoss;
+            roll -= odds.OrdinaryFailure;
+
+            if (roll < odds.CompleteLoss)
+                return ForgeOutcome.CompleteLoss;
+
+            if (odds.Destruction > 0f)
+                return ForgeOutcome.Destroyed;
+
+            // Guard against the tiny floating-point remainder on
+            // non-destructive attempts: never invent destruction.
+            return odds.FailureIsIgnore
+                ? ForgeOutcome.Ignore
+                : ForgeOutcome.Loss;
         }
 
         internal static int RollLossLevels(
             int potential,
             float cascadeChance)
         {
-            int available =
-                Mathf.Max(1, potential);
-
-            int lost = 1;
-
-            if (!MultiLossRiskActive(potential))
-                return lost;
-
-            while (lost < available &&
-                   UnityEngine.Random.value <
-                       cascadeChance)
-            {
-                lost++;
-            }
-
-            return lost;
+            // Deliberate single-level penalty for every ordinary fail,
+            // regardless of the former cascade probability.
+            return 1;
         }
 
         internal static int RollSuccessGain(
@@ -270,11 +299,11 @@ namespace WiresForgeOfGoodtential
             if (odds == null)
                 return "";
 
+            if (odds.Destruction > 0f)
+                return "Refinement may completely destroy your item.";
+
             if (CompleteLossRiskActive(refinementLevel))
                 return "Refinement may reduce your item back to its base form.";
-
-            if (MultiLossRiskActive(refinementLevel))
-                return "Refinement may greatly lower your item's quality.";
 
             if (LossRiskActive(refinementLevel))
                 return "Refinement may lower your item's quality.";

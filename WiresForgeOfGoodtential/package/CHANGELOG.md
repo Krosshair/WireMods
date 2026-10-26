@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+- Replaced the idol and trophy cycle controls with I and T on the original wooden buttons; they disable when there is nothing to cycle through.
+- Selection defaults to the strongest owned idol of the item's matching Battle/Protection family, and items remain listed even when only under-tier idols are available. Items sort by success and severity of possible outcomes.
+- Forge of Potential refining now takes half as long, including the increase per quality level. Normal crafting is unchanged.
+- Ordinary failed refinements lose at most one quality; multilevel "anti-jackpots" are gone.
+- Only extremely risky attempts (3+ tiers below the minimum safe idol at 8+ extra quality) can destroy equipment. Under-tier idols cannot accept trophies.
+- Boss and Hildir miniboss trophies cannot be sacrificed.
+- Trophy favor diminishes through repeated sacrifices of the same trophy, recovers gradually over in-game days, and persists between play sessions.
+- An idol can survive success, jackpot, ignore, failure, reset or destruction; a saved idol plays its own reward chime.
+- Added below-cap reset protection: an impossible reset instead drops the item to quality 1 and consumes its idol, never upgrading an item accidentally.
+- Kept the status display to a single line of result chances. Removed all added idol/trophy hover tooltips, consumption text and fatigue rows.
+- Shortened the README and kept the original disclaimer and Ko-fi link. Updated the NexusMods-ready BBCode description.
+- No change to the Forge's established native-item-tier versus minimum-safe-idol progression. The latter determines risk bonuses.
 ## 0.4.0
 - Every outcome can now spare the selected idol: successful upgrades and jackpots included, alongside ignore, quality loss and reset. Without a trophy, the idol survives with a 50% chance.
 - Offering a trophy increases idol preservation based on its prestige relative to the item. `favor = clamp((1 - M) / 0.995, 0, 1)`; `idol survival = 50% × (1 + 0.35 × favor)`, where `M` is the existing trophy bad-outcome multiplier.

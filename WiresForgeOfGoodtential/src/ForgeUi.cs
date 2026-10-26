@@ -314,11 +314,10 @@ namespace WiresForgeOfGoodtential
                     slots.ToArray();
             }
 
-            DisableItemTooltip(
-                gui.m_recipeRequirementList[0]);
-
-            DisableItemTooltip(
-                gui.m_recipeRequirementList[2]);
+            // No extra mod hover tooltips. Keep these two
+            // requirement slots silent; retain the single odds row.
+            DisableItemTooltip(gui.m_recipeRequirementList[0]);
+            DisableItemTooltip(gui.m_recipeRequirementList[2]);
 
             ConfigureCycleButton(
                 gui,
@@ -393,6 +392,9 @@ namespace WiresForgeOfGoodtential
 
             if (existing == null)
             {
+                // The original take-all button has the wooden
+                // background. The variant button did not, which
+                // caused the visual regression.
                 UIGamePad sourceHint =
                     gui.m_takeAllButton
                         .GetComponent<UIGamePad>();
@@ -470,21 +472,6 @@ namespace WiresForgeOfGoodtential
             if (button == null)
                 return;
 
-            TextMeshProUGUI label =
-                visual.GetComponentInChildren<
-                    TextMeshProUGUI>(true);
-
-            if (label != null)
-            {
-                label.text =
-                    kind == 0
-                        ? "CI"
-                        : "CT";
-
-                label.alignment =
-                    TextAlignmentOptions.Center;
-            }
-
             GoodtentialCycleButton cycle =
                 visual.GetComponent<
                     GoodtentialCycleButton>();
@@ -518,16 +505,13 @@ namespace WiresForgeOfGoodtential
                                 .GetOwnedValidIdolTiers(
                                     player);
 
-                    canCycle =
-                        idolTiers.Count > 1 ||
-                        (idolTiers.Count > 0 &&
-                         !idolTiers.Contains(
-                             ForgeSelection
-                                 .SelectedIdolTier));
+                    canCycle = idolTiers.Count > 1 &&
+                        ForgeSelection.SelectedIdolTier >= 0;
                 }
                 else
                 {
                     canCycle =
+                        ForgeSelection.HasRequiredIdol(player) &&
                         ForgeSelection.SelectedIdolTier >=
                             ForgeSelection.RequiredTier &&
                         ForgeSelection
@@ -539,6 +523,59 @@ namespace WiresForgeOfGoodtential
             button.interactable =
                 !IsRefining(gui) &&
                 canCycle;
+
+            // Keep the original Valheim wooden button and its
+            // text material. The only visible label is I or T.
+            // There is no generated icon, tint or silhouette.
+            TMP_Text[] labels =
+                visual.GetComponentsInChildren<TMP_Text>(true);
+
+            TMP_Text label =
+                labels.Length > 0 ? labels[0] : null;
+
+            if (label == null)
+            {
+                Transform source =
+                    root.transform.Find("res_name");
+
+                if (source != null)
+                {
+                    TMP_Text template =
+                        source.GetComponent<TMP_Text>();
+
+                    if (template != null)
+                    {
+                        label =
+                            UnityEngine.Object.Instantiate(
+                                template, visual.transform);
+                        label.gameObject.name =
+                            "Goodtential cycle label";
+                    }
+                }
+            }
+
+            for (int i = 0; i < labels.Length; i++)
+                labels[i].gameObject.SetActive(labels[i] == label);
+
+            if (label != null)
+            {
+                label.gameObject.SetActive(true);
+                label.text = kind == 0 ? "I" : "T";
+                label.alignment = TextAlignmentOptions.Center;
+
+                RectTransform textRect =
+                    label.GetComponent<RectTransform>();
+
+                if (textRect != null)
+                {
+                    textRect.anchorMin = Vector2.zero;
+                    textRect.anchorMax = Vector2.one;
+                    textRect.offsetMin = Vector2.zero;
+                    textRect.offsetMax = Vector2.zero;
+                    textRect.anchoredPosition = Vector2.zero;
+                    textRect.localScale = Vector3.one;
+                }
+            }
         }
 
         private static void RenderIdolSlot(
@@ -559,37 +596,32 @@ namespace WiresForgeOfGoodtential
                     ForgeSelection.Family,
                     ForgeSelection.SelectedIdolTier);
 
-            int owned = 0;
-
-            if (selected != null &&
-                selected.m_itemData != null &&
-                selected.m_itemData.m_shared != null)
-            {
-                owned =
-                    player.GetInventory().CountItems(
-                        selected.m_itemData
-                            .m_shared.m_name);
-            }
+            bool hasIdol =
+                ForgeSelection.HasRequiredIdol(player);
 
             string materialName =
-                ForgeData.TierNames[
-                    ForgeSelection.SelectedIdolTier];
+                hasIdol
+                    ? ForgeData.TierNames[
+                        ForgeSelection.SelectedIdolTier]
+                    : ForgeUiLabels.GetIdol();
 
             string idolType =
-                ForgeSelection.Family ==
-                    IdolFamily.Battle
-                    ? "Battle"
-                    : "Protection";
+                !hasIdol
+                    ? ""
+                    : ForgeSelection.Family ==
+                        IdolFamily.Battle
+                        ? "Battle"
+                        : "Protection";
 
             SetRequirement(
                 root,
-                selected != null
+                hasIdol && selected != null
                     ? selected.m_itemData.GetIcon()
                     : null,
                 materialName,
                 idolType,
-                owned > 0,
-                true);
+                true,
+                hasIdol);
         }
 
         private static void RenderTrophySlot(
@@ -686,9 +718,6 @@ namespace WiresForgeOfGoodtential
                     ? amountTransform.GetComponent<TMP_Text>()
                     : null;
 
-            UITooltip tip =
-                root.GetComponent<UITooltip>();
-
             if (icon != null)
             {
                 icon.gameObject.SetActive(showIcon);
@@ -703,7 +732,9 @@ namespace WiresForgeOfGoodtential
             {
                 nameText.gameObject.SetActive(true);
                 nameText.text = name;
-                nameText.color = Color.white;
+                nameText.color = available
+                    ? Color.white
+                    : Color.red;
             }
 
             if (amountText != null)
@@ -726,12 +757,6 @@ namespace WiresForgeOfGoodtential
                 }
             }
 
-            if (tip != null)
-            {
-                tip.m_topic = "";
-                tip.m_text = "";
-                tip.enabled = false;
-            }
         }
 
         private static void RenderRisk(
@@ -749,6 +774,15 @@ namespace WiresForgeOfGoodtential
                 Mathf.Max(
                     0,
                     item.m_quality - naturalMax);
+
+            if (!ForgeSelection.HasRequiredIdol(
+                Player.m_localPlayer))
+            {
+                gui.m_itemCraftType.gameObject.SetActive(true);
+                gui.m_itemCraftType.text =
+                    ForgeUiLabels.GetNoIdol();
+                return;
+            }
 
             ForgeOdds odds =
                 ForgeRules.GetOdds(
@@ -800,6 +834,11 @@ namespace WiresForgeOfGoodtential
                         odds.CompleteLoss) +
                     " reset";
             }
+
+            if (odds.Destruction > 0.0001f)
+                oddsText += "   " +
+                    FormatChance(odds.Destruction) +
+                    " destruction";
 
             gui.m_itemCraftType.text =
                 oddsText;
@@ -854,6 +893,7 @@ namespace WiresForgeOfGoodtential
             gui.m_craftButton.interactable =
                 itemStillPresent &&
                 stationUsable &&
+                idolOk &&
                 (noCost || requirementsOk);
 
             UITooltip tip =
@@ -878,9 +918,7 @@ namespace WiresForgeOfGoodtential
                           " Idol";
 
                 tip.m_text =
-                    "Requires " +
-                    minimumName +
-                    " or a stronger idol.";
+                    "No idol of this type is available.";
             }
             else if (!noCost && !trophyOk)
             {
