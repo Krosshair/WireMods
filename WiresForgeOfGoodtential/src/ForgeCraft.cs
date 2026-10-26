@@ -158,10 +158,10 @@ namespace WiresForgeOfGoodtential
             if (selection.IdolTier < selection.RequiredTier)
                 selectedTrophy = null;
 
-            // Reject even stale locked selections or other mods
-            // attempting to inject a boss offering.
+            // Boss trophies can't be offered: drop a stale or injected
+            // one and carry on with the refinement without it.
             if (ForgeTrophyEligibility.IsBossTrophy(selectedTrophy))
-                return;
+                selectedTrophy = null;
 
             Piece.Requirement[] originalResources =
                 ___m_craftRecipe.m_resources;

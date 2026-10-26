@@ -15,22 +15,14 @@ namespace WiresForgeOfGoodtential
                 "TrophyEikthyr",
                 "TrophyTheElder",
                 "TrophyBonemass",
-                "TrophyDragonQueen",
-                "TrophyGoblinKing",
-                "TrophySeekerQueen",
+                "TrophyDragonQueen",        // Moder
+                "TrophyGoblinKing",         // Yagluth
+                "TrophySeekerQueen",        // The Queen
                 "TrophyFader",
-                "TrophyYagluth",
-                "TrophyModer",
-                "TrophyQueen",
-                "TrophyBarka",
-                "TrophyEyeless",
-                "TrophyFimbulbringer",
-                "TrophyFrozenKing",
                 "TrophySkeletonHildir",
                 "TrophyCultist_Hildir",
                 "TrophyGoblinBruteBrosBrute",
-                "TrophyGoblinBruteBrosShaman",
-                "TrophyElaking"
+                "TrophyGoblinBruteBrosShaman"
             };
 
         internal static bool IsBossTrophyPrefab(string prefabName)
@@ -82,14 +74,12 @@ namespace WiresForgeOfGoodtential
             // Only check recognizable boss-specific full identifiers;
             // don't accidentally exclude Seeker, Drake or ordinary
             // Goblin trophies.
+            // The game's own name tokens for those trophies.
             string[] bossIdentifiers =
             {
                 "eikthyr", "theelder", "gdking", "bonemass",
-                "dragonqueen", "moder", "goblinking", "yagluth",
-                "seekerqueen", "thequeen", "fader", "frozenking",
-                "fimbulbringer", "skeletonhildir", "cultisthildir",
-                "goblinbrutebros", "elaking", "trophybarka",
-                "trophyeyeless", "fimbulbringer"
+                "dragonqueen", "goblinking", "seekerqueen", "fader",
+                "skeletonhildir", "cultisthildir", "goblinbrutebros"
             };
 
             foreach (string identifier in bossIdentifiers)

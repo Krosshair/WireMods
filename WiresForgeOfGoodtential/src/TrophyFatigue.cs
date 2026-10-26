@@ -54,16 +54,6 @@ namespace WiresForgeOfGoodtential
                 (1f - multiplier) * fatigue;
         }
 
-        internal static float GetRemainingDays(
-            Player player, ItemDrop.ItemData trophy)
-        {
-            Record record = Read(player, trophy);
-            double daySeconds = GetDaySeconds();
-
-            return (float)(RemainingNow(record) /
-                Math.Max(1.0, daySeconds));
-        }
-
         internal static void RecordUse(
             Player player, ItemDrop.ItemData trophy)
         {
@@ -94,25 +84,53 @@ namespace WiresForgeOfGoodtential
                 Duration = duration
             };
 
-            player.m_customData[GetKey(trophy)] =
+            string key = GetKey(trophy);
+            Cache.Remove(key);
+            player.m_customData[key] =
                 next.Streak.ToString(CultureInfo.InvariantCulture) + "|" +
                 next.At.ToString("R", CultureInfo.InvariantCulture) + "|" +
                 next.Remaining.ToString("R", CultureInfo.InvariantCulture) + "|" +
                 next.Duration.ToString("R", CultureInfo.InvariantCulture);
         }
 
+        // Parsed records, so the odds display doesn't re-read and
+        // re-parse the save data every time it asks. Cleared when a
+        // trophy is used or the player/world changes.
+        private static readonly System.Collections.Generic.Dictionary<string, Record> Cache =
+            new System.Collections.Generic.Dictionary<string, Record>();
+        private static Player _cachePlayer;
+        private static readonly Record Empty = new Record();
+
         private static Record Read(
             Player player, ItemDrop.ItemData trophy)
         {
-            Record empty = new Record();
-
             if (player == null || trophy == null ||
                 player.m_customData == null)
-                return empty;
+                return Empty;
+
+            if (!ReferenceEquals(player, _cachePlayer))
+            {
+                Cache.Clear();
+                _cachePlayer = player;
+            }
+
+            string key = GetKey(trophy);
+            Record cached;
+            if (Cache.TryGetValue(key, out cached))
+                return cached;
+
+            cached = Parse(player, key);
+            Cache[key] = cached;
+            return cached;
+        }
+
+        private static Record Parse(Player player, string key)
+        {
+            Record empty = Empty;
 
             string stored;
             if (!player.m_customData.TryGetValue(
-                GetKey(trophy), out stored))
+                key, out stored))
                 return empty;
 
             string[] parts = stored.Split('|');
@@ -169,7 +187,30 @@ namespace WiresForgeOfGoodtential
             return 1200.0;
         }
 
+        private static readonly System.Collections.Generic.Dictionary<string, string> Keys =
+            new System.Collections.Generic.Dictionary<string, string>();
+        private static long _keysWorld;
+
         private static string GetKey(ItemDrop.ItemData trophy)
+        {
+            long worldNow = ZNet.instance != null ? ZNet.instance.GetWorldUID() : 0L;
+            if (worldNow != _keysWorld)
+            {
+                Keys.Clear();
+                Cache.Clear();
+                _keysWorld = worldNow;
+            }
+            string name = trophy.m_dropPrefab != null ? trophy.m_dropPrefab.name
+                : trophy.m_shared != null ? trophy.m_shared.m_name : "unknown";
+            string built;
+            if (Keys.TryGetValue(name, out built))
+                return built;
+            built = BuildKey(trophy);
+            Keys[name] = built;
+            return built;
+        }
+
+        private static string BuildKey(ItemDrop.ItemData trophy)
         {
             long world =
                 ZNet.instance != null

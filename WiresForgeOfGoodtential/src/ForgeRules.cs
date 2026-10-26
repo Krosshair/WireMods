@@ -36,28 +36,6 @@ namespace WiresForgeOfGoodtential
             return 0.50f * (1f + 0.35f * favor);
         }
 
-        internal static bool IsTrophyDestructionProtection(
-            ItemDrop.ItemData trophy,
-            float itemReferencePrestige)
-        {
-            if (trophy == null ||
-                ForgeTrophyEligibility.IsBossTrophy(trophy))
-                return false;
-
-            // Common, weak trophies cannot rescue an ultra-risky
-            // gamble from genuine vanilla item destruction.
-            // Useful trophies do, even when suffering fatigue.
-            float prestige = ForgeData.GetTrophyPrestige(trophy);
-
-            // Fatigue diminishes the favor percentage, but cannot
-            // suddenly remove an already qualifying trophy's ability
-            // to turn destruction into a reset.
-            return prestige >= 13f &&
-                Mathf.Exp(-0.17f *
-                    (prestige - itemReferencePrestige + 14f))
-                    <= 0.75f;
-        }
-
         internal static bool LossRiskActive(int potential)
         {
             return potential >= 2;

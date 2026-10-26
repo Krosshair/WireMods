@@ -14,3 +14,8 @@ backup_*/
 
 # Licensed third-party asset (Envato heartbeat sound): may not be redistributed as a raw file
 WiresHealthAwareness/src/heartbeat.wav
+
+# Backups and scratch tests made while patching (never published)
+*/_assets/before_*/
+*/_assets/*_tests/
+*Decompile*

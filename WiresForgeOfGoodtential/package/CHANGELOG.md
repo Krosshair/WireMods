@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+- The faster Forge refining no longer does any work while the crafting panel is open; trophy favor is looked up without re-reading save data each time.
+- A boss trophy that somehow ended up selected is dropped from the offering instead of turning the attempt into a plain vanilla upgrade.
+- Cleaned up unused code and the boss trophy list.
+
 ## 0.5.0
 - Replaced the idol and trophy cycle controls with I and T on the original wooden buttons; they disable when there is nothing to cycle through.
 - Selection defaults to the strongest owned idol of the item's matching Battle/Protection family, and items remain listed even when only under-tier idols are available. Items sort by success and severity of possible outcomes.
