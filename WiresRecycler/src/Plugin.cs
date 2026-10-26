@@ -17,7 +17,7 @@ namespace WiresRecycler
     {
         public const string Guid = "wire.valheim.recycler";
         public const string Name = "Wire's Recycler";
-        public const string Version = "1.0.2";
+        public const string Version = "1.0.3";
 
         private Harmony _harmony;
 
@@ -1974,6 +1974,28 @@ namespace WiresRecycler
 
     [HarmonyPatch(typeof(InventoryGui), nameof(InventoryGui.Hide))]
     internal static class InventoryGuiHidePatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix()
+        {
+            RecyclerUi.LeaveRecycleTab();
+        }
+    }
+
+    // Switching to Craft or Upgrade has to leave the recycle tab before the
+    // game rebuilds the list, or the recycle list stays up under the new tab.
+    [HarmonyPatch(typeof(InventoryGui), nameof(InventoryGui.OnTabCraftPressed))]
+    internal static class InventoryGuiCraftTabPatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix()
+        {
+            RecyclerUi.LeaveRecycleTab();
+        }
+    }
+
+    [HarmonyPatch(typeof(InventoryGui), nameof(InventoryGui.OnTabUpgradePressed))]
+    internal static class InventoryGuiUpgradeTabPatch
     {
         [HarmonyPrefix]
         private static void Prefix()
