@@ -5,9 +5,11 @@ using UnityEngine;
 namespace WiresForgeOfGoodtential
 {
     // The Forge has already validated the selected idol and optional trophy
-    // before reaching Player.ConsumeResources. On a failed refinement,
-    // give the selected idol a 50% chance to survive consumption.
-    // We pass a separate array to vanilla, never change the recipe itself.
+    // before reaching Player.ConsumeResources. Every refinement outcome
+    // (success, jackpot, ignore, loss, reset) can spare its selected idol.
+    // A selected trophy improves the base 50% preservation chance using
+    // its actual prestige relative to the refined item's progression.
+    // Pass a separate array to vanilla; never change the recipe itself.
     [HarmonyPatch(typeof(Player), nameof(Player.ConsumeResources))]
     internal static class ForgeIdolSparingPatch
     {
@@ -28,17 +30,6 @@ namespace WiresForgeOfGoodtential
                 return;
             }
 
-            switch (ForgeContext.Outcome)
-            {
-                case ForgeOutcome.Ignore:
-                case ForgeOutcome.Loss:
-                case ForgeOutcome.CompleteLoss:
-                case ForgeOutcome.Destroyed:
-                    break;
-                default:
-                    return;
-            }
-
             // Only the chosen idol is exempt. A trophy, if offered,
             // and all other requirements remain in the array.
             int idolIndex = -1;
@@ -57,7 +48,9 @@ namespace WiresForgeOfGoodtential
                 }
             }
 
-            if (idolIndex < 0 || UnityEngine.Random.value >= 0.5f)
+            if (idolIndex < 0 ||
+                UnityEngine.Random.value >=
+                    ForgeContext.IdolKeepChance)
                 return;
 
             Piece.Requirement[] remaining =

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0
+- Every outcome can now spare the selected idol: successful upgrades and jackpots included, alongside ignore, quality loss and reset. Without a trophy, the idol survives with a 50% chance.
+- Offering a trophy increases idol preservation based on its prestige relative to the item. `favor = clamp((1 - M) / 0.995, 0, 1)`; `idol survival = 50% × (1 + 0.35 × favor)`, where `M` is the existing trophy bad-outcome multiplier.
+- Equal-prestige trophies increase idol preservation to approximately 66%; sufficiently strong trophies reach a maximum of 67.5% (35% relative boost).
+- A trophy is still always consumed and may only be offered with safe idols. No trophy means 50% preservation, regardless of refinement outcome.
+- No changes to refinement success/reset odds, under-tier idol restrictions, jackpot probabilities, trophy loot rates or Haldor's stock.
+- Updated README to explain universal idol preservation and trophy scaling.
+
+## 0.3.0
+- Trophy offerings are substantially more powerful. Ordinary failure multiplier is now `clamp(exp(-0.17 × (prestige_delta + 14)), 0.005, 0.995)`; reset uses the multiplier to the power of 1.8. Equal-prestige trophies cut ordinary failure by approximately 90.7% and reset chance by 98.6%.
+- Removed item destruction entirely, including under-tier idol attempts. No failed refinement deletes equipment, destroys its original crafting materials, or triggers vanilla item destruction/material-return logic.
+- Under-tier attempts now mostly lose gained quality instead of destroying the item; below +2 refinement failures ignore it, +2 and higher lose quality, and +4 and higher may cascade through multiple gained levels. Lower-tier idols increase cascade risk while retaining their increased jackpot chance.
+- Full reset risk begins later, at +8 refinement (previously +5), and resets only to the item's natural maximum quality. Under-tier resets remain relatively rare: `min(7%, 10% × failure + 0.5% × (extra_quality - 8))`.
+- Safe-idol base reset chance is at most 6% and uses 10% of the base failure pool, reduced further by idol/trophy protection.
+- No empty-inventory-slot reserve is required for under-tier refinements now that material-return/destruction outcomes are gone. Ordinary crafting inventory-space rules are unchanged.
+- The Forge chance display now shows success, ignore, quality loss and reset only. README updated to reflect exact new probabilities.
+- Existing selected idol/trophy costs and the 50% chance to spare the idol on failed refinement remain unchanged.
+
 ## 0.2.0
 - Failed refinements (ignore, quality loss, reset or destruction) have a 50% chance not to consume the idol. Trophy offerings are still always consumed.
 

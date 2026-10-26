@@ -2,7 +2,9 @@
 
 Forge of Goodtential changes how the Forge of Potential calculates refinement risk.
 
-The selected idol controls the power and risk of the attempt. An optional trophy can make a safe attempt more reliable. Lower-tier idols can also be used as a high-risk, high-reward option.
+The selected idol controls the power and risk of the attempt. An optional trophy can make a safe attempt much more reliable. Lower-tier idols trade stability for a higher jackpot chance.
+
+**Refinement never destroys your equipment or its crafting materials.** The worst outcome is a reset to the item's normal maximum quality. Idols have a chance to survive every attempt; offered trophies are always consumed.
 
 ## Quality and base success chance
 
@@ -73,13 +75,21 @@ The probability removed from those outcomes is added to **success**.
 
 ### Failure types
 
-Before the item has gained 2 extra quality levels, a failed roll is an **ignore** result: the idol is consumed and the item is unchanged.
+Before the item has gained 2 extra quality levels, a failed roll is an **ignore** result: the item remains unchanged. Idol preservation is rolled independently on every attempt, including successes.
 
 At 2 or more extra quality levels, ordinary failure can lower the item's quality.
 
 At 4 or more extra quality levels, a failure can remove multiple gained quality levels.
 
-At 5 or more extra quality levels, a **reset** outcome becomes possible. Reset returns the item to its normal maximum quality instead of destroying it.
+At 8 or more extra quality levels, a **reset** replaces the old item-destruction outcome. The item survives at its natural maximum quality; none of its original crafting materials are lost or returned.
+
+Without extra idol/trophy protection, reset chance on a safe attempt is:
+
+```
+Reset chance = min(6%, 10% × base failure chance)
+```
+
+At 8 or more extra levels, the base failure chance is 35%, so reset chance is **3.5%** before protection. All other failures lower quality; quality never falls below the natural maximum.
 
 ## Trophy offerings
 
@@ -112,7 +122,7 @@ Let:
 
 ```
 delta = trophy prestige - item prestige
-M = clamp(e ^ (-0.11 × (delta + 9)), 0.03, 0.98)
+M = clamp(e ^ (-0.17 × (delta + 14)), 0.005, 0.995)
 ```
 
 Then:
@@ -122,15 +132,32 @@ Ordinary failure ×= M
 Reset chance     ×= M ^ 1.8
 ```
 
-A stronger trophy therefore has a much larger effect on a weaker item, while an outdated trophy has very little effect on a highly refined item.
+A trophy from an equally prestigious enemy now multiplies ordinary failure chance by about **0.093** (a **90.7% reduction**) and reset chance by about **0.014** (a **98.6% reduction**). Stronger trophies protect even more, while outdated trophies have little effect.
+
+The risk removed by trophy protection is added to success.
 
 Trophies cannot be used with an under-tier idol.
+
+## Idol preservation
+
+An idol has a **50% chance to survive any refinement**, whether the result is success, jackpot, ignore, quality loss, or reset.
+
+Offering a trophy improves the chance of keeping the idol. The bonus uses the same trophy strength multiplier **M** shown above:
+
+```
+Trophy favor = clamp((1 - M) / 0.995, 0, 1)
+Idol survival = 50% × (1 + 0.35 × trophy favor)
+```
+
+An equally prestigious trophy increases idol survival to about **66%**. The strongest trophies raise it to **67.5%** at most (a 35% *relative* increase over 50%, not +35 percentage points). Outdated trophies provide almost no bonus.
+
+The idol-preservation roll is separate from the refinement result. **The offered trophy is always consumed**, even if the idol is spared. Under-tier attempts cannot use trophies, so they retain the base 50% chance.
 
 ## Under-tier idols
 
 An idol below the minimum safe tier can still be used.
 
-This changes the attempt into a destruction gamble.
+This increases the risk of losing several extra quality levels, while making a jackpot more likely. No idol tier can ever destroy the item.
 
 Let:
 
@@ -145,37 +172,40 @@ Success chance   -= 2.5 percentage points
 Jackpot trigger  += 10 percentage points
 ```
 
-All non-success probability becomes **destruction**.
+All non-success probability becomes **ignore** (before +2 extra quality), **quality loss** (from +2 onward), or a rare **reset** (from +8 onward).
 
-Example:
-
-If the minimum safe idol would give:
+Example with **R = 3** (3 extra quality levels):
 
 ```
-85% success
-10% ignore
-5% reset
+Minimum safe idol:
+75% success
+25% quality loss
+
+One idol tier below:
+72.5% success
+27.5% quality loss
+30% jackpot trigger on a successful roll
+
+Two idol tiers below:
+70% success
+30% quality loss
+40% jackpot trigger on a successful roll
 ```
 
-then one tier below becomes:
+From R = 4 onward, individual failures can cascade across multiple gained quality levels. Lower-tier idols increase that cascade chance:
 
 ```
-82.5% success
-17.5% destruction
-30% jackpot trigger on a successful attempt
+Loss cascade continuation chance = base failure chance × (1 + 0.35 × D)
 ```
 
-Two tiers below becomes:
+From R = 8 onward, a low-tier idol also has a rare reset outcome, replacing a small part of ordinary failure:
 
 ```
-80% success
-20% destruction
-40% jackpot trigger on a successful attempt
+Reset = min(7%, 10% × (1 - success) + 0.5% × (R - 8))
+Other failure = (1 - success) - reset
 ```
 
-A destruction result destroys the item and returns its recoverable crafting materials.
-
-Because destruction can return materials, under-tier attempts require enough free inventory space for those returned items.
+A reset returns the **same item** to its natural maximum quality. Its normal crafting materials are not lost or returned. Under-tier attempts no longer require free inventory slots for hypothetical returned materials.
 
 Selecting an under-tier idol clears the selected trophy and disables trophy cycling.
 
@@ -235,13 +265,12 @@ success
 ignore
 fail
 reset
-destruction
 ```
 
 Example:
 
 ```
-82.5% success   17.5% destruction
+72.5% success   27.5% fail
 ```
 
 The jackpot chance is not displayed.

@@ -11,6 +11,30 @@ namespace WiresForgeOfGoodtential
                 0.90f - 0.05f * Mathf.Max(0, potential));
         }
 
+        // Trophy bonuses to preserving an idol use the exact same
+        // prestige comparison as trophy protection against failed rolls.
+        // This is a relative 0..35% increase over the base 50% chance,
+        // not +35 percentage points. With a very strong trophy the
+        // actual preservation chance tops out at 67.5%.
+        internal static float GetIdolKeepChance(
+            ItemDrop.ItemData trophy,
+            float itemReferencePrestige)
+        {
+            if (trophy == null)
+                return 0.50f;
+
+            float badOutcomeMultiplier =
+                ForgeData.GetTrophyBadOutcomeMultiplier(
+                    trophy,
+                    itemReferencePrestige);
+
+            float favor =
+                Mathf.Clamp01(
+                    (1f - badOutcomeMultiplier) / 0.995f);
+
+            return 0.50f * (1f + 0.35f * favor);
+        }
+
         internal static bool LossRiskActive(int potential)
         {
             return potential >= 2;
@@ -23,7 +47,8 @@ namespace WiresForgeOfGoodtential
 
         internal static bool CompleteLossRiskActive(int potential)
         {
-            return potential >= 5;
+            // Complete reset is a late-stage risk, never item destruction.
+            return potential >= 8;
         }
 
         internal static ForgeOdds GetOdds(
@@ -47,6 +72,8 @@ namespace WiresForgeOfGoodtential
 
             if (underTier > 0)
             {
+                // An under-tier idol still risks more lost refinement,
+                // but can NEVER delete the item or scrap its materials.
                 ForgeOdds risky = new ForgeOdds();
 
                 risky.Success =
@@ -54,14 +81,35 @@ namespace WiresForgeOfGoodtential
                         baseSuccess -
                         0.025f * underTier);
 
-                risky.Destruction =
-                    Mathf.Clamp01(
-                        1f - risky.Success);
+                float failure =
+                    1f - risky.Success;
 
-                risky.OrdinaryFailure = 0f;
-                risky.CompleteLoss = 0f;
-                risky.FailureIsIgnore = false;
-                risky.CascadeChance = 0f;
+                // Most failed rolls reduce gained quality. A complete
+                // reset only becomes possible at +8 beyond the natural
+                // cap, then remains a small fraction of failures.
+                risky.CompleteLoss =
+                    CompleteLossRiskActive(potential)
+                        ? Mathf.Min(
+                            0.07f,
+                            failure * 0.10f +
+                            (potential - 8) * 0.005f)
+                        : 0f;
+
+                risky.OrdinaryFailure =
+                    failure - risky.CompleteLoss;
+
+                // At Qmax or Qmax+1 there isn't enough extra quality
+                // for the ordinary loss rule to become meaningful.
+                risky.FailureIsIgnore =
+                    !LossRiskActive(potential);
+
+                // Under-tier failures are more likely to cascade into
+                // multi-level quality losses than safe idol failures.
+                risky.CascadeChance =
+                    Mathf.Clamp01(
+                        baseBad *
+                        (1f + 0.35f * underTier));
+
                 risky.JackpotChance =
                     Mathf.Clamp01(
                         0.20f +
@@ -72,7 +120,9 @@ namespace WiresForgeOfGoodtential
 
             float baseComplete =
                 CompleteLossRiskActive(potential)
-                    ? Mathf.Min(0.10f, baseBad)
+                    ? Mathf.Min(
+                        0.06f,
+                        baseBad * 0.10f)
                     : 0f;
 
             float baseOrdinary =
@@ -127,7 +177,6 @@ namespace WiresForgeOfGoodtential
             ForgeOdds odds = new ForgeOdds();
             odds.OrdinaryFailure = ordinary;
             odds.CompleteLoss = complete;
-            odds.Destruction = 0f;
             odds.JackpotChance = 0.20f;
             odds.Success =
                 Mathf.Clamp01(
@@ -159,11 +208,6 @@ namespace WiresForgeOfGoodtential
                 return ForgeOutcome.Success;
 
             roll -= odds.Success;
-
-            if (roll < odds.Destruction)
-                return ForgeOutcome.Destroyed;
-
-            roll -= odds.Destruction;
 
             if (roll < odds.OrdinaryFailure)
             {

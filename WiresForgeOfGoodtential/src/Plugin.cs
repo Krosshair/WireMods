@@ -9,7 +9,7 @@ namespace WiresForgeOfGoodtential
     {
         public const string Guid = "wire.valheim.forgeofgoodtential";
         public const string Name = "Wire's Forge of Goodtential";
-        public const string Version = "0.2.0";
+        public const string Version = "0.4.0";
 
         private Harmony _harmony;
 

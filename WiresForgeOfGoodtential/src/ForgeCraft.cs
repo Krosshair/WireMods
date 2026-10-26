@@ -24,6 +24,7 @@ namespace WiresForgeOfGoodtential
         internal static int Delta;
         internal static ForgeOutcome Outcome;
         internal static ForgeOdds Odds;
+        internal static float IdolKeepChance;
         internal static float OldUpgradeChance;
         internal static float OldBreakChance;
         internal static CraftingStation Station;
@@ -80,6 +81,7 @@ namespace WiresForgeOfGoodtential
             Delta = 0;
             Outcome = ForgeOutcome.None;
             Odds = null;
+            IdolKeepChance = 0f;
             Station = null;
             OldFailEffects = null;
             AttemptExecuted = false;
@@ -263,6 +265,10 @@ namespace WiresForgeOfGoodtential
                 outcome;
             ForgeContext.Odds =
                 odds;
+            ForgeContext.IdolKeepChance =
+                ForgeRules.GetIdolKeepChance(
+                    selectedTrophy,
+                    selection.ItemReferencePrestige);
             ForgeContext.OldUpgradeChance =
                 selectedIdol.m_itemData
                     .m_shared.m_upgradeChance;
@@ -290,17 +296,6 @@ namespace WiresForgeOfGoodtential
 
                 selectedIdol.m_itemData
                     .m_shared.m_breakChance = -1f;
-            }
-            else if (outcome == ForgeOutcome.Destroyed)
-            {
-                // Risky under-tier idols deliberately use Valheim's real
-                // destructive upgrader branch, including vanilla material
-                // returns.
-                selectedIdol.m_itemData
-                    .m_shared.m_upgradeChance = -1f;
-
-                selectedIdol.m_itemData
-                    .m_shared.m_breakChance = 2f;
             }
             else
             {
@@ -610,9 +605,6 @@ namespace WiresForgeOfGoodtential
                     break;
 
                 case ForgeOutcome.Loss:
-                    int lost =
-                        -ForgeContext.Delta;
-
                     player.Message(
                         MessageHud.MessageType.Center,
                         "Refinement failed. " +
@@ -730,10 +722,7 @@ namespace WiresForgeOfGoodtential
                 return false;
 
             if (msg == broke)
-            {
-                return ForgeContext.Outcome ==
-                    ForgeOutcome.Destroyed;
-            }
+                return false;
 
             return true;
         }

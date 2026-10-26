@@ -47,18 +47,15 @@ namespace WiresForgeOfGoodtential
                     : null;
 
             if (station != null &&
-                station.m_upgrader)
+                station.m_upgrader &&
+                ForgeSelection.CurrentRecipe != null &&
+                ForgeSelection.CurrentItem != null)
             {
-                bool riskyUnderTier =
-                    ForgeSelection.SelectedIdolTier <
-                    ForgeSelection.RequiredTier;
-
-                // Safe Goodtential refinements cannot destroy the item, so
-                // vanilla's ingredient-return reserve is unnecessary.
-                // Under-tier idols can genuinely destroy it, so those retain
-                // the original vanilla empty-slot safeguard.
-                if (!riskyUnderTier)
-                    return int.MaxValue;
+                // Every Goodtential attempt preserves the actual item.
+                // Even an under-tier idol may only lower its quality,
+                // never invoke vanilla destruction/material returns.
+                // The old four-slot reserve is therefore unnecessary.
+                return int.MaxValue;
             }
 
             return inventory != null

@@ -17,8 +17,7 @@ namespace WiresForgeOfGoodtential
         Jackpot,
         Ignore,
         Loss,
-        CompleteLoss,
-        Destroyed
+        CompleteLoss
     }
 
     internal enum GearArchetype
@@ -50,14 +49,13 @@ namespace WiresForgeOfGoodtential
         internal float Success;
         internal float OrdinaryFailure;
         internal float CompleteLoss;
-        internal float Destruction;
         internal float JackpotChance = 0.20f;
         internal bool FailureIsIgnore;
         internal float CascadeChance;
 
         internal float TotalBad
         {
-            get { return OrdinaryFailure + CompleteLoss + Destruction; }
+            get { return OrdinaryFailure + CompleteLoss; }
         }
     }
 
@@ -708,13 +706,18 @@ namespace WiresForgeOfGoodtential
             // Bringing down a dangerous foe from the item's own biome is
             // already a worthy deed; later-biome trophies scale much harder,
             // while obsolete trophies fade toward negligible value.
+            // Trophy offerings matter substantially more:
+            // an equal-prestige foe now removes ~91% of ordinary
+            // failure risk (previously ~63%), while trophies from
+            // much later biomes approach near-total protection.
+            // Weak/outdated trophies are still largely ineffective.
             float multiplier =
-                Mathf.Exp(-0.11f * (delta + 9f));
+                Mathf.Exp(-0.17f * (delta + 14f));
 
             return Mathf.Clamp(
                 multiplier,
-                0.03f,
-                0.98f);
+                0.005f,
+                0.995f);
         }
 
         internal static string GetFavorDescription(

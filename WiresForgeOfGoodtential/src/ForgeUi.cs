@@ -801,15 +801,6 @@ namespace WiresForgeOfGoodtential
                     " reset";
             }
 
-            if (odds.Destruction > 0.0001f)
-            {
-                oddsText +=
-                    "   " +
-                    FormatChance(
-                        odds.Destruction) +
-                    " destruction";
-            }
-
             gui.m_itemCraftType.text =
                 oddsText;
         }
