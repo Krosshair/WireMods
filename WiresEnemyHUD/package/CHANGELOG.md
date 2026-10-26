@@ -1,3 +1,7 @@
+## 0.8.10
+
+The yellow damage trail now shows on nameplates revealed by a hit or a parry, including the first hit on an enemy, and revealed nameplates show at full opacity.
+
 ## 0.8.9
 
 Limited mode set to Limited no longer goes back to Highlight when you restart the game.

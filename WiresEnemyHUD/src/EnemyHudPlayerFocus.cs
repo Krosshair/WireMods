@@ -102,9 +102,21 @@ namespace EnemyHudRework
                 return;
             }
 
-            // Creatures also show fully while a hit or parry reveals them.
-            bool focused = player ? AimedAtRecently(state)
-                : LookedAtRecently(state.Character, _dynamicHpDelay.Value);
+            // Full opacity whenever ANY real reveal condition is
+            // keeping the enemy nameplate shown. Checking only the
+            // dynamic-HP look timer left our damage/parry/far-hover
+            // nameplates dimmed and clipped their yellow HP trails.
+            // Do NOT use Gui.activeSelf: vanilla can keep the GUI
+            // active for unrelated reasons after a reveal has ended.
+            bool focused = player
+                ? AimedAtRecently(state)
+                : LookedAtRecently(
+                      state.Character, _dynamicHpDelay.Value) ||
+                  ForceShowOnDamage(state.Character) ||
+                  HasNativeHoverVisibility(state) ||
+                  (_farHover != null && _farHover.Value &&
+                   LookedAtRecently(
+                       state.Character, _lookAwayDelay.Value));
             float target = focused
                 ? state.PlayerOriginalAlpha
                 : state.PlayerOriginalAlpha * 0.1f;

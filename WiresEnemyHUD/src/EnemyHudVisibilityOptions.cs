@@ -50,6 +50,13 @@ namespace EnemyHudRework
             public float ShowUntil;
             public float ParryUntil;
             public float PendingLocalHitUntil = -999f;
+
+            // Health before the last confirmed local hit, to seed the
+            // native yellow slow trail when the nameplate was hidden
+            // or had not even been instantiated yet.
+            public float TrailBeforeShare;
+            public bool TrailSeedPending;
+            public float TrailSeedUntil;
         }
 
         private sealed class HealthOutline
@@ -172,6 +179,8 @@ namespace EnemyHudRework
                 float hp = Mathf.Max(0f, c.GetHealth());
                 if (hp > 0f && sample.LastHp - hp > .01f)
                 {
+                    RememberTrailBeforeHit(
+                        sample, c, sample.LastHp, hp, now);
                     sample.PendingLocalHitUntil = -999f;
                     sample.ShowUntil = now + DamageShowSeconds;
                     sample.LastHp = hp;
@@ -241,6 +250,7 @@ namespace EnemyHudRework
                 sample.LastHp = attacker.GetHealth();
                 _healthSamples[attacker] = sample;
             }
+            RevealOnParry(attacker);
             sample.SeenAt = Time.unscaledTime;
             sample.ParryUntil = Time.unscaledTime + DamageShowSeconds;
             NoteReveal(attacker);
@@ -266,6 +276,9 @@ namespace EnemyHudRework
                 _healthSamples[c] = sample;
             }
             _pendingHits.Remove(c);
+            RememberTrailBeforeHit(
+                sample, c, previousHp, currentHp,
+                Time.unscaledTime);
             sample.LastHp = Mathf.Max(0f, currentHp);
             sample.SeenAt = Time.unscaledTime;
             sample.PendingLocalHitUntil = -999f;
@@ -602,6 +615,9 @@ namespace EnemyHudRework
                     if (!_states.TryGetValue(enemy, out state) ||
                         state == null || state.Gui == null)
                         continue;
+                    // Created by the hit: keep it shown and give it the
+                    // yellow trail from before the hit, once.
+                    RevealOnHit(enemy, pair.Value);
                 }
 
                 if (state.Kind != HudKind.Enemy)
