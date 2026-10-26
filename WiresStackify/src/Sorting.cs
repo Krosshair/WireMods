@@ -72,7 +72,7 @@ namespace WiresStackify
                     if (nv == null || !nv.IsValid()) continue;
                     if (StackifyPlugin.HasMuc || nv.IsOwner())
                     {
-                        List<ItemDrop.ItemData> m = Sort(c.GetInventory(), null, c.GetInventory().GetHeight(), mode);
+                        List<ItemDrop.ItemData> m = Sort(c.GetInventory(), null, c.GetInventory().GetHeight(), mode, Favorites.For(player));
                         moved += m.Count;
                         if (m.Count > 0 && c == open) StackifyEffects.Runner.Get().StartCoroutine(Ripple(ContainerGrid(gui), m));
                     }
@@ -102,7 +102,8 @@ namespace WiresStackify
             if (nv == null || !nv.IsValid()) return false;
             if (StackifyPlugin.HasMuc || nv.IsOwner())
             {
-                List<ItemDrop.ItemData> moved = Sort(chest.GetInventory(), null, chest.GetInventory().GetHeight(), mode);
+                List<ItemDrop.ItemData> moved = Sort(chest.GetInventory(), null, chest.GetInventory().GetHeight(), mode,
+                    Player.m_localPlayer != null ? Favorites.For(Player.m_localPlayer) : null);
                 Feedback(ContainerGrid(gui), moved);
                 return moved.Count > 0;
             }
@@ -128,10 +129,15 @@ namespace WiresStackify
             }
         }
 
-        // favorites: the player's, for your own inventory; null for chests
-        // (everything in a chest is sorted). Returns the items that ended up
-        // somewhere else, in sorted order (stacks merged into others count).
-        private static List<ItemDrop.ItemData> Sort(Inventory inv, Favorites favorites, int rows, Mode mode)
+        // favorites: the player's, for your own inventory; null for
+        // containers. inContainer: the player's favorites again, for a
+        // container: favorited items stay where they are there too
+        // (favorited slots are only in your inventory). A container sorted
+        // by its owner on request uses no favorites. Returns the items that
+        // ended up somewhere else, in sorted order (stacks merged into
+        // others count).
+        private static List<ItemDrop.ItemData> Sort(Inventory inv, Favorites favorites, int rows, Mode mode,
+            Favorites inContainer = null)
         {
             bool hotbar = favorites == null || StackifyPlugin.SortHotbar.Value;
             List<ItemDrop.ItemData> items = new List<ItemDrop.ItemData>();
@@ -139,7 +145,8 @@ namespace WiresStackify
             foreach (ItemDrop.ItemData it in inv.GetAllItems())
             {
                 bool sorted = it.m_gridPos.y < rows && (favorites == null ||
-                    (!favorites.IsItemFavorited(it.m_shared) && (it.m_gridPos.y > 0 || hotbar) && !favorites.IsSlotFavorited(it.m_gridPos)));
+                    (!favorites.IsItemFavorited(it.m_shared) && (it.m_gridPos.y > 0 || hotbar) && !favorites.IsSlotFavorited(it.m_gridPos))) &&
+                    (inContainer == null || !inContainer.IsItemFavorited(it.m_shared));
                 if (sorted) items.Add(it);
                 else kept.Add(it.m_gridPos); // never moves, and its slot stays its own
             }

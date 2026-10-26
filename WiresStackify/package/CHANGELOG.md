@@ -1,3 +1,8 @@
+## 0.1.6
+
+- Favorited items stay where they are when you sort a container too.
+- The pouch's rings and tooltip update right away when anything changes while you hover it, including containers coming into or out of range as you walk. No need to hover off and back on.
+
 ## 0.1.5
 
 - UI sounds use the game's GUI audio channel and bypass environmental reverb.

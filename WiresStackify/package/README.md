@@ -24,7 +24,7 @@ Quick stack, restock and sort, all from one little pouch that sits right next to
 ## Favorites
 
 * **Alt + left click** an item to favorite every item of that kind, **Alt + right click** a slot to favorite the slot.
-* Favorites are never quick stacked or sorted, and nothing gets sorted onto a favorited slot. Your hotbar is left alone too.
+* Favorites are never quick stacked or sorted, not even inside a container, and nothing gets sorted onto a favorited slot. Your hotbar is left alone too.
 * Items you pick up skip favorited slots unless there's nowhere else to put them (they still stack onto what's already there).
 * Coming from Quick Stack Store? Me too! Your favorites come along the first time you load in.
 

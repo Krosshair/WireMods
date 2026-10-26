@@ -37,6 +37,7 @@ namespace WiresStackify
             Player player = Player.m_localPlayer;
             if (player != null && ByPlayer.ContainsKey(player.GetPlayerID()))
                 RefreshVisible();
+            StackifyButtons.RefreshHoverSoon();
         }
 
         private Favorites(long id)

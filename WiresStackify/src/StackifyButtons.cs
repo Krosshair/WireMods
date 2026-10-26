@@ -90,6 +90,7 @@ namespace WiresStackify
         {
             _hovering = true;
             _hoverChest = chest;
+            StartWatch();
             ButtonFeel.Hover(chest, true);
             RefreshHover();
         }
@@ -98,6 +99,7 @@ namespace WiresStackify
         {
             if (!_hovering || _hoverChest != chest) return;
             _hovering = false;
+
             ButtonFeel.Hover(chest, false);
             Favorites.ClearPreview();
         }
@@ -123,7 +125,13 @@ namespace WiresStackify
                         : chestDrop ? Restock.PreviewOnly(p, StackifyPlugin.CurrentContainer(InventoryGui.instance), held, out gain) : null;
                     float loss = 0f;
                     if (items != null) foreach (ItemDrop.ItemData it in items) loss += it.GetWeight();
-                    Favorites.ShowPreview(items, restock);
+                    // Rings only redrawn when the slots they'd go on change.
+                    if (!SameSlots(items, _shownStack) || !SameSlots(restock, _shownRestock))
+                    {
+                        Favorites.ShowPreview(items, restock);
+                        _shownStack = Slots(items);
+                        _shownRestock = Slots(restock);
+                    }
                     if (chestDrop && restock.Count > 0) sources = 1;
                     string yellow = Favorites.YellowHex(), blue = Favorites.BlueHex();
                     text = "\n";
@@ -312,7 +320,71 @@ namespace WiresStackify
                 if (p == null || InventoryGui.instance == null) return;
                 Container c = StackifyPlugin.CurrentContainer(InventoryGui.instance);
                 if (__instance == p.GetInventory() || (c != null && __instance == c.GetInventory())) UpdateCounts();
+                // While a pouch is hovered, any inventory change (yours, the
+                // open container's, a nearby one's) can change what it would
+                // do: refresh its rings and tooltip once, after the changes.
+                if (_hovering) RefreshHoverSoon();
             }
+        }
+
+        private static bool _refreshQueued;
+
+        // While a pouch is hovered, what a click would do is worked out
+        // again every 0.1 s (your choice: not every frame, but often enough
+        // to follow you walking in and out of range). Rings and tooltip
+        // only change when the result does. Stops when you stop hovering.
+        private const float WatchSeconds = 0.1f;
+        private static bool _watching;
+        private static List<Vector2i> _shownStack, _shownRestock;
+
+        private static void StartWatch()
+        {
+            _shownStack = _shownRestock = null;
+            if (_watching) return;
+            _watching = true;
+            StackifyEffects.Runner.Get().StartCoroutine(Watch());
+        }
+
+        private static System.Collections.IEnumerator Watch()
+        {
+            WaitForSecondsRealtime wait = new WaitForSecondsRealtime(WatchSeconds);
+            while (_hovering)
+            {
+                yield return wait;
+                if (_hovering) RefreshHover();
+            }
+            _watching = false;
+        }
+
+        private static List<Vector2i> Slots(List<ItemDrop.ItemData> items)
+        {
+            if (items == null) return null;
+            List<Vector2i> slots = new List<Vector2i>(items.Count);
+            foreach (ItemDrop.ItemData it in items) slots.Add(it.m_gridPos);
+            return slots;
+        }
+
+        private static bool SameSlots(List<ItemDrop.ItemData> items, List<Vector2i> shown)
+        {
+            if (items == null || shown == null) return items == null && shown == null;
+            if (items.Count != shown.Count) return false;
+            for (int i = 0; i < items.Count; i++)
+                if (items[i].m_gridPos != shown[i]) return false;
+            return true;
+        }
+
+        internal static void RefreshHoverSoon()
+        {
+            if (_refreshQueued || !_hovering) return;
+            _refreshQueued = true;
+            StackifyEffects.Runner.Get().StartCoroutine(RefreshAtEndOfFrame());
+        }
+
+        private static System.Collections.IEnumerator RefreshAtEndOfFrame()
+        {
+            yield return new WaitForEndOfFrame();
+            _refreshQueued = false;
+            RefreshHover();
         }
 
         internal static void UpdateCounts()
