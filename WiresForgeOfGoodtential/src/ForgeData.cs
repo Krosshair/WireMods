@@ -511,21 +511,6 @@ namespace WiresForgeOfGoodtential
         {
             nativeTier = Mathf.Clamp(nativeTier, 0, MaxTier);
 
-            int naturalMax =
-                recipe != null &&
-                recipe.m_item != null &&
-                recipe.m_item.m_itemData != null &&
-                recipe.m_item.m_itemData.m_shared != null
-                    ? Mathf.Max(
-                        1,
-                        recipe.m_item.m_itemData.m_shared.m_maxQuality)
-                    : Mathf.Max(1, item.m_shared.m_maxQuality);
-
-            int extraTarget =
-                Mathf.Max(
-                    0,
-                    targetQuality - naturalMax);
-
             // The item's native idol remains enough for its first three
             // refinements beyond the normal cap. Every three further quality
             // levels raises the minimum idol by one biome.
@@ -533,15 +518,30 @@ namespace WiresForgeOfGoodtential
             // Example for a Q4 Iron item:
             // Q5-Q7 -> Iron, Q8-Q10 -> Silver, Q11-Q13 -> Black Metal,
             // Q14-Q16 -> Black Marble, Q17-Q19 -> Flametal.
-            int tierGain =
-                extraTarget <= 0
-                    ? 0
-                    : (extraTarget - 1) / 3;
-
             return Mathf.Clamp(
-                nativeTier + tierGain,
+                GetPlayTier(item, recipe, targetQuality, nativeTier),
                 nativeTier,
                 MaxTier);
+        }
+
+        // The tier an item refined to targetQuality plays at, with no cap:
+        // the safe idol tier while there are idols for it, then on past the
+        // last biome. 0 = Meadows.
+        internal static int GetPlayTier(
+            ItemDrop.ItemData item,
+            Recipe recipe,
+            int targetQuality,
+            int nativeTier)
+        {
+            int naturalMax =
+                recipe != null &&
+                recipe.m_item != null &&
+                recipe.m_item.m_itemData != null &&
+                recipe.m_item.m_itemData.m_shared != null
+                    ? Mathf.Max(1, recipe.m_item.m_itemData.m_shared.m_maxQuality)
+                    : Mathf.Max(1, item.m_shared.m_maxQuality);
+            int extraTarget = Mathf.Max(0, targetQuality - naturalMax);
+            return Mathf.Max(0, nativeTier) + (extraTarget <= 0 ? 0 : (extraTarget - 1) / 3);
         }
 
         internal static float GetContinuousTier(

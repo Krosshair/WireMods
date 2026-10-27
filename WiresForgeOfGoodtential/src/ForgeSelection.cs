@@ -29,6 +29,8 @@ namespace WiresForgeOfGoodtential
         internal static float ContinuousTier;
         internal static float ItemReferencePrestige;
         internal static int Potential;
+        // The safe tier shown from 1 (Meadows), uncapped past the last idol.
+        internal static int ShownTier;
 
         internal static ForgeSelectionSnapshot Pending;
 
@@ -85,6 +87,8 @@ namespace WiresForgeOfGoodtential
                 Family != family ||
                 NativeTier != nativeTier ||
                 RequiredTier != requiredTier;
+
+            ShownTier = ForgeData.GetPlayTier(item, recipe, targetQuality, nativeTier) + 1;
 
             Potential =
                 Mathf.Max(
@@ -459,6 +463,7 @@ namespace WiresForgeOfGoodtential
         {
             CurrentRecipe = null;
             CurrentItem = null;
+            ShownTier = 0;
             NativeTier = 0;
             RequiredTier = 0;
             Family = IdolFamily.Battle;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+- The station level box shows the item's tier instead of a required forge level: 1 for Meadows gear, one more for each biome after, and it keeps going past the last one as the item is refined further. It no longer blinks red.
+- The idol and trophy swap buttons no longer have an empty slot frame behind them.
+
 ## 0.6.0
 - Whether your idol is kept now depends on what happened and what you brought. A success keeps it less often (45%), a setback more often (65%), a reset almost always (85%). Each idol tier above the safe one adds 8 points and each tier below takes 8 away. A trophy adds up to 25 points depending on how well it suits the item. With the safe idol and no trophy it still averages about 50%.
 - Idol luck: every idol lost in a row makes the next one 4 points more likely to be kept, up to 12. Keeping one resets it.

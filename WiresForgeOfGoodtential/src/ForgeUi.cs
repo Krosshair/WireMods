@@ -221,6 +221,9 @@ namespace WiresForgeOfGoodtential
 
                 if (custom != null)
                 {
+                    Image background = root.GetComponent<Image>();
+                    if (background != null)
+                        background.enabled = true;
                     custom.gameObject.SetActive(false);
                     UnityEngine.Object.Destroy(
                         custom.gameObject);
@@ -340,6 +343,11 @@ namespace WiresForgeOfGoodtential
             }
 
             root.SetActive(true);
+
+            // Only the button shows, not the slot frame behind it.
+            Image background = root.GetComponent<Image>();
+            if (background != null && background.enabled)
+                background.enabled = false;
 
             string[] requirementChildren =
             {
