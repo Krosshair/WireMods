@@ -16,7 +16,7 @@ namespace WiresComfortInfo
     {
         public const string Guid = "wire.valheim.comfortinfo";
         public const string Name = "Wire's Comfort Info";
-        public const string Version = "0.1.3";
+        public const string Version = "0.1.4";
 
         private Harmony _harmony;
 
@@ -148,19 +148,31 @@ namespace WiresComfortInfo
     internal sealed class ComfortNumber : MonoBehaviour
     {
         private TextMeshProUGUI _number;
+        private int _shown;
         private float _retryFontAt;
 
         internal void Set(int value)
         {
+            // Nothing to show: no label made for it yet (most comfort pieces
+            // add nothing where you stand, and each new label costs a bit).
+            if (_number == null && value <= 0)
+                return;
             if (_number == null && Time.unscaledTime >= _retryFontAt)
+            {
+                Prof.Begin(Prof.NewNumber);
                 Create();
+                Prof.End(Prof.NewNumber);
+            }
 
             if (_number == null)
                 return;
 
             bool active = value > 0;
-            if (active)
+            if (active && value != _shown)
+            {
+                _shown = value;
                 _number.text = "+" + value;
+            }
 
             if (_number.gameObject.activeSelf != active)
                 _number.gameObject.SetActive(active);
@@ -270,9 +282,13 @@ namespace WiresComfortInfo
             if (buttons == null)
                 return;
 
+            Prof.Begin(Prof.Refresh);
+            Prof.Begin(Prof.ComfortScan);
             Comfort.Begin(player);
+            Prof.End(Prof.ComfortScan);
             foreach (BuildUiPieceButton button in buttons)
                 RefreshButton(button);
+            Prof.End(Prof.Refresh);
         }
 
         private static void RefreshButton(BuildUiPieceButton button)
@@ -291,7 +307,10 @@ namespace WiresComfortInfo
 
             if (number == null)
                 number = button.gameObject.AddComponent<ComfortNumber>();
-            number.Set(Comfort.Gain(piece));
+            Prof.Begin(Prof.Gain);
+            int gain = Comfort.Gain(piece);
+            Prof.End(Prof.Gain);
+            number.Set(gain);
         }
     }
 
@@ -357,7 +376,9 @@ namespace WiresComfortInfo
                 _piece = piece;
                 _raw = raw;
                 _localization = localization;
+                Prof.Begin(Prof.Description);
                 string text = localization.Localize(raw);
+                Prof.End(Prof.Description);
                 if (piece != null && piece.m_comfort > 0)
                     text += "\nComfort: <color=orange>" + piece.m_comfort + "</color>";
                 _text = text;

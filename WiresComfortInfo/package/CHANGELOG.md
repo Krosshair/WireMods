@@ -1,3 +1,7 @@
+# 0.1.4
+
+* Opening the build menu does less: a comfort number label is only made for pieces that would actually add comfort where you stand, and a number is only written again when it changes.
+
 # 0.1.3
 
 * The comfort numbers are there the moment the build menu opens, instead of popping in a moment later. They're worked out when the menu opens or shows other pieces, and nothing runs while it just sits open.
