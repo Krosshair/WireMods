@@ -165,6 +165,15 @@ namespace WiresForgeOfGoodtential
             };
         }
 
+        // In-game days until this trophy type is fully rested; 0 if it is.
+        internal static float RestingDays(ItemDrop.ItemData trophy)
+        {
+            Player player = Player.m_localPlayer;
+            if (player == null || trophy == null)
+                return 0f;
+            return (float)(RemainingNow(Read(player, trophy)) / GetDaySeconds());
+        }
+
         private static double RemainingNow(Record record)
         {
             if (record == null ||

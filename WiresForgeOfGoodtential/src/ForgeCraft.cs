@@ -294,6 +294,9 @@ namespace WiresForgeOfGoodtential
                 originalQuality < naturalMax;
             ForgeContext.IdolKeepChance =
                 ForgeRules.GetIdolKeepChance(
+                    outcome,
+                    selection.IdolTier,
+                    selection.RequiredTier,
                     selectedTrophy,
                     selection.ItemReferencePrestige);
             ForgeContext.OldUpgradeChance =
@@ -405,6 +408,10 @@ namespace WiresForgeOfGoodtential
                 // The jackpot effect above remains unchanged.
                 if (ForgeContext.IdolSpared)
                     ForgeIdolSound.Play(player);
+
+                // A forced loss (the below-cap reset) isn't bad luck.
+                if (!ForgeContext.ForceConsumeIdol)
+                    IdolLuck.Record(ForgeContext.IdolSpared);
 
                 ShowResult(player);
             }

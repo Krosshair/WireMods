@@ -8,59 +8,31 @@ using UnityEngine.UI;
 
 namespace WiresForgeOfGoodtential
 {
+    // The "Swap" button next to the idol (Kind 0) or trophy (Kind 1):
+    // opens the picker for it.
     internal sealed class GoodtentialCycleButton :
         MonoBehaviour
     {
         internal int Kind;
+        internal Image Icon;
+        internal bool FollowsInteractable;
+        internal Color TintColor = Color.white;
+        internal Color DisabledColor = Color.grey;
+        internal bool TooltipAdded;
 
         internal void Cycle()
         {
             InventoryGui gui =
                 GetComponentInParent<InventoryGui>();
 
-            Player player = Player.m_localPlayer;
-
             if (gui == null ||
-                player == null ||
+                Player.m_localPlayer == null ||
                 ForgeUiPatch.IsRefining(gui))
             {
                 return;
             }
 
-            int oldIdol =
-                ForgeSelection.SelectedIdolTier;
-
-            ItemDrop.ItemData oldTrophy =
-                ForgeSelection.SelectedTrophy;
-
-            if (Kind == 0)
-            {
-                ForgeSelection.CycleIdol(
-                    player,
-                    1);
-            }
-            else
-            {
-                ForgeSelection.CycleTrophy(
-                    player,
-                    1);
-            }
-
-            bool changed =
-                oldIdol !=
-                    ForgeSelection.SelectedIdolTier ||
-                oldTrophy !=
-                    ForgeSelection.SelectedTrophy;
-
-            if (changed &&
-                gui.m_moveItemEffects != null)
-            {
-                gui.m_moveItemEffects.Create(
-                    gui.transform.position,
-                    Quaternion.identity);
-            }
-
-            ForgeUiPatch.RefreshAfterSelection(gui);
+            ForgePicker.Open(gui, Kind);
         }
     }
 
@@ -188,6 +160,8 @@ namespace WiresForgeOfGoodtential
             {
                 RestoreRequirementSlots(gui);
                 ForgeSelection.ResetCurrent();
+                ForgeInfo.Leave();
+                ForgePicker.Close();
                 return;
             }
 
@@ -219,6 +193,7 @@ namespace WiresForgeOfGoodtential
                 station,
                 recipe,
                 item);
+            ForgeInfo.Refresh(gui, player, recipe, item);
         }
 
         private static void RestoreRequirementSlots(
@@ -314,11 +289,8 @@ namespace WiresForgeOfGoodtential
                     slots.ToArray();
             }
 
-            // No extra mod hover tooltips. Keep these two
-            // requirement slots silent; retain the single odds row.
-            DisableItemTooltip(gui.m_recipeRequirementList[0]);
-            DisableItemTooltip(gui.m_recipeRequirementList[2]);
-
+            // The idol and trophy slots get their own hover text
+            // (ForgeInfo); the cycle buttons stay silent.
             ConfigureCycleButton(
                 gui,
                 gui.m_recipeRequirementList[1],
@@ -346,6 +318,14 @@ namespace WiresForgeOfGoodtential
             target.m_text = "";
             target.enabled = false;
         }
+
+        // The slot right of the idol (and of the trophy) holds a wooden swap
+        // button with an icon on it in the style of the round icon buttons
+        // above the inventory: the Trophies icon for the trophy, the Forge of
+        // Potential's map icon (restyled to match) for the idol. Clicking
+        // opens the picker.
+        private const float TrophySwapIconSize = 38f;
+        private const float IdolSwapIconSize = 40f;
 
         private static void ConfigureCycleButton(
             InventoryGui gui,
@@ -388,108 +368,127 @@ namespace WiresForgeOfGoodtential
             Transform existing =
                 root.transform.Find(visualName);
 
-            GameObject visual;
+            Button button;
 
             if (existing == null)
             {
-                // The original take-all button has the wooden
-                // background. The variant button did not, which
-                // caused the visual regression.
+                // The wooden take-all button, without its gamepad hint.
                 UIGamePad sourceHint =
-                    gui.m_takeAllButton
-                        .GetComponent<UIGamePad>();
-
+                    gui.m_takeAllButton.GetComponent<UIGamePad>();
                 bool sourceHintEnabled =
-                    sourceHint != null &&
-                    sourceHint.enabled;
-
+                    sourceHint != null && sourceHint.enabled;
                 if (sourceHint != null)
                     sourceHint.enabled = false;
 
-                Button clonedButton =
+                button =
                     UnityEngine.Object.Instantiate(
                         gui.m_takeAllButton,
                         root.transform);
 
                 if (sourceHint != null)
-                    sourceHint.enabled =
-                        sourceHintEnabled;
+                    sourceHint.enabled = sourceHintEnabled;
 
-                visual =
-                    clonedButton.gameObject;
-
-                visual.name = visualName;
-
-                clonedButton.onClick =
-                    new Button.ButtonClickedEvent();
-
-                UIGamePad clonedHint =
-                    visual.GetComponent<UIGamePad>();
-
-                if (clonedHint != null)
-                    clonedHint.enabled = false;
-
-                RectTransform rect =
-                    visual.GetComponent<RectTransform>();
-
-                if (rect != null)
-                {
-                    rect.anchorMin = Vector2.zero;
-                    rect.anchorMax = Vector2.one;
-                    rect.pivot =
-                        new Vector2(0.5f, 0.5f);
-                    rect.anchoredPosition = Vector2.zero;
-                    rect.offsetMin =
-                        new Vector2(3f, 3f);
-                    rect.offsetMax =
-                        new Vector2(-3f, -3f);
-                    rect.localScale = Vector3.one;
-                }
-
-                UITooltip[] tips =
-                    visual.GetComponentsInChildren<
-                        UITooltip>(true);
-
-                for (int i = 0;
-                     i < tips.Length;
-                     i++)
-                {
-                    tips[i].m_topic = "";
-                    tips[i].m_text = "";
-                    tips[i].enabled = false;
-                }
-            }
-            else
-            {
-                visual = existing.gameObject;
-            }
-
-            visual.SetActive(true);
-
-            Button button =
-                visual.GetComponent<Button>();
-
-            if (button == null)
-                return;
-
-            GoodtentialCycleButton cycle =
-                visual.GetComponent<
-                    GoodtentialCycleButton>();
-
-            if (cycle == null)
-            {
-                cycle =
-                    visual.AddComponent<
-                        GoodtentialCycleButton>();
-
+                button.name = visualName;
                 button.onClick =
                     new Button.ButtonClickedEvent();
 
+                UIGamePad hint = button.GetComponent<UIGamePad>();
+                if (hint != null)
+                    hint.enabled = false;
+
+                RectTransform rect =
+                    (RectTransform)button.transform;
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.anchoredPosition = Vector2.zero;
+                rect.offsetMin = new Vector2(3f, 3f);
+                rect.offsetMax = new Vector2(-3f, -3f);
+                rect.localScale = Vector3.one;
+
+                // No text on it, just the icon.
+                foreach (TMPro.TMP_Text label in
+                         button.GetComponentsInChildren<TMPro.TMP_Text>(true))
+                    label.gameObject.SetActive(false);
+
+                Sprite sprite = kind == 0 ? ForgeMapIcon() : TrophiesIcon(gui);
+                if (sprite != null)
+                {
+                    GameObject iconObject = new GameObject(
+                        "icon", typeof(RectTransform), typeof(Image));
+                    iconObject.transform.SetParent(button.transform, false);
+                    RectTransform iconRect = (RectTransform)iconObject.transform;
+                    iconRect.anchorMin = new Vector2(0.5f, 0.5f);
+                    iconRect.anchorMax = new Vector2(0.5f, 0.5f);
+                    iconRect.pivot = new Vector2(0.5f, 0.5f);
+                    iconRect.anchoredPosition = Vector2.zero;
+                    float size = kind == 0 ? IdolSwapIconSize : TrophySwapIconSize;
+                    iconRect.sizeDelta = new Vector2(size, size);
+                    Image image = iconObject.GetComponent<Image>();
+                    image.sprite = sprite;
+                    image.preserveAspect = true;
+                    image.raycastTarget = false;
+                }
+
+                GoodtentialCycleButton cycle =
+                    button.gameObject.AddComponent<
+                        GoodtentialCycleButton>();
+                Transform iconTransform = button.transform.Find("icon");
+                cycle.Icon = iconTransform != null ? iconTransform.GetComponent<Image>() : null;
+                TMPro.TMP_Text letter = button.GetComponentInChildren<TMPro.TMP_Text>(true);
+
+                // The letter was what the button tinted orange, and grey while
+                // disabled. The icon takes its colour and its place as the
+                // button's tint target, so it behaves the same.
+                if (cycle.Icon != null && letter != null)
+                {
+                    cycle.Icon.color = letter.color;
+                    if (button.targetGraphic == letter)
+                        button.targetGraphic = cycle.Icon;
+                    else
+                    {
+                        cycle.TintColor = letter.color;
+                        ButtonTextColor textColor = button.GetComponent<ButtonTextColor>();
+                        cycle.DisabledColor = textColor != null ? textColor.m_disabledColor : Color.grey;
+                        cycle.FollowsInteractable = true;
+                    }
+                }
                 button.onClick.AddListener(
                     cycle.Cycle);
             }
+            else
+            {
+                button = existing.GetComponent<Button>();
+                if (button == null)
+                    return;
+            }
 
-            cycle.Kind = kind;
+            button.gameObject.SetActive(true);
+
+            GoodtentialCycleButton swap =
+                button.GetComponent<GoodtentialCycleButton>();
+            if (swap != null)
+                swap.Kind = kind;
+
+            // The same small tooltip the round buttons use: just the action.
+            UITooltip tip = button.GetComponent<UITooltip>();
+            if (tip == null && swap != null && !swap.TooltipAdded)
+            {
+                swap.TooltipAdded = true;
+                Transform round = gui.transform.Find("root/Info/Trophies");
+                UITooltip roundTip = round != null ? round.GetComponent<UITooltip>() : null;
+                if (roundTip != null)
+                {
+                    tip = button.gameObject.AddComponent<UITooltip>();
+                    tip.m_tooltipPrefab = roundTip.m_tooltipPrefab;
+                }
+            }
+            if (tip != null)
+            {
+                tip.enabled = true;
+                tip.m_topic = "";
+                tip.m_text = ForgeSwapWordPatch.Text();
+            }
 
             Player player = Player.m_localPlayer;
 
@@ -524,58 +523,37 @@ namespace WiresForgeOfGoodtential
                 !IsRefining(gui) &&
                 canCycle;
 
-            // Keep the original Valheim wooden button and its
-            // text material. The only visible label is I or T.
-            // There is no generated icon, tint or silhouette.
-            TMP_Text[] labels =
-                visual.GetComponentsInChildren<TMP_Text>(true);
+            // When the button doesn't tint the icon itself, grey it here.
+            if (swap != null && swap.Icon != null && swap.FollowsInteractable)
+                swap.Icon.color = button.interactable ? swap.TintColor : swap.DisabledColor;
+        }
 
-            TMP_Text label =
-                labels.Length > 0 ? labels[0] : null;
+        // The icon on the round Trophies button above the inventory.
+        private static Sprite TrophiesIcon(InventoryGui gui)
+        {
+            Transform t = gui != null ? gui.transform.Find("root/Info/Trophies/Image") : null;
+            Image image = t != null ? t.GetComponent<Image>() : null;
+            return image != null ? image.sprite : null;
+        }
 
-            if (label == null)
+        private static Sprite _forgeIcon;
+
+        // The Forge of Potential's map icon, restyled like the round
+        // buttons' icons.
+        private static Sprite ForgeMapIcon()
+        {
+            if (_forgeIcon != null || Minimap.instance == null)
+                return _forgeIcon;
+
+            foreach (Minimap.LocationSpriteData data in Minimap.instance.m_locationIcons)
             {
-                Transform source =
-                    root.transform.Find("res_name");
-
-                if (source != null)
+                if (data.m_name == "AncientUpgradeStation")
                 {
-                    TMP_Text template =
-                        source.GetComponent<TMP_Text>();
-
-                    if (template != null)
-                    {
-                        label =
-                            UnityEngine.Object.Instantiate(
-                                template, visual.transform);
-                        label.gameObject.name =
-                            "Goodtential cycle label";
-                    }
+                    _forgeIcon = ForgeIconStyle.Restyle(data.m_icon);
+                    break;
                 }
             }
-
-            for (int i = 0; i < labels.Length; i++)
-                labels[i].gameObject.SetActive(labels[i] == label);
-
-            if (label != null)
-            {
-                label.gameObject.SetActive(true);
-                label.text = kind == 0 ? "I" : "T";
-                label.alignment = TextAlignmentOptions.Center;
-
-                RectTransform textRect =
-                    label.GetComponent<RectTransform>();
-
-                if (textRect != null)
-                {
-                    textRect.anchorMin = Vector2.zero;
-                    textRect.anchorMax = Vector2.one;
-                    textRect.offsetMin = Vector2.zero;
-                    textRect.offsetMax = Vector2.zero;
-                    textRect.anchoredPosition = Vector2.zero;
-                    textRect.localScale = Vector3.one;
-                }
-            }
+            return _forgeIcon;
         }
 
         private static void RenderIdolSlot(
@@ -949,6 +927,8 @@ namespace WiresForgeOfGoodtential
         private static void Postfix()
         {
             ForgeSelection.ResetAll();
+            ForgeInfo.Leave();
+            ForgePicker.Close();
         }
     }
 }

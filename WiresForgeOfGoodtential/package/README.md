@@ -18,34 +18,54 @@ A failed roll may **ignore** the attempt (R below 2), **fail** (lose exactly 1 q
 
 ## Idols and risky gambles
 
-An item's **native tier** comes from its upgrade recipe. The **minimum safe idol tier** starts there and rises for every **3 extra quality levels** (for a Q4 item: native tier for Q5–Q7, +1 for Q8–Q10, etc.), capped at Bloodgold. Stronger idols improve success by reducing bad outcomes **relative to the current minimum safe tier**, not the item's native tier. The minimum safe tier itself grants no bonus.
+An item's **native tier** comes from its upgrade recipe. The **safe tier** starts there and rises for every **3 extra quality levels** (for a Q4 item: native tier for Q5–Q7, +1 for Q8–Q10, etc.), capped at Bloodgold. Stronger idols improve success by reducing bad outcomes **relative to the safe tier**, not the item's native tier. The safe tier itself grants no bonus.
 
-Weaker idols are allowed. Each tier below the safe requirement:
+Weaker idols are allowed. Each tier below the safe tier:
 
-- Reduces success by **2.5 percentage points**.
-- Increases the jackpot trigger by **10 percentage points**.
+* Reduces success by **2.5 percentage points**.
+* Increases the jackpot trigger by **10 percentage points**.
 
 At **R = 8+**, using an idol **3 or more tiers too weak** carries a small risk of **actual item destruction** (up to 7%). **Under-tier idols cannot use trophies**, so this risk cannot be protected against by an offering.
 
-**Idols have a 50% chance to survive any ordinary attempt**, including successes, failures and destruction. A strong trophy can improve this to **67.5%** at most. The exceptional below-cap reset always consumes its idol. A saved idol plays a distinct chime.
+## Keeping your idol
+
+Any attempt can spare its idol. How likely depends on what happened and what you brought:
+
+```
+After a success or jackpot:   45%
+After an ignore or a fail:    65%
+After a reset:                85%
+After destruction:            50%
+```
+
+* Each idol tier **above** the safe tier adds **8 points**; each tier **below** takes 8 away.
+* A trophy adds up to **25 points**, depending on how well it suits the item.
+* **Idol luck:** every idol lost in a row adds **4 points** to the next attempt, up to **12**. Keeping an idol resets it. It lasts for the play session.
+* The chance always stays between **15% and 90%**. With the safe idol and no trophy it averages about 50%.
+
+The exceptional below-cap reset always consumes its idol and doesn't count toward idol luck. A saved idol plays a distinct chime.
 
 ## Trophy offerings
 
-Offer **one non-boss trophy** when using a safe idol. **Under-tier idols cannot use trophies.** Boss trophies and named Hildir miniboss trophies are excluded. A trophy is always consumed when offered.
+Offer **one non-boss trophy** when using a safe idol. Boss trophies and named Hildir miniboss trophies are excluded. A trophy is always consumed when offered.
 
-On safe attempts, stronger trophies reduce ordinary failures and resets based on their prestige relative to the item. A fresh, equal-prestige trophy reduces ordinary failure chance by about **90.7%** and reset chance by about **98.6%**.
+Stronger trophies reduce ordinary failures and resets based on their prestige relative to the item. A fresh, equal-prestige trophy reduces ordinary failure chance by about **90.7%** and reset chance by about **98.6%**.
 
-Repeatedly offering the same trophy type causes **fatigue**, temporarily weakening its bonuses. Full recovery takes **1 in-game day** after one use, **2.5 days** after two consecutive uses, and **4.5 days** after three. Recovery is gradual and saves between sessions, separately for each character, world, and trophy type. Fatigue gradually reduces a trophy's benefits while it recovers.
+Offering the same trophy type again soon after weakens it while its magic recovers. Full strength returns after **1 in-game day** after one use, **2.5 days** after two in a row, and **4.5 days** after three. Recovery is gradual and saves between sessions, separately for each character, world, and trophy type.
 
-## Forge controls
+## At the Forge
 
 ```
-[Idol] [I] [Trophy] [T]
+[Idol] [Swap] [Trophy] [Swap]
 ```
 
-**I** cycles owned idols; **T** cycles available trophies and the no-trophy option. The Forge selects your **highest owned matching idol** by default. If none is available, the idol frame is empty and both buttons are disabled. Buttons also disable when there is nothing to cycle through.
+* The Forge picks your **weakest idol that can't cost the item a level**, or your best one if every idol carries that risk.
+* **Swap** opens a popup like the shield style one, listing the idols or trophies you can use. Hover one to see what it does, click it to pick it. Clicking the trophy you're already offering takes it back off.
+* **Hover the idol** to see whether it's strong enough, the odds, how often it's kept and the current safe tier.
+* **Hover the trophy** to see how much it helps, how much more often your idol is kept with it, and whether its magic was drawn on recently.
+* The odds line shows **success / ignore / fail / reset / destruction** when they apply; the jackpot chance stays hidden.
 
-Refinable gear is listed even if you only have under-tier idols, sorted by higher success chance and safer failures. The Forge shows **success / ignore / fail / reset / destruction** chances when applicable; jackpot chance stays hidden. No extra hover tooltips or consumption/fatigue rows are added.
+Refinable gear is listed even if you only have under-tier idols, sorted by higher success chance and safer failures.
 
 Disclaimer: the code is AI assisted since I barely know C#. Not fully AI nor human.
 https://ko-fi.com/krosshair

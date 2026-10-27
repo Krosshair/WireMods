@@ -28,6 +28,7 @@ namespace WiresForgeOfGoodtential
         internal static ItemDrop.ItemData SelectedTrophy;
         internal static float ContinuousTier;
         internal static float ItemReferencePrestige;
+        internal static int Potential;
 
         internal static ForgeSelectionSnapshot Pending;
 
@@ -85,6 +86,12 @@ namespace WiresForgeOfGoodtential
                 NativeTier != nativeTier ||
                 RequiredTier != requiredTier;
 
+            Potential =
+                Mathf.Max(
+                    0,
+                    item.m_quality -
+                    Mathf.Max(1, recipe.m_item.m_itemData.m_shared.m_maxQuality));
+
             CurrentRecipe = recipe;
             CurrentItem = item;
             Family = family;
@@ -99,10 +106,7 @@ namespace WiresForgeOfGoodtential
             {
                 SelectedTrophy = null;
                 SelectedIdolTier =
-                    FindHighestOwnedIdol(
-                        player,
-                        family,
-                        requiredTier);
+                    FindDefaultIdol(player);
             }
             else
             {
@@ -126,11 +130,28 @@ namespace WiresForgeOfGoodtential
                     SelectedIdolTier))
             {
                 SelectedIdolTier =
-                    FindHighestOwnedIdol(
-                        player,
-                        Family,
-                        RequiredTier);
+                    FindDefaultIdol(player);
             }
+        }
+
+        // The weakest owned idol that can't actually cost the item a level
+        // (the worst case is "nothing happens"). If every idol risks more
+        // than that, the one with the best odds.
+        internal static int FindDefaultIdol(Player player)
+        {
+            List<int> owned = GetOwnedValidIdolTiers(player);
+            if (owned.Count == 0)
+                return -1;
+
+            foreach (int tier in owned)
+            {
+                ForgeOdds odds = ForgeRules.GetOdds(
+                    Potential, RequiredTier, tier, null, ItemReferencePrestige);
+                if (odds.FailureIsIgnore && odds.CompleteLoss <= 0f && odds.Destruction <= 0f)
+                    return tier;
+            }
+
+            return owned[owned.Count - 1];
         }
 
         internal static void ValidateTrophy(Player player)
@@ -248,40 +269,6 @@ namespace WiresForgeOfGoodtential
             return tiers;
         }
 
-        internal static void CycleIdol(
-            Player player,
-            int direction)
-        {
-            List<int> tiers =
-                GetOwnedValidIdolTiers(player);
-
-            if (tiers.Count == 0)
-            {
-                SelectedIdolTier = -1;
-                SelectedTrophy = null;
-                return;
-            }
-
-            int current =
-                tiers.IndexOf(
-                    SelectedIdolTier);
-
-            if (current < 0)
-                current = 0;
-            else
-                current =
-                    WrapIndex(
-                        current + direction,
-                        tiers.Count);
-
-            SelectedIdolTier =
-                tiers[current];
-
-            // Trophy offerings are exclusive to safe idol attempts.
-            if (SelectedIdolTier < RequiredTier)
-                SelectedTrophy = null;
-        }
-
         internal static List<ItemDrop.ItemData> GetUniqueTrophies(
             Player player)
         {
@@ -347,55 +334,6 @@ namespace WiresForgeOfGoodtential
                 });
 
             return result;
-        }
-
-        internal static void CycleTrophy(
-            Player player,
-            int direction)
-        {
-            if (SelectedIdolTier < RequiredTier)
-            {
-                SelectedTrophy = null;
-                return;
-            }
-
-            List<ItemDrop.ItemData> trophies =
-                GetUniqueTrophies(player);
-
-            // Index 0 is always "No trophy".
-            int count =
-                trophies.Count + 1;
-
-            int currentIndex = 0;
-
-            if (SelectedTrophy != null &&
-                SelectedTrophy.m_shared != null)
-            {
-                string currentName =
-                    SelectedTrophy.m_shared.m_name;
-
-                for (int i = 0;
-                     i < trophies.Count;
-                     i++)
-                {
-                    if (trophies[i].m_shared.m_name ==
-                        currentName)
-                    {
-                        currentIndex = i + 1;
-                        break;
-                    }
-                }
-            }
-
-            int next =
-                WrapIndex(
-                    currentIndex + direction,
-                    count);
-
-            SelectedTrophy =
-                next == 0
-                    ? null
-                    : trophies[next - 1];
         }
 
         internal static bool HasRequiredIdol(
@@ -536,19 +474,5 @@ namespace WiresForgeOfGoodtential
             Pending = null;
         }
 
-        private static int WrapIndex(
-            int value,
-            int count)
-        {
-            if (count <= 0)
-                return 0;
-
-            value %= count;
-
-            if (value < 0)
-                value += count;
-
-            return value;
-        }
     }
 }

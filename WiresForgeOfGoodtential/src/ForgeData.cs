@@ -722,6 +722,8 @@ namespace WiresForgeOfGoodtential
                 Mathf.Clamp(multiplier, 0.005f, 0.995f));
         }
 
+        // How much the gods value this offering, with the word that changes
+        // highlighted like the game highlights values.
         internal static string GetFavorDescription(
             ItemDrop.ItemData trophy,
             float itemReferencePrestige)
@@ -735,22 +737,24 @@ namespace WiresForgeOfGoodtential
                     itemReferencePrestige);
 
             if (m >= 0.90f)
-                return "Meagre offering.";
+                return "A " + Key("meagre") + " offering.";
 
             if (m >= 0.70f)
-                return "Modest offering.";
+                return "A " + Key("modest") + " offering.";
 
             if (m >= 0.45f)
-                return "Worthy offering.";
+                return "A " + Key("worthy") + " offering.";
 
             if (m >= 0.22f)
-                return "Strong offering.";
+                return "A " + Key("strong") + " offering.";
 
             if (m >= 0.08f)
-                return "Great offering.";
+                return "A " + Key("great") + " offering.";
 
-            return "The gods are greatly pleased.";
+            return "The gods are " + Key("greatly pleased") + ".";
         }
+
+        private static string Key(string word) => "<color=orange>" + word + "</color>";
 
         internal static string LocalizeItemName(
             ItemDrop.ItemData item)

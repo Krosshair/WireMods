@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+- Whether your idol is kept now depends on what happened and what you brought. A success keeps it less often (45%), a setback more often (65%), a reset almost always (85%). Each idol tier above the safe one adds 8 points and each tier below takes 8 away. A trophy adds up to 25 points depending on how well it suits the item. With the safe idol and no trophy it still averages about 50%.
+- Idol luck: every idol lost in a row makes the next one 4 points more likely to be kept, up to 12. Keeping one resets it.
+- The Forge now picks your weakest idol that can't cost the item a level, or your best one if every idol carries that risk.
+- The I and T buttons now show an icon instead of a letter, in the style of the Skills and Trophies buttons above the inventory: the Trophies icon for the trophy, and the Forge of Potential's map icon, restyled to match, for the idol. Each opens a popup like the shield style one, listing the idols or trophies you can use as icons: hover one to see what it does, click it to pick it. Clicking the trophy you're already offering takes it back off.
+- Hovering the idol or trophy explains it, in the same tooltip as hovering an item. The idol shows whether it's strong enough, the odds, how often it's kept, and the current safe tier. The trophy shows how much it helps, how much more often your idol is kept with it, and whether its magic was drawn on recently.
+
 ## 0.5.1
 - The faster Forge refining no longer does any work while the crafting panel is open; trophy favor is looked up without re-reading save data each time.
 - A boss trophy that somehow ended up selected is dropped from the offering instead of turning the attempt into a plain vanilla upgrade.

@@ -11,29 +11,91 @@ namespace WiresForgeOfGoodtential
                 0.90f - 0.05f * Mathf.Max(0, potential));
         }
 
-        // Trophy bonuses to preserving an idol use the exact same
-        // prestige comparison as trophy protection against failed rolls.
-        // This is a relative 0..35% increase over the base 50% chance,
-        // not +35 percentage points. With a very strong trophy the
-        // actual preservation chance tops out at 67.5%.
+        // ---- Keeping the idol ----
+        //
+        // The forge takes its due when it gives: a success keeps the idol
+        // less often than a setback, and a reset almost always spares it.
+        // On top of that:
+        //  - each idol tier above the safe minimum adds 8 points, each
+        //    tier below takes 8 away;
+        //  - a trophy adds up to 25 points, by how well it suits the item
+        //    (the same comparison that protects the item);
+        //  - idol luck adds 4 points per idol lost in a row, up to 12.
+        // With the safe idol and no trophy this averages about 50%.
+        internal const float KeepAfterSuccess = 0.45f;
+        internal const float KeepAfterSetback = 0.65f;
+        internal const float KeepAfterReset = 0.85f;
+        internal const float KeepAfterDestruction = 0.50f;
+        private const float KeepPerTier = 0.08f;
+        private const float KeepTrophyMax = 0.25f;
+        private const float KeepMin = 0.15f;
+        private const float KeepMax = 0.90f;
+
         internal static float GetIdolKeepChance(
+            ForgeOutcome outcome,
+            int idolTier,
+            int requiredTier,
+            ItemDrop.ItemData trophy,
+            float itemReferencePrestige)
+        {
+            float chance;
+            switch (outcome)
+            {
+                case ForgeOutcome.Success:
+                case ForgeOutcome.Jackpot:
+                    chance = KeepAfterSuccess;
+                    break;
+                case ForgeOutcome.CompleteLoss:
+                    chance = KeepAfterReset;
+                    break;
+                case ForgeOutcome.Destroyed:
+                    chance = KeepAfterDestruction;
+                    break;
+                default:
+                    chance = KeepAfterSetback;
+                    break;
+            }
+
+            return KeepChance(chance, idolTier, requiredTier, trophy, itemReferencePrestige);
+        }
+
+        // The same modifiers on any base, for showing "kept on success /
+        // otherwise" before the roll.
+        internal static float KeepChance(
+            float baseChance,
+            int idolTier,
+            int requiredTier,
+            ItemDrop.ItemData trophy,
+            float itemReferencePrestige)
+        {
+            // Under-tier idols never take a trophy.
+            if (idolTier < requiredTier)
+                trophy = null;
+
+            return Mathf.Clamp(
+                baseChance +
+                KeepPerTier * (idolTier - requiredTier) +
+                TrophyKeepBonus(trophy, itemReferencePrestige) +
+                IdolLuck.Bonus,
+                KeepMin,
+                KeepMax);
+        }
+
+        internal static float TrophyKeepBonus(
             ItemDrop.ItemData trophy,
             float itemReferencePrestige)
         {
             if (trophy == null ||
                 ForgeTrophyEligibility.IsBossTrophy(trophy))
-                return 0.50f;
+                return 0f;
 
-            float badOutcomeMultiplier =
+            float multiplier =
                 ForgeData.GetTrophyBadOutcomeMultiplier(
                     trophy,
                     itemReferencePrestige);
 
-            float favor =
-                Mathf.Clamp01(
-                    (1f - badOutcomeMultiplier) / 0.995f);
-
-            return 0.50f * (1f + 0.35f * favor);
+            return KeepTrophyMax *
+                Mathf.Clamp01((1f - multiplier) / 0.995f);
         }
 
         internal static bool LossRiskActive(int potential)
