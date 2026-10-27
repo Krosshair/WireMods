@@ -17,12 +17,12 @@ namespace WiresAldr
     [HarmonyPatch(typeof(Pickable), nameof(Pickable.Interact))]
     internal static class WildForage
     {
-        [ThreadStatic] private static float _extraChance;
-        [ThreadStatic] private static bool _active;
-        [ThreadStatic] private static int _veteranExtra;
-        [ThreadStatic] private static bool _veteranShown;
-        [ThreadStatic] private static Pickable _pickable;
-        [ThreadStatic] private static Player _player;
+        private static float _extraChance;
+        private static bool _active;
+        private static int _veteranExtra;
+        private static bool _veteranShown;
+        private static Pickable _pickable;
+        private static Player _player;
 
         private static readonly AccessTools.FieldRef<Pickable, bool> Picked =
             AccessTools.FieldRefAccess<Pickable, bool>("m_picked");

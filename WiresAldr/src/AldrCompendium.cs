@@ -242,6 +242,13 @@ namespace WiresAldr
                       .AppendLine(Sub("against raiders, multiplies all other XP bonuses"));
             }
 
+            if (SleepBonus.Enabled)
+            {
+                sb.AppendLine();
+                sb.Append("Sleep bonus: ").Append(Value("+" + Num(Plugin.SleepXpShare.Value, 1) + "%"))
+                  .AppendLine(Sub("of the XP each skill earned in the last day, added when you wake up; older XP counts for less"));
+            }
+
             if (Expedition.Enabled)
             {
                 sb.AppendLine();

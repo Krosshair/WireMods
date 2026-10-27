@@ -13,7 +13,7 @@ namespace WiresAldr
     [HarmonyPatch]
     internal static class NaturalDropSourceScope
     {
-        [ThreadStatic] private static int _depth;
+        private static int _depth;
 
         internal static bool IsNaturalSource
         {

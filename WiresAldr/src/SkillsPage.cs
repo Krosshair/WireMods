@@ -40,7 +40,7 @@ namespace WiresAldr
             float catchUp = 1f;
             int tier = DynamicExperience.CatchUpTierOf(p);
             if (Plugin.XpCatchUpBonus.Value > 0f && tier > 1)
-                catchUp = (float)ExperienceMath.CatchUp(tier, p.GetSkillLevel(skill), Plugin.XpCatchUpBonus.Value,
+                catchUp = (float)ExperienceMath.CatchUp(tier, DynamicExperience.RawLevel(p.GetSkills(), skill), Plugin.XpCatchUpBonus.Value,
                     Plugin.XpCatchUpBase.Value, Plugin.XpCatchUpPerTier.Value);
             float transfer = DynamicExperience.WeaponTransfer(p.GetSkills(), skill);
             return (Mathf.Max(catchUp, transfer) - 1f) * 100.0;

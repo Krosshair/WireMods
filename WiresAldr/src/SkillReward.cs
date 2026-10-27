@@ -9,7 +9,7 @@ namespace WiresAldr
     internal static class SkillReward
     {
         // True while a flat reward is being paid (weapon transfer skips it).
-        [System.ThreadStatic] internal static bool Granting;
+        internal static bool Granting;
 
         internal static void Grant(Player player, Skills.SkillType type,
             float xp, string reason)

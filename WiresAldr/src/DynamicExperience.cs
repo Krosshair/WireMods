@@ -8,13 +8,13 @@ namespace WiresAldr
 {
     internal static class DynamicExperience
     {
-        [ThreadStatic] private static ActionScope current;
-        [ThreadStatic] private static FishingScope currentFish;
-        [ThreadStatic] private static Character dodgeAttackOwner;
+        private static ActionScope current;
+        private static FishingScope currentFish;
+        private static Character dodgeAttackOwner;
         private sealed class FishingScope { internal Player Player; internal int Tier; internal int Quality; internal bool Completion; }
         private static bool addingParryXp;
-        [ThreadStatic] private static int xpDepth;
-        [ThreadStatic] private static int summonXpDepth;
+        private static int xpDepth;
+        private static int summonXpDepth;
 
         // ---- Your own fighting (attacks, casts, blocks) ----
         // Fighting alongside your summons is rewarded (see summon kills).
@@ -75,6 +75,13 @@ namespace WiresAldr
                     return true;
                 default: return false;
             }
+        }
+        // The skill's own level, without gear bonuses. Never creates an entry.
+        internal static float RawLevel(Skills skills, Skills.SkillType skill)
+        {
+            Dictionary<Skills.SkillType, Skills.Skill> data = skills != null ? SkillData(skills) : null;
+            Skills.Skill s;
+            return data != null && data.TryGetValue(skill, out s) && s != null ? s.m_level : 0f;
         }
         internal static float WeaponTransfer(Skills skills, Skills.SkillType skill)
         {
@@ -250,7 +257,7 @@ namespace WiresAldr
             // No late-level boost against substantially weaker enemies.
             if (c.TargetTier >= ChallengeTier(player) - 1)
                 danger *= 1f + 0.4f * Mathf.Clamp01(
-                    (player.GetSkillLevel(skill) - 40f) / 50f);
+                    (RawLevel(player.GetSkills(), skill) - 40f) / 50f);
             bool ranged = skill == Skills.SkillType.Bows || skill == Skills.SkillType.Crossbows;
             float precision = Mathf.Clamp(c.Precision, 0f, ranged ? 0.25f : 0.12f);
             // One attack hitting several enemies (cleaves, sweeps, piercing shots, AoE).
@@ -264,7 +271,7 @@ namespace WiresAldr
             {
                 __state = true;
                 ++xpDepth;
-                if (!(Plugin.Enabled.Value && Plugin.XpEnabled.Value) || factor <= 0f || skillType == Skills.SkillType.None || skillType == Skills.SkillType.All) return;
+                if (!(Plugin.Enabled.Value && Plugin.XpEnabled.Value) || SleepBonus.Granting || factor <= 0f || skillType == Skills.SkillType.None || skillType == Skills.SkillType.All) return;
                 Player p = Player.m_localPlayer;
                 if (!p || p.GetSkills() != __instance) return; // avoid GetComponent on every XP gain
                 int tier = PlayerTier(p);
@@ -297,7 +304,7 @@ namespace WiresAldr
                 // can't multiply into absurd numbers. Only raids multiply.
                 // Transfer is for the skill's own actions, not flat rewards.
                 float catchUp = Plugin.XpCatchUpBonus.Value > 0f && tier > 1
-                    ? (float)ExperienceMath.CatchUp(tier, p.GetSkillLevel(skillType), Plugin.XpCatchUpBonus.Value,
+                    ? (float)ExperienceMath.CatchUp(tier, RawLevel(__instance, skillType), Plugin.XpCatchUpBonus.Value,
                         Plugin.XpCatchUpBase.Value, Plugin.XpCatchUpPerTier.Value) : 1f;
                 float transfer = SkillReward.Granting ? 1f : WeaponTransfer(__instance, skillType);
                 float learning = Mathf.Max(catchUp, transfer) - 1f;
@@ -536,9 +543,9 @@ namespace WiresAldr
         // Character.AddStaggerDamage computes the decisive block failure
         // result. BlockAttack's own bool return is NOT that result: it also
         // returns true for attacks that staggered the player.
-        [ThreadStatic] private static Character observedBlockPlayer;
-        [ThreadStatic] private static bool observedBlockStaggered;
-        [ThreadStatic] private static bool observedBlockStaggerChecked;
+        private static Character observedBlockPlayer;
+        private static bool observedBlockStaggered;
+        private static bool observedBlockStaggerChecked;
 
         [HarmonyPatch(typeof(Character), "AddStaggerDamage")]
         private static class ObserveBlockStagger

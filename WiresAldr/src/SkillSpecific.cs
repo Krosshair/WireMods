@@ -8,13 +8,13 @@ namespace WiresAldr
     // Event-based, bounded runtime state. No Update hooks, scene scanning or UI.
     internal static class SkillSpecific
     {
-        [ThreadStatic] private static Attack activeAttack;
-        [ThreadStatic] private static Recipe activeRecipe;
-        [ThreadStatic] private static float craftModifier;
-        [ThreadStatic] private static float forageModifier;
-        [ThreadStatic] private static bool building;
-        [ThreadStatic] private static float buildModifier;
-        [ThreadStatic] private static float cookingFood;   // food value of the dish being made
+        private static Attack activeAttack;
+        private static Recipe activeRecipe;
+        private static float craftModifier;
+        private static float forageModifier;
+        private static bool building;
+        private static float buildModifier;
+        private static float cookingFood;   // food value of the dish being made
         private static float lastDefense = -999f;
         private static float buildTime;
         private static readonly AccessTools.FieldRef<Attack,int> ChainIndex = AccessTools.FieldRefAccess<Attack,int>("m_currentAttackCainLevel");
@@ -37,7 +37,7 @@ namespace WiresAldr
         // Vanilla only raises weapon skill when a swing hits something; a
         // swing that hit nothing breaks the streak, so only genuinely
         // landed combos earn the extra.
-        [ThreadStatic] private static bool attackConnected;
+        private static bool attackConnected;
         private static int comboStreak, lastComboIndex = -1;
         private static float lastComboTime = -999f;
 
@@ -100,7 +100,7 @@ namespace WiresAldr
             }
             bonus += HitTechniqueBonus(skill);
             bonus += TravelBonus(player, skill);
-            return Mathf.Clamp(bonus, 0f, Mathf.Max(0.4f, Plugin.XpTravelBonus.Value / 100f));
+            return Mathf.Max(0f, bonus);
         }
         // Sneaking in range of unaware hostiles (vanilla's full-XP case).
         // Read from vanilla's own check, made right before it raises Sneak,

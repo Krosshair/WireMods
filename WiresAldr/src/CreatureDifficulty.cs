@@ -5,8 +5,8 @@ namespace WiresAldr
 {
     internal static class StarRules
     {
-        [System.ThreadStatic] internal static bool EventSpawn;
-        [System.ThreadStatic] internal static GameObject ActivePrefab;
+        internal static bool EventSpawn;
+        internal static GameObject ActivePrefab;
 
         internal static bool Enabled =>
             Plugin.Enabled != null && Plugin.Enabled.Value &&
@@ -48,6 +48,12 @@ namespace WiresAldr
         private static void Postfix()
         {
             StarRules.EventSpawn = false;
+        }
+        [HarmonyFinalizer]
+        private static System.Exception Finalizer(System.Exception __exception)
+        {
+            StarRules.EventSpawn = false;
+            return __exception;
         }
     }
 
@@ -124,6 +130,12 @@ namespace WiresAldr
         private static void Postfix()
         {
             StarRules.ActivePrefab = null;
+        }
+        [HarmonyFinalizer]
+        private static System.Exception Finalizer(System.Exception __exception)
+        {
+            StarRules.ActivePrefab = null;
+            return __exception;
         }
     }
 

@@ -23,7 +23,7 @@ namespace WiresAldr
         }
         private static readonly Dictionary<int, Pending> pending = new Dictionary<int, Pending>();
         private static readonly Dictionary<int, int> hookedBiomes = new Dictionary<int, int>();
-        [ThreadStatic] private static Pending pendingRpc;
+        private static Pending pendingRpc;
 
         internal static double PercentForBiome(int tier, bool[] keys,
             double ownBonus, double later, double skipped)
@@ -162,9 +162,9 @@ namespace WiresAldr
             {
                 if (!__instance) return;
                 int id = __instance.GetInstanceID();
-                if (ff == null) hookedBiomes.Remove(id);
-                else hookedBiomes[id] = BiomeCatalog.FromBiome(Heightmap.FindBiome(__instance.transform.position));
-                if (hookedBiomes.Count > 128) hookedBiomes.Clear();
+                if (ff == null) { hookedBiomes.Remove(id); return; }
+                if (hookedBiomes.Count >= 128) hookedBiomes.Clear();
+                hookedBiomes[id] = BiomeCatalog.FromBiome(Heightmap.FindBiome(__instance.transform.position));
             }
         }
 

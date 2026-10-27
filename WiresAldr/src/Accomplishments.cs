@@ -43,7 +43,8 @@ namespace WiresAldr
             int id = target.GetInstanceID();
             Pending p;
             if (pending.TryGetValue(id, out p)) return p;
-            if (pending.Count > 256) Prune(true);
+            if (pending.Count > 256) Prune(false);
+            if (pending.Count > 1024) Prune(true);
             p = new Pending();
             pending[id] = p;
             return p;

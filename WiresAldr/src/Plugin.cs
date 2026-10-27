@@ -11,7 +11,7 @@ namespace WiresAldr
     {
         public const string Guid = "wire.valheim.heimvoxtr";
         public const string Name = "Wire's Aldr";
-        public const string Version = "1.0.4";
+        public const string Version = "1.1.0";
         private static readonly ConfigSync Sync = new ConfigSync(Guid)
         {
             DisplayName = Name,
@@ -45,7 +45,9 @@ namespace WiresAldr
             // Rewards
             KillXp, KillXpPerBiome, SneakKillXp, SummonKillShare, TreeXp, DepositXp,
             FishXp, FishXpPerQuality, XpParryStrength, XpDodgeStrength, BarrierXp,
-            FirstDishXp, CropXp;
+            FirstDishXp, CropXp,
+            // Sleep
+            SleepXpShare, SleepWindow, SleepHalfLife;
         private Harmony _harmony;
 
         private void Awake()
@@ -200,6 +202,14 @@ namespace WiresAldr
             SkippedFactor = Number(ProgressSection, "Unconquered biome share (%)", 15,
                 "Share of later Forsaken bonuses a biome gets while its own Forsaken lives.", 0, 100);
 
+            const string SleepSection = "13 - Sleep";
+            SleepXpShare = Number(SleepSection, "Sleep bonus (%)", 20,
+                "Waking up from sleep adds this share of the XP each skill earned in the last day, then starts over. 0 turns it off.", 0, 100);
+            SleepWindow = Number(SleepSection, "Full value (game hours)", 24,
+                "XP earned this recently before falling asleep counts fully. A game day is 24 hours.", 1, 72);
+            SleepHalfLife = Number(SleepSection, "Fading, half-life (game hours)", 2,
+                "Older XP counts half as much for every this many hours beyond.", 0.5f, 24);
+
             Diagnostics = Config.Bind("12 - Diagnostics", "Enable diagnostics", false,
                 "Writes BepInEx/Aldr-Diagnostics.log. Local, not synced.");
             Config.Save();
@@ -207,7 +217,17 @@ namespace WiresAldr
             _harmony = new Harmony(Guid);
             try
             {
-                _harmony.PatchAll();
+                // One class at a time: a patch broken by a game update
+                // only switches off its own feature, not the whole mod.
+                foreach (Type type in AccessTools.GetTypesFromAssembly(typeof(Plugin).Assembly))
+                {
+                    try { _harmony.CreateClassProcessor(type).Patch(); }
+                    catch (Exception e)
+                    {
+                        AldrDiagnostics.Log("PATCH_FAILED", type.FullName + ": " + e);
+                        Logger.LogError("Patch failed for " + type.FullName + ": " + e.Message);
+                    }
+                }
                 AldrPatchAudit.Check();
                 AldrDiagnostics.Settings();
                 AldrDiagnostics.Flush();

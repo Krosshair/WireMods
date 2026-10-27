@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 
@@ -249,19 +252,34 @@ namespace WiresAldr
         }
     }
 
+    // Runs inside vanilla's ~2 s base value refresh, right after it stores
+    // the new base value: nothing is added to the physics ticks in between.
     [HarmonyPatch(typeof(Player), "UpdateBaseValue")]
     internal static class ExpeditionTick
     {
-        private static readonly AccessTools.FieldRef<Player, float> Timer =
-            AccessTools.FieldRefAccess<Player, float>("m_baseValueUpdateTimer");
-        private static void Postfix(Player __instance)
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> input)
         {
-            // Vanilla resets its timer to 0 when it refreshes the base value.
-            if (__instance == Player.m_localPlayer && Timer(__instance) == 0f)
+            FieldInfo baseValue = AccessTools.Field(typeof(Player), "m_baseValue");
+            MethodInfo refresh = AccessTools.Method(typeof(ExpeditionTick), nameof(Refresh));
+            bool done = false;
+            foreach (CodeInstruction code in input)
             {
-                Accomplishments.Tick(__instance);
-                Expedition.Tick(__instance);
+                yield return code;
+                if (!done && code.StoresField(baseValue))
+                {
+                    done = true;
+                    yield return new CodeInstruction(OpCodes.Ldarg_0);
+                    yield return new CodeInstruction(OpCodes.Call, refresh);
+                }
             }
+            if (!done) Debug.LogWarning("[Aldr] Base value refresh not found: Expedition and pending rewards won't update.");
+        }
+
+        private static void Refresh(Player player)
+        {
+            if (player != Player.m_localPlayer) return;
+            Accomplishments.Tick(player);
+            Expedition.Tick(player);
         }
     }
 
