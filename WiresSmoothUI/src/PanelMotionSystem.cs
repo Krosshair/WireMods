@@ -14,72 +14,61 @@ namespace WiresSmoothUI
         internal static bool On =>
             WiresSmoothUIPlugin.Enabled.Value && WiresSmoothUIPlugin.PanelAnimations.Value;
 
-        // Skills, trophies and achievements: the panel just fades, and the rows
-        // you can see fade and rise in one after another.
-        private const float ListPanelFade = 0.1f;
-        private const float RowStep = 0.025f;
-        private const float RowDuration = 0.22f;
-        private const int MaxRows = 14;
-        private static readonly Vector3 RowFrom = new Vector3(0f, -8f, 0f);
-        private static readonly Vector3[] Corners = new Vector3[4];
-
-        internal static void Open(Transform root, float startScale = 0.95f, bool list = false)
+        internal static void Open(Transform root, float startScale = 0.95f)
         {
             if (!On || root == null)
                 return;
-
-            if (!list)
-            {
-                UiMotion.Enter(root, 0f, Duration, Vector3.zero, startScale, true);
-                return;
-            }
-
-            UiMotion.Enter(root, 0f, ListPanelFade, Vector3.zero, 1f, true);
-            // The game fills these lists right after showing the panel.
-            UiMotion.NextFrame(() => Rows(root));
+            UiMotion.Enter(root, 0f, Duration, Vector3.zero, startScale, true);
         }
 
-        private static void Rows(Transform root)
+        // Its own canvas: moving, scaling or fading it then only redraws
+        // it, not everything else on the HUD with it.
+        internal static bool OwnCanvas(GameObject go)
         {
-            if (root == null || !root.gameObject.activeInHierarchy)
-                return;
-
-            ScrollRect scroll = root.GetComponentInChildren<ScrollRect>();
-            if (scroll == null || scroll.content == null)
-                return;
-
-            // Lay the list out first, so rows are measured where they'll stay.
-            LayoutRebuilder.ForceRebuildLayoutImmediate(scroll.content);
-            RectTransform viewport = scroll.viewport != null ? scroll.viewport : scroll.transform as RectTransform;
-
-            // Some lists keep their rows in a single holder; look through it.
-            Transform content = scroll.content;
-            for (int depth = 0; depth < 2 && content.childCount == 1; depth++)
-                content = content.GetChild(0);
-
-            int index = 0;
-            foreach (Transform row in content)
+            try
             {
-                if (index >= MaxRows)
-                    break;
-                if (!row.gameObject.activeInHierarchy || !Visible(row as RectTransform, viewport))
-                    continue;
-                UiMotion.Enter(row, index * RowStep, RowDuration, RowFrom, 1f, true);
-                index++;
+                if (go.GetComponent<Canvas>() != null)
+                    return true;
+                Canvas parent = go.GetComponentInParent<Canvas>();
+                if (parent == null)
+                    return false;
+                GraphicRaycaster parentCaster = parent.GetComponent<GraphicRaycaster>();
+                Canvas canvas = go.AddComponent<Canvas>();
+                canvas.overrideSorting = false;
+                canvas.additionalShaderChannels = parent.additionalShaderChannels;
+                // Clicks on its buttons need a raycaster on the new canvas.
+                GraphicRaycaster caster = go.AddComponent<GraphicRaycaster>();
+                if (parentCaster != null)
+                {
+                    caster.ignoreReversedGraphics = parentCaster.ignoreReversedGraphics;
+                    caster.blockingObjects = parentCaster.blockingObjects;
+                }
+                return true;
             }
-        }
-
-        private static bool Visible(RectTransform row, RectTransform viewport)
-        {
-            if (row == null)
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("[Wire's Smooth UI] Own canvas for " + go.name + ": " + e.Message);
                 return false;
-            row.GetWorldCorners(Corners);
-            float minY = Corners[0].y, maxY = Corners[1].y;
-            viewport.GetWorldCorners(Corners);
-            return maxY > Corners[0].y && minY < Corners[1].y;
+            }
         }
 
-        internal static void Watch(Object target, bool list = false, float startScale = 0.95f)
+        // Eases up from startScale with no fade.
+        internal static void Pop(Transform root, float startScale)
+        {
+            if (!On || root == null)
+                return;
+            UiMotion.Enter(root, 0f, Duration, Vector3.zero, startScale, false);
+        }
+
+        internal static void WatchScaleOnly(Object target, float startScale)
+        {
+            Watch(target, startScale, true, true);
+        }
+
+        // ownCanvas: the panel gets a canvas of its own the first time it
+        // animates (only with Panels on), so its animation redraws only it.
+        internal static void Watch(Object target, float startScale = 0.95f, bool scaleOnly = false,
+            bool ownCanvas = false)
         {
             Transform t = target as Transform
                 ?? (target as GameObject)?.transform
@@ -89,17 +78,37 @@ namespace WiresSmoothUI
             PanelOpenWatcher watcher = t.GetComponent<PanelOpenWatcher>();
             if (watcher == null)
                 watcher = t.gameObject.AddComponent<PanelOpenWatcher>();
-            watcher.List |= list;
             watcher.StartScale = startScale;
+            watcher.ScaleOnly = scaleOnly;
+            watcher.OwnCanvas = ownCanvas;
+            // Set up: from the next time the panel opens, it animates.
+            // (Adding it to a panel that's open right now doesn't.)
+            watcher.Ready = true;
         }
     }
 
     internal sealed class PanelOpenWatcher : MonoBehaviour
     {
-        internal bool List;
         internal float StartScale = 0.95f;
+        internal bool ScaleOnly;
+        internal bool OwnCanvas;
+        internal bool Ready;
+        private int _canvas; // 0 not tried, 1 has one, -1 couldn't: don't animate
 
-        private void OnEnable() => PanelMotionSystem.Open(transform, StartScale, List);
+        private void OnEnable()
+        {
+            if (!Ready || !PanelMotionSystem.On)
+                return;
+            if (OwnCanvas)
+            {
+                if (_canvas == 0)
+                    _canvas = PanelMotionSystem.OwnCanvas(gameObject) ? 1 : -1;
+                if (_canvas < 0)
+                    return; // no cheap way to animate it: leave it as it is
+            }
+            if (ScaleOnly) PanelMotionSystem.Pop(transform, StartScale);
+            else PanelMotionSystem.Open(transform, StartScale);
+        }
 
         private void OnDisable() => UiMotion.Cancel(transform);
     }
@@ -110,22 +119,30 @@ namespace WiresSmoothUI
         [HarmonyPostfix]
         private static void Postfix(InventoryGui __instance)
         {
-            PanelMotionSystem.Watch(__instance.m_skillsDialog, true);
+            // Skills, trophies and achievements open as they are, on purpose:
+            // animating their long lists cost too much.
             PanelMotionSystem.Watch(__instance.m_textsDialog);
-            PanelMotionSystem.Watch(__instance.m_trophiesPanel, true);
-            PanelMotionSystem.Watch(__instance.m_achievementsPanel, true);
             PanelMotionSystem.Watch(__instance.m_variantDialog);
             PanelMotionSystem.Watch(__instance.m_splitDialog);
             PanelMotionSystem.Watch(__instance.m_craftProgressPanel);
         }
     }
 
-    // The hammer's (and cauldron's) build menu pops in like other menus.
+    // The hammer's build menu pops in like other menus. It holds every piece
+    // you can build, often hundreds of buttons, and sits on the HUD's canvas:
+    // scaling or fading it there would rebuild the whole HUD every frame of
+    // the pop. On a canvas of its own, scaling it only moves that canvas, so
+    // the pop is a scale only, with no fade.
     [HarmonyPatch(typeof(BuildUi), "Awake")]
     internal static class SmoothUIPanelBuildMenuPatch
     {
         [HarmonyPostfix]
-        private static void Postfix(BuildUi __instance) => PanelMotionSystem.Watch(__instance);
+        private static void Postfix(BuildUi __instance)
+        {
+            if (__instance != null)
+                PanelMotionSystem.WatchScaleOnly(__instance, 0.93f);
+        }
+
     }
 
     // The selected piece panel at the bottom is part of the HUD: it fades in
@@ -134,7 +151,11 @@ namespace WiresSmoothUI
     internal static class SmoothUIPanelBuildHudPatch
     {
         [HarmonyPostfix]
-        private static void Postfix(Hud __instance) => PanelMotionSystem.Watch(__instance.m_buildHud, false, 1f);
+        private static void Postfix(Hud __instance)
+        {
+            if (__instance.m_buildHud != null)
+                PanelMotionSystem.Watch(__instance.m_buildHud, 1f, false, true);
+        }
     }
 
     [HarmonyPatch(typeof(TextInput), "Awake")]

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2
+
+* Opening the build menu no longer lags with many pieces unlocked: it gets a canvas of its own and only scales in (no fade), so the rest of the HUD isn't redrawn with it. The selected piece panel fades in on its own canvas too.
+* Skills, trophies and achievements no longer animate when they open: animating their long lists cost too much.
+
 ## 0.6.1
 
 * The build menu pops in like the other menus when you open it with the hammer.
