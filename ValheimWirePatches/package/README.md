@@ -2,7 +2,7 @@
 
 Fixes for vanilla Valheim bugs I've found. No gameplay changes.
 
-This mod is meant to be temporary. The fixes are here so people can have them now, and I'm hoping they get added to [Valheim Community Patch](https://thunderstore.io/c/valheim/p/MidnightMods/ValheimCommunityPatch/) ([GitHub](https://github.com/MidnightsFX/Valheim-Community-Patch)). Once a fix is in there, it gets removed from here.
+This mod is meant to be temporary. The fixes are here so people can have them now, and I'm hoping they get added to [Valheim Community Patch](https://thunderstore.io/c/valheim/p/MidnightMods/ValheimCommunityPatch/) ([GitHub](https://github.com/MidnightsFX/Valheim-Community-Patch)).
 
 Source code: https://github.com/Krosshair/WireMods/tree/main/ValheimWirePatches
 

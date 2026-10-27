@@ -1,7 +1,7 @@
 {
     "name": "ValheimWirePatches",
     "description": "Fixes for vanilla bugs, meant to be added to Valheim Community Patch. Double click sounds, lighting breaking after teleports, lightning stuck in the lighting.",
-    "version_number": "0.1.0",
+    "version_number": "0.1.1",
     "website_url": "https://github.com/Krosshair/WireMods/tree/main/ValheimWirePatches",
     "dependencies": []
 }
