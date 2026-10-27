@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.4
+
+* Hide empty material slots works at the Forge of Goodtential too: a slot only counts as empty when nothing at all shows in it, so its idol and trophy slots and swap buttons stay as they are.
+
 ## 0.6.3
 
 * Skills, trophies and achievements pop in again when they open, scale only and on their own canvas like the build menu, so their long lists don't lag it.

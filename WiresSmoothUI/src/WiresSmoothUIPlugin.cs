@@ -29,7 +29,7 @@ namespace WiresSmoothUI
     {
         public const string PluginGuid = "wire.valheim.smoothui";
         public const string PluginName = "Wire's Smooth UI";
-        public const string PluginVersion = "0.6.3";
+        public const string PluginVersion = "0.6.4";
 
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<bool> HudEnabled;

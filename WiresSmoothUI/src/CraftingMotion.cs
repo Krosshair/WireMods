@@ -181,11 +181,9 @@ namespace WiresSmoothUI
 
             foreach (GameObject req in gui.m_recipeRequirementList)
             {
-                // An empty slot (icon off) has nothing to slide in, and its fade
-                // would bring back a slot that EmptyMaterialSlots hid. Upgraders
-                // put their own buttons in those slots, so they still animate.
-                Transform icon = req != null ? req.transform.Find("res_icon") : null;
-                if (icon != null && !icon.gameObject.activeSelf && !EmptyMaterialSlots.AtUpgrader)
+                // An empty slot has nothing to slide in.
+                MaterialSlotWatcher slot = req != null ? req.GetComponent<MaterialSlotWatcher>() : null;
+                if (slot != null && slot.Empty)
                 {
                     Shown.Remove(req.transform);
                     continue;
