@@ -311,6 +311,7 @@ namespace WiresBalancedCraftFromNearbyChests
             KeywordSync.Reset();
             MultiUserChestCompat.Reset();
             RangeProvider.Invalidate();
+            RouteRegistry.ClearInstanceCache();
         }
     }
 }

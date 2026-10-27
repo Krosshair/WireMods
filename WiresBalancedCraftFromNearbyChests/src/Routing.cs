@@ -213,6 +213,19 @@ namespace WiresBalancedCraftFromNearbyChests
             return Get("refill:" + routeName);
         }
 
+        // Asked every frame while crafting or building: answered from a
+        // cache per station and per tool, instead of building name strings.
+        private static readonly Dictionary<int, RouteDefinition> StationCache =
+            new Dictionary<int, RouteDefinition>();
+        private static readonly Dictionary<ItemDrop.ItemData.SharedData, RouteDefinition> ToolCache =
+            new Dictionary<ItemDrop.ItemData.SharedData, RouteDefinition>();
+
+        internal static void ClearInstanceCache()
+        {
+            StationCache.Clear();
+            ToolCache.Clear();
+        }
+
         internal static RouteDefinition EnsureStation(
             CraftingStation station,
             string prefabName = null)
@@ -220,6 +233,24 @@ namespace WiresBalancedCraftFromNearbyChests
             if (station == null)
                 return null;
 
+            RouteDefinition cached;
+            int stationId = station.GetInstanceID();
+            if (prefabName == null && StationCache.TryGetValue(stationId, out cached))
+                return cached;
+            RouteDefinition resolved = EnsureStationUncached(station, prefabName);
+            if (prefabName == null && resolved != null)
+            {
+                if (StationCache.Count > 1024)
+                    StationCache.Clear();
+                StationCache[stationId] = resolved;
+            }
+            return resolved;
+        }
+
+        private static RouteDefinition EnsureStationUncached(
+            CraftingStation station,
+            string prefabName)
+        {
             if (string.IsNullOrEmpty(prefabName))
                 prefabName = Utils.GetPrefabName(station.gameObject);
 
@@ -268,6 +299,19 @@ namespace WiresBalancedCraftFromNearbyChests
                 item.m_shared.m_buildPieces == null)
                 return null;
 
+            RouteDefinition cached;
+            if (prefabName == null && ToolCache.TryGetValue(item.m_shared, out cached))
+                return cached;
+            RouteDefinition resolved = EnsureToolUncached(item, prefabName);
+            if (prefabName == null && resolved != null)
+                ToolCache[item.m_shared] = resolved;
+            return resolved;
+        }
+
+        private static RouteDefinition EnsureToolUncached(
+            ItemDrop.ItemData item,
+            string prefabName)
+        {
             if (string.IsNullOrEmpty(prefabName))
             {
                 prefabName =
@@ -606,7 +650,20 @@ namespace WiresBalancedCraftFromNearbyChests
 
     internal static class RangeProvider
     {
+        private static float _radius = -1f;
+
+        // Resolved once per world: it's the workbench prefab's own value.
         internal static float GetSharedStationRadius()
+        {
+            if (_radius > 0f)
+                return _radius;
+            float radius = ResolveRadius();
+            if (ZNetScene.instance != null)
+                _radius = radius;
+            return radius;
+        }
+
+        private static float ResolveRadius()
         {
             // Tool routes copy the configured workbench build radius itself.
             // They must not depend on which placed workbench happens to be
@@ -644,7 +701,7 @@ namespace WiresBalancedCraftFromNearbyChests
 
         internal static void Invalidate()
         {
-            // Range is resolved live; kept as a semantic reset hook.
+            _radius = -1f;
         }
     }
 

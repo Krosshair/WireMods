@@ -161,6 +161,7 @@ namespace WiresBalancedCraftFromNearbyChests
             object __instance,
             ref bool __state)
         {
+            Prof.Begin(Prof.StationUse);
             __state =
                 RefillRouting.Enter(
                     __instance as UnityEngine.Component);
@@ -175,6 +176,7 @@ namespace WiresBalancedCraftFromNearbyChests
         {
             if (__state)
                 RoutingContext.ExitRefill();
+            Prof.End(Prof.StationUse);
 
             MucPendingException pending =
                 __exception as MucPendingException;
@@ -248,11 +250,12 @@ namespace WiresBalancedCraftFromNearbyChests
     [HarmonyPatch(typeof(Catapult), "OnLoadPointUse")]
     internal static class CatapultAutoLoadPatch
     {
-        private static readonly MethodInfo CanLoadMethod =
-            AccessTools.Method(
-                typeof(Catapult),
-                "CanItemBeLoaded",
-                new[] { typeof(ItemDrop.ItemData) });
+        // A direct call instead of reflection for every item checked.
+        private static readonly Func<Catapult, ItemDrop.ItemData, bool> CanLoad =
+            AccessTools.Method(typeof(Catapult), "CanItemBeLoaded", new[] { typeof(ItemDrop.ItemData) }) != null
+                ? AccessTools.MethodDelegate<Func<Catapult, ItemDrop.ItemData, bool>>(
+                    AccessTools.Method(typeof(Catapult), "CanItemBeLoaded", new[] { typeof(ItemDrop.ItemData) }))
+                : null;
 
         [HarmonyPrefix]
         private static void Prefix(
@@ -263,47 +266,15 @@ namespace WiresBalancedCraftFromNearbyChests
             if (item != null ||
                 __instance == null ||
                 user == null ||
-                CanLoadMethod == null)
+                CanLoad == null)
                 return;
 
             item = RefillSelection.FindFirstInChests(
                 __instance,
                 delegate(ItemDrop.ItemData candidate)
                 {
-                    object allowed =
-                        CanLoadMethod.Invoke(
-                            __instance,
-                            new object[] { candidate });
-
-                    return allowed is bool &&
-                           (bool)allowed;
+                    return CanLoad(__instance, candidate);
                 });
-        }
-
-        private static ItemDrop.ItemData FindLoadable(
-            Catapult catapult,
-            Inventory inventory)
-        {
-            if (inventory == null)
-                return null;
-
-            List<ItemDrop.ItemData> items =
-                inventory.GetAllItems();
-
-            for (int i = 0; i < items.Count; i++)
-            {
-                ItemDrop.ItemData candidate = items[i];
-                object allowed =
-                    CanLoadMethod.Invoke(
-                        catapult,
-                        new object[] { candidate });
-
-                if (allowed is bool &&
-                    (bool)allowed)
-                    return candidate;
-            }
-
-            return null;
         }
     }
 }

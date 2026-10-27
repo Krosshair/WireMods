@@ -17,7 +17,9 @@ namespace WiresBalancedCraftFromNearbyChests
                 hash != ZDOVars.s_text)
                 return;
 
-            ContainerRegistry.NotifyTitleChanged(__instance);
+            Prof.Begin(Prof.ZdoText);
+            try { ContainerRegistry.NotifyTitleChanged(__instance); }
+            finally { Prof.End(Prof.ZdoText); }
         }
     }
 
@@ -27,7 +29,15 @@ namespace WiresBalancedCraftFromNearbyChests
         [HarmonyPrefix]
         private static void Prefix(ZNetView __instance)
         {
-            if (__instance == null)
+            Prof.Begin(Prof.DestroyHook);
+            try { PrefixTimed(__instance); }
+            finally { Prof.End(Prof.DestroyHook); }
+        }
+
+        private static void PrefixTimed(ZNetView __instance)
+        {
+            if (__instance == null ||
+                !ContainerRegistry.TrackedViews.Remove(__instance.GetInstanceID()))
                 return;
 
             Container[] containers =

@@ -9,7 +9,8 @@ namespace WiresBalancedCraftFromNearbyChests
     internal static class ContainerRegistry
     {
         private const float CacheSeconds = 0.25f;
-        private const float ReconcileIntervalSeconds = 0.05f;
+        // One chest re-checked at a time (another player renaming it).
+        private const float ReconcileIntervalSeconds = 0.25f;
 
         private static readonly HashSet<Container> Known =
             new HashSet<Container>();
@@ -69,6 +70,13 @@ namespace WiresBalancedCraftFromNearbyChests
 
             Reconcile.Add(container);
             PendingIndex.Enqueue(container);
+            Plugin.Wake();
+
+            ZNetView tracked = GetNetView(container);
+            if (tracked == null)
+                tracked = container.GetComponentInParent<ZNetView>();
+            if (tracked != null)
+                TrackedViews.Add(tracked.GetInstanceID());
 
             ZNetView nview = GetNetView(container);
             if (nview != null &&
@@ -89,8 +97,14 @@ namespace WiresBalancedCraftFromNearbyChests
             ConnectionVisuals.NotifyGraphChanged();
         }
 
+        // Objects holding a chest or a refill target: everything else that
+        // gets destroyed (trees, rocks, items, creatures...) is skipped at
+        // once instead of being searched.
+        internal static readonly HashSet<int> TrackedViews = new HashSet<int>();
+
         internal static void Clear()
         {
+            TrackedViews.Clear();
             Known.Clear();
             Reconcile.Clear();
             PendingIndex.Clear();
@@ -125,12 +139,18 @@ namespace WiresBalancedCraftFromNearbyChests
 
             _fullReindexPending = Reconcile.Count > 0;
             _fullReindexCursor = 0;
+            if (_fullReindexPending)
+                Plugin.Wake();
 
             Invalidate();
             ConnectionVisuals.NotifyGraphChanged();
         }
 
-        internal static void Tick()
+        // New chests are indexed one per frame, only while there are any.
+        internal static bool Busy =>
+            PendingIndex.Count > 0 || _fullReindexPending;
+
+        internal static void TickPending()
         {
             while (PendingIndex.Count > 0)
             {
@@ -158,10 +178,15 @@ namespace WiresBalancedCraftFromNearbyChests
 
                 _fullReindexPending = false;
                 _fullReindexCursor = 0;
-                return;
             }
+        }
 
-            if (Reconcile.Count == 0 ||
+        // A chest renamed by another player arrives without a call we can
+        // catch: one known chest is re-checked now and then.
+        internal static void TickReconcile()
+        {
+            if (Busy ||
+                Reconcile.Count == 0 ||
                 Time.time < _nextReconcile)
                 return;
 
@@ -276,10 +301,16 @@ namespace WiresBalancedCraftFromNearbyChests
                 return Matching;
             }
 
+            // Walking around with the hammer moves the origin every frame:
+            // that list follows on its short timer instead of being rebuilt
+            // every frame (taking items asks for a fresh one). A different
+            // station or smelter of the same kind is a different place, so
+            // it gets its own list right away.
             bool sameContext =
                 _cachedRouteId == context.Definition.Id &&
                 Mathf.Abs(_cachedRange - context.Range) < 0.01f &&
-                (_cachedOrigin - context.Origin).sqrMagnitude < 0.0625f;
+                (context.Tool != null ||
+                 (_cachedOrigin - context.Origin).sqrMagnitude < 0.0625f);
 
             if (sameContext && Time.time < _nextRefresh)
                 return Matching;
@@ -406,6 +437,15 @@ namespace WiresBalancedCraftFromNearbyChests
             Container container,
             bool force)
         {
+            Prof.Begin(Prof.Reindex);
+            try { ReindexTimed(container, force); }
+            finally { Prof.End(Prof.Reindex); }
+        }
+
+        private static void ReindexTimed(
+            Container container,
+            bool force)
+        {
             if (container == null)
                 return;
 
@@ -527,6 +567,13 @@ namespace WiresBalancedCraftFromNearbyChests
         }
 
         private static void Refresh(RouteContext context)
+        {
+            Prof.Begin(Prof.ListRefresh);
+            try { RefreshTimed(context); }
+            finally { Prof.End(Prof.ListRefresh); }
+        }
+
+        private static void RefreshTimed(RouteContext context)
         {
             Matching.Clear();
             MatchingVersion++;

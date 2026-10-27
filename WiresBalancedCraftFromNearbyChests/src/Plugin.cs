@@ -5,12 +5,13 @@ using HarmonyLib;
 namespace WiresBalancedCraftFromNearbyChests
 {
     [BepInPlugin(Guid, Name, Version)]
+    [BepInDependency("shudnal.MyLittleUI", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInProcess("valheim.exe")]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.balancedcraftfromnearbychests";
         public const string Name = "Wire's Balanced Craft From Nearby Chests";
-        public const string Version = "0.1.10";
+        public const string Version = "0.1.11";
 
         internal static Plugin Instance;
         internal static ManualLogSource Log;
@@ -26,17 +27,63 @@ namespace WiresBalancedCraftFromNearbyChests
             SharedRouteRegistry.SeedKnownGroups();
 
             _harmony = new Harmony(Guid);
-            _harmony.PatchAll();
+            // One class at a time: a patch broken by a game update only
+            // switches off its own part.
+            foreach (System.Type type in AccessTools.GetTypesFromAssembly(typeof(Plugin).Assembly))
+            {
+                try { _harmony.CreateClassProcessor(type).Patch(); }
+                catch (System.Exception e) { Logger.LogError("Patch failed for " + type.FullName + ": " + e.Message); }
+            }
 
             Logger.LogInfo(Name + " " + Version + " loaded.");
         }
 
+        // Nothing runs every frame unless something is happening (beams
+        // being drawn or fading, a chest being indexed, a Multi User Chest
+        // request in flight). What you look at is checked a few times a
+        // second instead.
+        private void Start()
+        {
+            InvokeRepeating(nameof(Poll), 0.5f, ConnectionVisuals.ContextPollSeconds);
+        }
+
+        private void Poll()
+        {
+            Prof.Begin(Prof.Poll);
+            try
+            {
+                ConnectionVisuals.Poll();
+                if (Busy)
+                    enabled = true;
+            }
+            finally { Prof.End(Prof.Poll); }
+        }
+
+        internal static void Wake()
+        {
+            if (Instance != null && !Instance.enabled)
+                Instance.enabled = true;
+        }
+
+        private static bool Busy =>
+            MultiUserChestCompat.NeedsUpdate ||
+            ConnectionVisuals.Busy ||
+            VanillaConnectionFade.Busy ||
+            ContainerRegistry.Busy;
+
         private void Update()
         {
-            MultiUserChestCompat.Update();
-            RefillTargetRegistry.Tick();
-            ConnectionVisuals.Update();
-            VanillaConnectionFade.Tick();
+            Prof.Begin(Prof.Update);
+            try
+            {
+                MultiUserChestCompat.Update();
+                ContainerRegistry.TickPending();
+                ConnectionVisuals.Update();
+                VanillaConnectionFade.Tick();
+                if (!Busy)
+                    enabled = false;
+            }
+            finally { Prof.End(Prof.Update); }
         }
 
         private void OnDestroy()

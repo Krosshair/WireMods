@@ -102,7 +102,7 @@ namespace WiresBalancedCraftFromNearbyChests
             "forge_ext6"
         };
 
-        private const float ContextPollSeconds = 0.08f;
+        internal const float ContextPollSeconds = 0.08f;
         private const float LazyGraphDelay = 0.12f;
         private const float MovingGraphRefreshSeconds = 0.25f;
         private const int BeamCreatesPerFrame = 1;
@@ -119,8 +119,78 @@ namespace WiresBalancedCraftFromNearbyChests
 
         private static bool _dirty = true;
         private static float _rebuildNotBefore;
-        private static float _nextContextPoll;
         private static float _nextMovingGraphRefresh;
+
+        // A few times a second (not every frame): what you're looking at,
+        // and whether storage that moves needs its beams redrawn. Looking
+        // at the same thing as last time costs nothing.
+        private static GameObject _lastHover;
+        private static bool _lastInBuildUi;
+        private static ItemDrop.ItemData _lastTool;
+        private static bool _contextActive;
+
+        internal static void Poll()
+        {
+            ContainerRegistry.TickReconcile();
+
+            Player player = Player.m_localPlayer;
+            if (!VisualsEnabled() || player == null)
+            {
+                if (_contextActive)
+                {
+                    _contextActive = false;
+                    _lastHover = null;
+                    CleanupActive();
+                    ResetContext();
+                    _dirty = false;
+                }
+                return;
+            }
+            _contextActive = true;
+
+            GameObject hover = player.GetHoverObject();
+            bool inBuildUi = Hud.InBuildUi();
+            ItemDrop.ItemData tool = player.RightItem;
+            // Plain reference checks: a destroyed object still counts as
+            // something different from nothing.
+            if (!ReferenceEquals(hover, _lastHover) || inBuildUi != _lastInBuildUi ||
+                !ReferenceEquals(tool, _lastTool))
+            {
+                _lastHover = hover;
+                _lastInBuildUi = inBuildUi;
+                _lastTool = tool;
+                PollContext(player);
+            }
+
+            if (_mode != VisualMode.None &&
+                Time.time >= _nextMovingGraphRefresh &&
+                ContextUsesMovingContainers())
+            {
+                _nextMovingGraphRefresh =
+                    Time.time + MovingGraphRefreshSeconds;
+                _dirty = true;
+                _rebuildNotBefore = 0f;
+                Plugin.Wake();
+            }
+        }
+
+        // Every frame only while something is actually happening: a
+        // rebuild to do, beams still being created, sparks fading out, or
+        // beams that follow you (the build menu) or moving storage.
+        internal static bool Busy
+        {
+            get
+            {
+                if (Fading.Count > 0 || _dirty)
+                    return true;
+                if (Beams.Count == 0)
+                    return false;
+                foreach (Beam beam in Beams.Values)
+                    if (beam != null && beam.Instance == null && beam.Prefab != null && beam.Container != null)
+                        return true;
+                return _mode == VisualMode.Tool || HasMovingBeam();
+            }
+        }
 
         internal static void Update()
         {
@@ -128,37 +198,12 @@ namespace WiresBalancedCraftFromNearbyChests
             // leaves the station, the hammer is put away, or visuals
             // were disabled in the mod config.
             UpdateFading();
-            ContainerRegistry.Tick();
-
-            if (!VisualsEnabled())
-            {
-                CleanupActive();
-                ResetContext();
-                return;
-            }
 
             Player player = Player.m_localPlayer;
-            if (player == null)
+            if (!VisualsEnabled() || player == null)
             {
-                CleanupActive();
-                ResetContext();
+                _dirty = false;
                 return;
-            }
-
-            if (Time.time >= _nextContextPoll)
-            {
-                _nextContextPoll =
-                    Time.time + ContextPollSeconds;
-                PollContext(player);
-            }
-
-            if (Time.time >= _nextMovingGraphRefresh &&
-                ContextUsesMovingContainers())
-            {
-                _nextMovingGraphRefresh =
-                    Time.time + MovingGraphRefreshSeconds;
-                _dirty = true;
-                _rebuildNotBefore = 0f;
             }
 
             if (_dirty &&
@@ -375,10 +420,18 @@ namespace WiresBalancedCraftFromNearbyChests
             {
                 _dirty = true;
                 _rebuildNotBefore = 0f;
+                Plugin.Wake();
             }
         }
 
         private static void Rebuild(Player player)
+        {
+            Prof.Begin(Prof.Rebuild);
+            try { RebuildTimed(player); }
+            finally { Prof.End(Prof.Rebuild); }
+        }
+
+        private static void RebuildTimed(Player player)
         {
             Desired.Clear();
 
@@ -695,21 +748,8 @@ namespace WiresBalancedCraftFromNearbyChests
 
             GameObject instance = null;
 
-            // Never steal an effect that is still fading from a
-            // DIFFERENT connection just because its prefab matches.
-            for (int i = Fading.Count - 1; i >= 0; --i)
-            {
-                FadingBeam fading = Fading[i];
-                if (fading.Prefab != prefab ||
-                    !fading.Key.Equals(requestedKey) ||
-                    fading.Instance == null)
-                    continue;
-
-                instance = fading.Instance;
-                Fading.RemoveAt(i);
-                break;
-            }
-
+            // A beam that's still fading out is left to finish: taking it
+            // back would clear its particles on the spot.
             if (instance == null)
             {
                 int id = prefab.GetInstanceID();
@@ -806,6 +846,7 @@ namespace WiresBalancedCraftFromNearbyChests
                 return;
             }
 
+            Plugin.Wake();
             Fading.Add(new FadingBeam
             {
                 Instance = instance,
@@ -817,6 +858,13 @@ namespace WiresBalancedCraftFromNearbyChests
         }
 
         private static void UpdateFading()
+        {
+            Prof.Begin(Prof.Fading);
+            try { UpdateFadingTimed(); }
+            finally { Prof.End(Prof.Fading); }
+        }
+
+        private static void UpdateFadingTimed()
         {
             for (int i = Fading.Count - 1; i >= 0; i--)
             {
@@ -931,6 +979,14 @@ namespace WiresBalancedCraftFromNearbyChests
         private static void UpdateBeamTransforms(
             Player player)
         {
+            Prof.Begin(Prof.BeamTransforms);
+            try { UpdateBeamTransformsTimed(player); }
+            finally { Prof.End(Prof.BeamTransforms); }
+        }
+
+        private static void UpdateBeamTransformsTimed(
+            Player player)
+        {
             foreach (Beam beam in Beams.Values)
                 UpdateBeamTransform(beam, player);
         }
@@ -985,6 +1041,33 @@ namespace WiresBalancedCraftFromNearbyChests
                     vector.magnitude);
         }
 
+        // Beam ends follow you every frame in the build menu: each chest's
+        // or station's collider is looked up once, not on every frame.
+        private static readonly Dictionary<int, Collider> Colliders =
+            new Dictionary<int, Collider>();
+
+        private static Collider ColliderOf(Component owner)
+        {
+            int id = owner.GetInstanceID();
+            Collider collider;
+            if (Colliders.TryGetValue(id, out collider) &&
+                (collider == null || collider))
+                return collider;
+
+            collider = owner.GetComponentInChildren<Collider>();
+            if (collider == null && !(owner is Container))
+            {
+                Piece piece = owner.GetComponentInParent<Piece>();
+                if (piece != null)
+                    collider = piece.GetComponentInChildren<Collider>();
+            }
+
+            if (Colliders.Count > 512)
+                Colliders.Clear();
+            Colliders[id] = collider;
+            return collider;
+        }
+
         private static Vector3 GetTargetPoint(
             Component target)
         {
@@ -994,22 +1077,9 @@ namespace WiresBalancedCraftFromNearbyChests
             if (station != null)
                 return station.GetConnectionEffectPoint();
 
-            Collider collider =
-                target.GetComponentInChildren<Collider>();
-
+            Collider collider = ColliderOf(target);
             if (collider != null)
                 return collider.bounds.center;
-
-            Piece piece =
-                target.GetComponentInParent<Piece>();
-            if (piece != null)
-            {
-                collider =
-                    piece.GetComponentInChildren<Collider>();
-
-                if (collider != null)
-                    return collider.bounds.center;
-            }
 
             return target.transform.position +
                    Vector3.up * 0.5f;
@@ -1018,9 +1088,7 @@ namespace WiresBalancedCraftFromNearbyChests
         private static Vector3 GetContainerPoint(
             Container container)
         {
-            Collider collider =
-                container.GetComponentInChildren<Collider>();
-
+            Collider collider = ColliderOf(container);
             if (collider != null)
                 return collider.bounds.center;
 
@@ -1120,11 +1188,16 @@ namespace WiresBalancedCraftFromNearbyChests
         }
         internal static void NotifyGraphChanged()
         {
+            // A rename can change where what you're looking at goes.
+            _lastHover = null;
+            if (!_contextActive)
+                return;
             _dirty = true;
             _rebuildNotBefore =
                 Mathf.Max(
                     _rebuildNotBefore,
                     Time.time + LazyGraphDelay);
+            Plugin.Wake();
         }
 
         internal static void NotifyChestChanged(
@@ -1164,9 +1237,39 @@ namespace WiresBalancedCraftFromNearbyChests
             instance.transform.localScale =
                 Vector3.one * 0.3f;
             instance.SetActive(true);
-            UnityEngine.Object.Destroy(
-                instance,
-                0.55f);
+            if (Plugin.Instance != null)
+                Plugin.Instance.StartCoroutine(EndBurst(instance));
+            else
+                UnityEngine.Object.Destroy(instance, 3f);
+        }
+
+        // The burst emits briefly, then stops emitting and lets the
+        // particles already out finish on their own before it's removed.
+        private static System.Collections.IEnumerator EndBurst(GameObject instance)
+        {
+            yield return new WaitForSeconds(0.55f);
+            if (instance == null)
+                yield break;
+
+            ParticleSystem[] particles =
+                instance.GetComponentsInChildren<ParticleSystem>(true);
+            foreach (ParticleSystem particle in particles)
+                if (particle != null)
+                    particle.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+
+            float until = Time.unscaledTime + MaxFadeSeconds;
+            while (instance != null && Time.unscaledTime < until)
+            {
+                bool alive = false;
+                foreach (ParticleSystem particle in particles)
+                    if (particle != null && particle.IsAlive(false)) { alive = true; break; }
+                if (!alive)
+                    break;
+                yield return null;
+            }
+
+            if (instance != null)
+                UnityEngine.Object.Destroy(instance);
         }
         private static void CleanupActive()
         {
@@ -1218,6 +1321,10 @@ namespace WiresBalancedCraftFromNearbyChests
             ConnectionParticleSafety.Cleanup();
             _genericConnectionPrefab = null;
             ResetContext();
+            _lastHover = null;
+            _lastTool = null;
+            _contextActive = false;
+            Colliders.Clear();
         }
     }
 }

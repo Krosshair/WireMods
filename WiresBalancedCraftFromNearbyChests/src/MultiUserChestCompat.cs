@@ -234,6 +234,9 @@ namespace WiresBalancedCraftFromNearbyChests
 
             return container.GetInventory();
         }
+        internal static bool NeedsUpdate =>
+            _pending != null || (Active && Refunds.Count > 0);
+
         internal static void Update()
         {
             UpdatePending();
@@ -568,6 +571,7 @@ namespace WiresBalancedCraftFromNearbyChests
             }
 
             _pending = pending;
+            Plugin.Wake();
             return pending;
         }
         private static int RequestFromConcurrent(
@@ -861,6 +865,8 @@ namespace WiresBalancedCraftFromNearbyChests
 
             return true;
         }
+        private static MethodInfo _getPackageClosed;
+
         private static bool RequestExists(int id)
         {
             if (!_available ||
@@ -869,9 +875,12 @@ namespace WiresBalancedCraftFromNearbyChests
 
             try
             {
-                MethodInfo closed =
-                    _getPackageGeneric.MakeGenericMethod(
-                        _iPackageType);
+                // Built once, not on every check while a request waits.
+                if (_getPackageClosed == null)
+                    _getPackageClosed =
+                        _getPackageGeneric.MakeGenericMethod(
+                            _iPackageType);
+                MethodInfo closed = _getPackageClosed;
 
                 object package =
                     closed.Invoke(
@@ -1002,6 +1011,7 @@ namespace WiresBalancedCraftFromNearbyChests
                 };
 
                 Refunds.Add(job);
+                Plugin.Wake();
             }
         }
 
@@ -1183,6 +1193,7 @@ namespace WiresBalancedCraftFromNearbyChests
             _removeItemFromChest = null;
             _addItemToChest = null;
             _getPackageGeneric = null;
+            _getPackageClosed = null;
             _iPackageType = null;
         }
     }

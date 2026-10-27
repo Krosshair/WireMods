@@ -28,6 +28,17 @@ namespace WiresBalancedCraftFromNearbyChests
             int quality,
             bool matchWorldLevel)
         {
+            Prof.Begin(Prof.CountItems);
+            try { return CountItemsTimed(inventory, name, quality, matchWorldLevel); }
+            finally { Prof.End(Prof.CountItems); }
+        }
+
+        private static int CountItemsTimed(
+            Inventory inventory,
+            string name,
+            int quality,
+            bool matchWorldLevel)
+        {
             int total =
                 inventory.CountItems(
                     name,
@@ -41,18 +52,32 @@ namespace WiresBalancedCraftFromNearbyChests
             List<Container> containers =
                 ContainerRegistry.GetMatching(context);
 
+            // While a Multi User Chest request is being carried out, the
+            // items it reserved count, not what's left in the chests.
+            if (MultiUserChestCompat.Executing)
+            {
+                int reserved = 0;
+                for (int i = 0; i < containers.Count; i++)
+                {
+                    Inventory effective =
+                        MultiUserChestCompat.GetEffectiveInventory(containers[i]);
+                    if (effective != null)
+                        reserved += effective.CountItems(name, quality, matchWorldLevel);
+                }
+                return total + reserved;
+            }
+
             // The same item is asked about many times per frame (every
             // requirement of every recipe or piece): the containers' part
-            // is counted once per frame, and again only if something in an
-            // inventory changed or the container list was rebuilt. Your
-            // own inventory is always counted fresh.
-            if (_cacheFrame != Time.frameCount ||
-                _cacheMatching != ContainerRegistry.MatchingVersion ||
+            // is counted again only if something in an inventory changed
+            // (chests loading another player's changes included) or the
+            // container list was rebuilt. Your own inventory is always
+            // counted fresh.
+            if (_cacheMatching != ContainerRegistry.MatchingVersion ||
                 _cacheInventories != InventoryVersion ||
                 !ReferenceEquals(_cacheRoute, context.Definition))
             {
                 CountCache.Clear();
-                _cacheFrame = Time.frameCount;
                 _cacheMatching = ContainerRegistry.MatchingVersion;
                 _cacheInventories = InventoryVersion;
                 _cacheRoute = context.Definition;
@@ -63,6 +88,7 @@ namespace WiresBalancedCraftFromNearbyChests
             if (CountCache.TryGetValue(key, out stored))
                 return total + stored;
 
+            Prof.Begin(Prof.CountChests);
             int inContainers = 0;
             for (int i = 0; i < containers.Count; i++)
             {
@@ -77,6 +103,7 @@ namespace WiresBalancedCraftFromNearbyChests
                         matchWorldLevel);
                 }
             }
+            Prof.End(Prof.CountChests);
 
             CountCache[key] = inContainers;
             return total + inContainers;
@@ -85,7 +112,6 @@ namespace WiresBalancedCraftFromNearbyChests
         // Bumped by any inventory change (patch below).
         internal static int InventoryVersion;
 
-        private static int _cacheFrame = -1;
         private static int _cacheMatching = -1;
         private static int _cacheInventories = -1;
         private static RouteDefinition _cacheRoute;
@@ -130,6 +156,16 @@ namespace WiresBalancedCraftFromNearbyChests
             string name,
             bool matchWorldLevel)
         {
+            Prof.Begin(Prof.HaveItem);
+            try { return HaveItemTimed(inventory, name, matchWorldLevel); }
+            finally { Prof.End(Prof.HaveItem); }
+        }
+
+        private static bool HaveItemTimed(
+            Inventory inventory,
+            string name,
+            bool matchWorldLevel)
+        {
             if (inventory.HaveItem(
                     name,
                     matchWorldLevel))
@@ -145,7 +181,8 @@ namespace WiresBalancedCraftFromNearbyChests
             for (int i = 0; i < containers.Count; i++)
             {
                 Inventory chest =
-                    containers[i].GetInventory();
+                    MultiUserChestCompat.GetEffectiveInventory(
+                        containers[i]);
 
                 if (chest != null &&
                     chest.HaveItem(
@@ -158,6 +195,17 @@ namespace WiresBalancedCraftFromNearbyChests
         }
 
         public static ItemDrop.ItemData GetItem(
+            Inventory inventory,
+            string name,
+            int quality,
+            bool isPrefabName)
+        {
+            Prof.Begin(Prof.GetItem);
+            try { return GetItemTimed(inventory, name, quality, isPrefabName); }
+            finally { Prof.End(Prof.GetItem); }
+        }
+
+        private static ItemDrop.ItemData GetItemTimed(
             Inventory inventory,
             string name,
             int quality,
@@ -182,7 +230,8 @@ namespace WiresBalancedCraftFromNearbyChests
             for (int i = 0; i < containers.Count; i++)
             {
                 Inventory chest =
-                    containers[i].GetInventory();
+                    MultiUserChestCompat.GetEffectiveInventory(
+                        containers[i]);
 
                 if (chest == null)
                     continue;
@@ -200,6 +249,18 @@ namespace WiresBalancedCraftFromNearbyChests
         }
 
         public static void RemoveItem(
+            Inventory inventory,
+            string name,
+            int amount,
+            int itemQuality,
+            bool worldLevelBased)
+        {
+            Prof.Begin(Prof.RemoveItem);
+            try { RemoveItemTimed(inventory, name, amount, itemQuality, worldLevelBased); }
+            finally { Prof.End(Prof.RemoveItem); }
+        }
+
+        private static void RemoveItemTimed(
             Inventory inventory,
             string name,
             int amount,
@@ -234,6 +295,11 @@ namespace WiresBalancedCraftFromNearbyChests
             }
 
             int remaining = amount;
+
+            // Building as you walk: the chests in range right now, not
+            // the list from a moment ago. Stations don't move.
+            if (context.Tool != null)
+                ContainerRegistry.Invalidate();
 
             int own =
                 inventory.CountItems(
@@ -405,6 +471,16 @@ namespace WiresBalancedCraftFromNearbyChests
             ItemDrop.ItemData item,
             int amount)
         {
+            Prof.Begin(Prof.RemoveItem);
+            try { return RemoveItemDataTimed(inventory, item, amount); }
+            finally { Prof.End(Prof.RemoveItem); }
+        }
+
+        private static bool RemoveItemDataTimed(
+            Inventory inventory,
+            ItemDrop.ItemData item,
+            int amount)
+        {
             if (inventory == null || item == null)
                 return false;
 
@@ -429,6 +505,8 @@ namespace WiresBalancedCraftFromNearbyChests
                     throw new MucPendingException(batch);
             }
 
+            if (context.Tool != null)
+                ContainerRegistry.Invalidate();
             List<Container> containers =
                 ContainerRegistry.GetMatching(context);
 
@@ -478,7 +556,9 @@ namespace WiresBalancedCraftFromNearbyChests
     {
         private static void Postfix()
         {
+            Prof.Begin(Prof.InventoryChanged);
             InventoryBridge.InventoryVersion++;
+            Prof.End(Prof.InventoryChanged);
         }
     }
 }

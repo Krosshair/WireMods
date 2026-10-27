@@ -68,6 +68,7 @@ namespace WiresBalancedCraftFromNearbyChests
                     UnityEngine.Object.Destroy(oldest.Instance);
             }
 
+            Plugin.Wake();
             Tails.Add(new Tail
             {
                 Instance = instance,
@@ -75,6 +76,8 @@ namespace WiresBalancedCraftFromNearbyChests
                 Started = Time.unscaledTime
             });
         }
+
+        internal static bool Busy => Tails.Count > 0;
 
         internal static void Tick()
         {

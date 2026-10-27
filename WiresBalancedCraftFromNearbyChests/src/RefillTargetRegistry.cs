@@ -16,19 +16,17 @@ namespace WiresBalancedCraftFromNearbyChests
             RouteByTarget =
                 new Dictionary<int, string>();
 
-        private static float _nextFermenterReconcile;
+        private static bool _fermentersFound;
 
-        internal static void Tick()
-        {
-            if (Time.time < _nextFermenterReconcile)
-                return;
-
-            _nextFermenterReconcile = Time.time + 1f;
-            EnsureFermenterTargets();
-        }
-
+        // Fermenters register as they wake up. The scene is searched for
+        // them at most once per world, the first time it's needed, not
+        // every second (that search was a regular hitch in big bases).
         internal static void EnsureFermenterTargets()
         {
+            if (_fermentersFound)
+                return;
+            _fermentersFound = true;
+
             Fermenter[] fermenters =
                 UnityEngine.Object.FindObjectsByType<Fermenter>(
                     FindObjectsSortMode.None);
@@ -71,6 +69,9 @@ namespace WiresBalancedCraftFromNearbyChests
 
             set.Add(target);
             RouteByTarget[id] = route.Id;
+            ZNetView view = target.GetComponentInParent<ZNetView>();
+            if (view != null)
+                ContainerRegistry.TrackedViews.Add(view.GetInstanceID());
             ConnectionVisuals.NotifyGraphChanged();
         }
 
@@ -219,9 +220,10 @@ namespace WiresBalancedCraftFromNearbyChests
 
         internal static void Clear()
         {
+            _fermentersFound = false;
+            RefillRouting.ClearCache();
             ByRoute.Clear();
             RouteByTarget.Clear();
-            _nextFermenterReconcile = 0f;
         }
     }
 

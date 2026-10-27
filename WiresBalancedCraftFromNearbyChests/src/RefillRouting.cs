@@ -19,7 +19,33 @@ namespace WiresBalancedCraftFromNearbyChests
                 component.transform.position);
         }
 
+        // A station's kind never changes: worked out once per object,
+        // not on every use (the smelter and cooking checks read its names).
+        private static readonly System.Collections.Generic.Dictionary<int, RouteDefinition> Resolved =
+            new System.Collections.Generic.Dictionary<int, RouteDefinition>();
+
+        internal static void ClearCache()
+        {
+            Resolved.Clear();
+        }
+
         internal static RouteDefinition Resolve(
+            Component component)
+        {
+            if (component == null)
+                return null;
+            int id = component.GetInstanceID();
+            RouteDefinition route;
+            if (Resolved.TryGetValue(id, out route))
+                return route;
+            route = ResolveUncached(component);
+            if (Resolved.Count > 4096)
+                Resolved.Clear();
+            Resolved[id] = route;
+            return route;
+        }
+
+        private static RouteDefinition ResolveUncached(
             Component component)
         {
             if (component is Smelter)

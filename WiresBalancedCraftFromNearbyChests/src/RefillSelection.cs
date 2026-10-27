@@ -10,6 +10,15 @@ namespace WiresBalancedCraftFromNearbyChests
             Component component,
             Func<ItemDrop.ItemData, bool> accepts)
         {
+            Prof.Begin(Prof.FindInChests);
+            try { return FindFirstInChestsTimed(component, accepts); }
+            finally { Prof.End(Prof.FindInChests); }
+        }
+
+        private static ItemDrop.ItemData FindFirstInChestsTimed(
+            Component component,
+            Func<ItemDrop.ItemData, bool> accepts)
+        {
             if (component == null || accepts == null)
                 return null;
 
@@ -37,15 +46,25 @@ namespace WiresBalancedCraftFromNearbyChests
                 if (chest == null)
                     continue;
 
-                List<ItemDrop.ItemData> items =
-                    BottomLeftFirst(chest);
-
+                // The bottom-left-most item it takes: one pass, no copy
+                // of the chest's items and no sorting.
+                ItemDrop.ItemData best = null;
+                List<ItemDrop.ItemData> items = chest.GetAllItems();
                 for (int j = 0; j < items.Count; j++)
                 {
                     ItemDrop.ItemData item = items[j];
-                    if (item != null && accepts(item))
-                        return item;
+                    if (item == null ||
+                        (best != null &&
+                         (item.m_gridPos.y < best.m_gridPos.y ||
+                          (item.m_gridPos.y == best.m_gridPos.y &&
+                           item.m_gridPos.x >= best.m_gridPos.x))))
+                        continue;
+                    if (accepts(item))
+                        best = item;
                 }
+
+                if (best != null)
+                    return best;
             }
 
             return null;

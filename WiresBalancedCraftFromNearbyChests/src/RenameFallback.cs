@@ -204,6 +204,15 @@ namespace WiresBalancedCraftFromNearbyChests
             _textInputForContainer = null;
         }
 
+        // The game asks for the hover text every frame while you look at a
+        // chest: the text is built again only when something in it changes.
+        private static Container _hoverChest;
+        private static string _hoverCustom;
+        private static bool _hoverEmpty;
+        private static float _hoverUsableUntil;
+        private static string _hoverText;
+        private static string _hoverLanguage;
+
         internal static string BuildHoverText(
             Container container,
             string vanilla)
@@ -212,6 +221,52 @@ namespace WiresBalancedCraftFromNearbyChests
                 container == null)
                 return vanilla;
 
+            string cached;
+            if (TryCachedHover(container, out cached))
+                return cached;
+
+            ZNetView view = ContainerRegistry.GetNetView(container);
+            string built = BuildHoverTextUncached(container, vanilla);
+            if (view != null && view.IsValid() && view.GetZDO() != null && container.GetInventory() != null &&
+                Localization.instance != null)
+            {
+                _hoverChest = container;
+                _hoverCustom = view.GetZDO().GetString(ZDOVars.s_text, "");
+                _hoverEmpty = container.GetInventory().NrOfItems() == 0;
+                _hoverLanguage = Localization.instance.GetSelectedLanguage();
+                // The rename hint depends on ward access: checked again
+                // every half second.
+                _hoverUsableUntil = Time.time + 0.5f;
+                _hoverText = built;
+            }
+            return built;
+        }
+
+        // The same chest as a moment ago, nothing in its text changed.
+        internal static bool TryCachedHover(Container container, out string text)
+        {
+            text = null;
+            if (!Active || container == null || container != _hoverChest || _hoverText == null)
+                return false;
+            ZNetView view = ContainerRegistry.GetNetView(container);
+            if (view != null && view.IsValid() && view.GetZDO() != null &&
+                Time.time < _hoverUsableUntil &&
+                string.Equals(view.GetZDO().GetString(ZDOVars.s_text, ""), _hoverCustom, StringComparison.Ordinal) &&
+                container.GetInventory() != null &&
+                (container.GetInventory().NrOfItems() == 0) == _hoverEmpty &&
+                Localization.instance != null &&
+                Localization.instance.GetSelectedLanguage() == _hoverLanguage)
+            {
+                text = _hoverText;
+                return true;
+            }
+            return false;
+        }
+
+        private static string BuildHoverTextUncached(
+            Container container,
+            string vanilla)
+        {
             ZNetView nview =
                 ContainerRegistry.GetNetView(
                     container);
@@ -317,15 +372,38 @@ namespace WiresBalancedCraftFromNearbyChests
     [HarmonyPatch(typeof(Container), nameof(Container.GetHoverText))]
     internal static class ContainerHoverRenamePatch
     {
+        // Skip the game's own text too when ours is already built.
+        [HarmonyPrefix]
+        private static bool Prefix(
+            Container __instance,
+            ref string __result)
+        {
+            Prof.Begin(Prof.HoverText);
+            try
+            {
+                string cached;
+                if (!RenameFallback.TryCachedHover(__instance, out cached))
+                    return true;
+                __result = cached;
+                return false;
+            }
+            finally { Prof.End(Prof.HoverText); }
+        }
+
         [HarmonyPostfix]
         private static void Postfix(
             Container __instance,
             ref string __result)
         {
-            __result =
-                RenameFallback.BuildHoverText(
-                    __instance,
-                    __result);
+            Prof.Begin(Prof.HoverText);
+            try
+            {
+                __result =
+                    RenameFallback.BuildHoverText(
+                        __instance,
+                        __result);
+            }
+            finally { Prof.End(Prof.HoverText); }
         }
     }
 }
