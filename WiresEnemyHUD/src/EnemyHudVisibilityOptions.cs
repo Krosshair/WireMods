@@ -78,8 +78,23 @@ namespace EnemyHudRework
             AccessTools.FieldRefAccess<Character, float>("m_backstabTime");
 
         // The game's hover timer on its private per-nameplate record, read
-        // through a compiled getter (no reflection while playing).
-        private static readonly Func<object, float> HoverTimer = MakeHoverTimer();
+        // through a compiled getter (no reflection while playing). Made on
+        // first use: as a static field it would depend on which file the
+        // compiler happens to set up first.
+        private static Func<object, float> _hoverTimer;
+        private static bool _hoverTimerMade;
+        private static Func<object, float> HoverTimer
+        {
+            get
+            {
+                if (!_hoverTimerMade)
+                {
+                    _hoverTimerMade = true;
+                    _hoverTimer = MakeHoverTimer();
+                }
+                return _hoverTimer;
+            }
+        }
 
         private static Func<object, float> MakeHoverTimer()
         {
@@ -590,6 +605,14 @@ namespace EnemyHudRework
                     enemy.GetHealth() <= 0f)
                     continue;
 
+                // Nameplates that already exist were placed in this frame's
+                // update, and the game's hover timer keeps them shown: only
+                // a hit that came before the nameplate existed needs one made.
+                EnemyUiState state;
+                if (_states.TryGetValue(enemy, out state) &&
+                    state != null && state.Gui != null)
+                    continue;
+
                 Vector3 projected =
                     camera.WorldToScreenPointScaled(enemy.GetTopPoint());
                 if (projected.z <= 0f)
@@ -602,23 +625,18 @@ namespace EnemyHudRework
                         continue;
                 }
 
-                EnemyUiState state;
+                if (EnemyHudShowHudMethod == null)
+                    continue;
+                ShowHudArgs[0] = enemy;
+                EnemyHudShowHudMethod.Invoke(hud, ShowHudArgs);
+                ShowHudArgs[0] = null;
+                SetupHud(hud, enemy, false);
                 if (!_states.TryGetValue(enemy, out state) ||
                     state == null || state.Gui == null)
-                {
-                    // A damage event may precede first HUD creation.
-                    if (EnemyHudShowHudMethod == null)
-                        continue;
-                    EnemyHudShowHudMethod.Invoke(
-                        hud, new object[] { enemy, false });
-                    SetupHud(hud, enemy, false);
-                    if (!_states.TryGetValue(enemy, out state) ||
-                        state == null || state.Gui == null)
-                        continue;
-                    // Created by the hit: keep it shown and give it the
-                    // yellow trail from before the hit, once.
-                    RevealOnHit(enemy, pair.Value);
-                }
+                    continue;
+                // Created by the hit: keep it shown and give it the
+                // yellow trail from before the hit, once.
+                RevealOnHit(enemy, pair.Value);
 
                 if (state.Kind != HudKind.Enemy)
                     continue;
@@ -628,6 +646,9 @@ namespace EnemyHudRework
                 UpdateViewportVisibility(state);
             }
         }
+
+        // Reused arguments for the game's ShowHud(character, isMount).
+        private static readonly object[] ShowHudArgs = { null, false };
 
         private void DestroyVisibilityOptions()
         {

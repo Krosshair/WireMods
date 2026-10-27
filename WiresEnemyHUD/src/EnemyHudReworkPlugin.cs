@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.8.10";
+        public const string PluginVersion = "0.9.0";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -71,6 +71,9 @@ namespace EnemyHudRework
 
         private GameObject _debugBossGui;
         private EnemyUiState _debugBossState;
+        private string _debugBossNameSource;
+        private GuiBar _debugBossFast, _debugBossSlow;
+        private bool _debugBossBarsLooked;
 
         private static readonly FieldInfo EnemyHudHudsField =
             AccessTools.Field(typeof(EnemyHud), "m_huds");
@@ -182,6 +185,8 @@ namespace EnemyHudRework
             public Image HealthBkg, StaggerBkg;
             public Color HealthBkgOriginal, StaggerBkgOriginal;
             public int BkgApplied = -1;
+            public GuiBar BossFastBar; public bool BossFastLooked;
+            public GuiBar[] OwnBars; // debug: your own nameplate's bars
 
             public float HideTimer = PlayerLikeHideDelay;
             public float LastStaggerPercentage;
@@ -201,8 +206,20 @@ namespace EnemyHudRework
             Instance = this;
             BindConfig();
 
+            // Patch class by class: if a game update breaks one patch, the
+            // rest still load instead of the whole mod going dark.
             _harmony = new Harmony(PluginGuid);
-            _harmony.PatchAll();
+            foreach (Type type in AccessTools.GetTypesFromAssembly(typeof(EnemyHudReworkPlugin).Assembly))
+            {
+                try
+                {
+                    _harmony.CreateClassProcessor(type).Patch();
+                }
+                catch (Exception e)
+                {
+                    Logger.LogError("Couldn't apply " + type.Name + ": " + e.Message);
+                }
+            }
 
             Logger.LogInfo(PluginName + " " + PluginVersion + " loaded.");
         }
@@ -787,15 +804,16 @@ namespace EnemyHudRework
 
             Color color = new Color32(0xFF, 0x5A, 0xA7, 255);
 
-            if (state.HealthRect != null)
+            // The bar is looked up once, not every frame.
+            if (!state.BossFastLooked && state.HealthRect != null)
             {
-                Transform fastTransform =
-                    state.HealthRect.Find("health_fast");
-                GuiBar fastBar =
-                    fastTransform != null
-                        ? fastTransform.GetComponent<GuiBar>()
-                        : null;
+                state.BossFastLooked = true;
+                Transform fastTransform = state.HealthRect.Find("health_fast");
+                state.BossFastBar = fastTransform != null ? fastTransform.GetComponent<GuiBar>() : null;
+            }
 
+            {
+                GuiBar fastBar = state.BossFastBar;
                 if (fastBar != null)
                 {
                     Color sampled = fastBar.GetColor();
@@ -1648,13 +1666,17 @@ namespace EnemyHudRework
             if (zdo == null)
                 return;
 
+            float now = Time.time;
             if (!tracked)
             {
+                // Creatures that died or left while staggered are never
+                // updated again: drop those first, so the list can't grow.
+                if (_syncStates.Count >= 32)
+                    PruneSyncStates(now);
                 sync = new StaggerSyncState();
                 _syncStates[id] = sync;
             }
 
-            float now = Time.time;
             if (now < sync.NextSendTime)
                 return;
 
@@ -1678,6 +1700,20 @@ namespace EnemyHudRework
                 now + SyncInterval;
         }
 
+        private readonly List<int> _staleSync = new List<int>();
+
+        // A staggered creature is checked every tick; one not seen for a few
+        // seconds is gone.
+        private void PruneSyncStates(float now)
+        {
+            _staleSync.Clear();
+            foreach (KeyValuePair<int, StaggerSyncState> pair in _syncStates)
+                if (now - pair.Value.NextSendTime > 5f)
+                    _staleSync.Add(pair.Key);
+            foreach (int id in _staleSync)
+                _syncStates.Remove(id);
+        }
+
         internal void UpdateDebugHuds(EnemyHud enemyHud)
         {
             if (enemyHud == null)
@@ -1688,7 +1724,11 @@ namespace EnemyHudRework
             if (_debugSeeOwnHealthBar.Value && localPlayer != null && !localPlayer.IsCrouching())
             {
                 if (EnemyHudShowHudMethod != null)
-                    EnemyHudShowHudMethod.Invoke(enemyHud, new object[] { localPlayer, false });
+                {
+                    ShowHudArgs[0] = localPlayer;
+                    EnemyHudShowHudMethod.Invoke(enemyHud, ShowHudArgs);
+                    ShowHudArgs[0] = null;
+                }
 
                 SetupHud(enemyHud, localPlayer, false);
 
@@ -1731,14 +1771,20 @@ namespace EnemyHudRework
             state.Gui.transform.position = position;
 
             float health = player.GetHealthPercentage();
-            Transform t = state.Gui.transform;
-            GuiBar bar;
-            Transform fast = t.Find("Health/health_fast");
-            if (fast != null && (bar = fast.GetComponent<GuiBar>()) != null) bar.SetValue(health);
-            Transform slow = t.Find("Health/health_slow");
-            if (slow != null && (bar = slow.GetComponent<GuiBar>()) != null) bar.SetValue(health);
-            Transform friendly = t.Find("Health/health_fast_friendly");
-            if (friendly != null && (bar = friendly.GetComponent<GuiBar>()) != null) bar.SetValue(health);
+            if (state.OwnBars == null)
+            {
+                Transform t = state.Gui.transform;
+                var bars = new List<GuiBar>();
+                foreach (string path in new[] { "Health/health_fast", "Health/health_slow", "Health/health_fast_friendly" })
+                {
+                    Transform child = t.Find(path);
+                    GuiBar found = child != null ? child.GetComponent<GuiBar>() : null;
+                    if (found != null) bars.Add(found);
+                }
+                state.OwnBars = bars.ToArray();
+            }
+            foreach (GuiBar bar in state.OwnBars)
+                if (bar != null) bar.SetValue(health);
         }
 
         private void UpdateDebugBossHud(EnemyHud enemyHud)
@@ -1760,22 +1806,29 @@ namespace EnemyHudRework
             _debugBossState.Character = localPlayer;
             _debugBossGui.SetActive(true);
 
-            if (_debugBossState.NameText != null)
+            string playerName = localPlayer.GetPlayerName();
+            bool renamed = !ReferenceEquals(playerName, _debugBossNameSource);
+            if (_debugBossState.NameText != null && renamed)
             {
+                _debugBossNameSource = playerName;
                 _debugBossState.NameText.text =
-                    "EVIL " +
-                    localPlayer.GetPlayerName().ToUpperInvariant() +
-                    " ALTER EGO";
+                    "EVIL " + playerName.ToUpperInvariant() + " ALTER EGO";
             }
 
             ApplyBossNameColor(_debugBossState);
 
             float healthPercentage = localPlayer.GetHealthPercentage();
 
-            Transform fast = _debugBossGui.transform.Find("Health/health_fast");
-            Transform slow = _debugBossGui.transform.Find("Health/health_slow");
-            GuiBar fastBar = fast != null ? fast.GetComponent<GuiBar>() : null;
-            GuiBar slowBar = slow != null ? slow.GetComponent<GuiBar>() : null;
+            if (!_debugBossBarsLooked)
+            {
+                _debugBossBarsLooked = true;
+                Transform fast = _debugBossGui.transform.Find("Health/health_fast");
+                Transform slow = _debugBossGui.transform.Find("Health/health_slow");
+                _debugBossFast = fast != null ? fast.GetComponent<GuiBar>() : null;
+                _debugBossSlow = slow != null ? slow.GetComponent<GuiBar>() : null;
+            }
+            GuiBar fastBar = _debugBossFast;
+            GuiBar slowBar = _debugBossSlow;
 
             if (fastBar != null)
                 fastBar.SetValue(healthPercentage);
@@ -1785,7 +1838,7 @@ namespace EnemyHudRework
             ApplyHealthBarScale(_debugBossState);
             UpdateBarBackground(_debugBossState);
             UpdateHealthValue(_debugBossState);
-            if (_debugBossState.Weakness != null) _debugBossState.Weakness.Dirty = true; // debug name changes
+            if (renamed && _debugBossState.Weakness != null) _debugBossState.Weakness.Dirty = true; // the name moved the icons
             UpdateWeaknessIcons(_debugBossState, true);
             UpdateBossDps(_debugBossState);
         }
@@ -1872,6 +1925,9 @@ namespace EnemyHudRework
                 Destroy(_debugBossGui);
                 _debugBossGui = null;
             }
+            _debugBossNameSource = null;
+            _debugBossFast = _debugBossSlow = null;
+            _debugBossBarsLooked = false;
         }
 
         private GameObject GetHudGui(

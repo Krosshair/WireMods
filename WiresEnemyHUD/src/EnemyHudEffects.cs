@@ -31,7 +31,7 @@ namespace EnemyHudRework
             public RectTransform Root;
             public readonly Image[] Icons = new Image[MaxOtherEffects];
             public readonly int[] Hashes = new int[MaxOtherEffects];
-            public uint Revision = uint.MaxValue; public int Layout = -1; public bool Any;
+            public uint Revision = uint.MaxValue; public int Layout = -1;
         }
 
         private static bool AffectsTarget(StatusEffect se)

@@ -1,3 +1,17 @@
+## 0.9.0
+
+If a game update breaks one part of Enemy HUD, the rest keeps working instead of the whole mod stopping.
+
+Staggered enemies no longer cause frame hitches in big fights: the stagger recovery bar works out its timing once per stagger instead of again and again during it.
+
+Less work every frame: boss name colors, damage reveals and the debug nameplates no longer look things up or rebuild text each frame.
+
+Fewer network messages: hit responses are only sent for hits that can make an icon react.
+
+Fixed two lists that slowly grew over long sessions (stagger sync, and creature data with Sync info off).
+
+Fixed damage reveals possibly stopping working after an update, depending on how the mod happened to be built.
+
 ## 0.8.10
 
 The yellow damage trail now shows on nameplates revealed by a hit or a parry, including the first hit on an enemy, and revealed nameplates show at full opacity.

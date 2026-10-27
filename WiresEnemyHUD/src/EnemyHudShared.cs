@@ -27,6 +27,22 @@ namespace EnemyHudRework
         private static bool LocalOnly(ZDO zdo) { return !SyncOn && zdo.IsOwner(); }
         private static LocalKey KeyOf(ZDO zdo, int key) { return new LocalKey { Id = zdo.m_uid, Key = key }; }
 
+        // Entries for creatures that no longer exist (killed, unloaded) are
+        // dropped once a copy grows this big, so it can't keep growing.
+        private const int PruneAt = 256;
+        private static readonly List<LocalKey> Gone = new List<LocalKey>();
+
+        private static void Prune<T>(Dictionary<LocalKey, T> map)
+        {
+            if (ZDOMan.instance == null) return;
+            Gone.Clear();
+            foreach (LocalKey k in map.Keys)
+                if (ZDOMan.instance.GetZDO(k.Id) == null)
+                    Gone.Add(k);
+            foreach (LocalKey k in Gone)
+                map.Remove(k);
+        }
+
         // Change counter for readers: the network data's own, plus ours.
         private static uint SharedRevision(ZDO zdo) { return zdo.DataRevision + _localRevision * 2654435761u; }
 
@@ -57,7 +73,12 @@ namespace EnemyHudRework
             LocalKey k = KeyOf(zdo, key);
             float old;
             if (LocalFloats.TryGetValue(k, out old) && old == value) return;
-            if (value == 0f) LocalFloats.Remove(k); else LocalFloats[k] = value;
+            if (value == 0f) LocalFloats.Remove(k);
+            else
+            {
+                if (!LocalFloats.ContainsKey(k) && LocalFloats.Count >= PruneAt) Prune(LocalFloats);
+                LocalFloats[k] = value;
+            }
             _localRevision++;
         }
 
@@ -67,7 +88,12 @@ namespace EnemyHudRework
             LocalKey k = KeyOf(zdo, key);
             long old;
             if (LocalLongs.TryGetValue(k, out old) && old == value) return;
-            if (value == 0L) LocalLongs.Remove(k); else LocalLongs[k] = value;
+            if (value == 0L) LocalLongs.Remove(k);
+            else
+            {
+                if (!LocalLongs.ContainsKey(k) && LocalLongs.Count >= PruneAt) Prune(LocalLongs);
+                LocalLongs[k] = value;
+            }
             _localRevision++;
         }
 
@@ -77,7 +103,12 @@ namespace EnemyHudRework
             LocalKey k = KeyOf(zdo, key);
             int old;
             if (LocalInts.TryGetValue(k, out old) && old == value) return;
-            if (value == 0) LocalInts.Remove(k); else LocalInts[k] = value;
+            if (value == 0) LocalInts.Remove(k);
+            else
+            {
+                if (!LocalInts.ContainsKey(k) && LocalInts.Count >= PruneAt) Prune(LocalInts);
+                LocalInts[k] = value;
+            }
             _localRevision++;
         }
     }

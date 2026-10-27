@@ -176,6 +176,15 @@ namespace EnemyHudRework
 
         internal void SendTypeHit(Character c, int mask)
         {
+            // Only types the creature is weak or resistant to make an icon
+            // react; a hit on a tame or HUD-less creature never shows any.
+            if (c == null || c.IsTamed() || c.m_hideHud) return;
+            HitData.DamageModifiers mods = c.GetDamageModifiers();
+            for (int k = 0; k < DamageKinds; k++)
+                if ((mask & (1 << k)) != 0 && Classify(Modifier(mods, (DamageKind)k)) == 0)
+                    mask &= ~(1 << k);
+            if (mask == 0) return;
+
             ZNetView view = CharacterView(c);
             if (view == null || !view.IsValid()) return;
             if (SyncOn && ZRoutedRpc.instance != null)
@@ -749,10 +758,10 @@ namespace EnemyHudRework
             }
         }
 
-        [HarmonyLib.HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
+        [HarmonyLib.HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem), new[] { typeof(ItemDrop.ItemData), typeof(bool) })]
         private static class Equip { private static void Postfix(Humanoid __instance) { Notify(__instance); } }
 
-        [HarmonyLib.HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UnequipItem))]
+        [HarmonyLib.HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UnequipItem), new[] { typeof(ItemDrop.ItemData), typeof(bool) })]
         private static class Unequip { private static void Postfix(Humanoid __instance) { Notify(__instance); } }
 
         [HarmonyLib.HarmonyPatch(typeof(Humanoid), nameof(Humanoid.HideHandItems))]

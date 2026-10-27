@@ -220,16 +220,25 @@ namespace EnemyHudRework
             {
                 if (state.StaggerAnimator == null)
                     state.StaggerAnimator = CharacterAnimator(state.Character);
-                // Recalculate at the start, whenever the play speed changes, or
-                // if still staggered past the predicted end.
-                bool recheck = state.StaggerBegan < 0f;
-                if (!recheck && state.StaggerAnimator != null && now - state.StaggerChecked >= 0.1f)
+                // The animation is run forward once, when the stagger starts.
+                // After that a change in play speed only rescales what is
+                // left, and running past the predicted end nudges it on a
+                // little: no more simulating in the middle of a fight.
+                if (state.StaggerBegan < 0f)
+                    Restagger(state, now);
+                else if (state.StaggerAnimator != null && now - state.StaggerChecked >= 0.1f)
                 {
+                    state.StaggerChecked = now;
                     float speedNow = PlaySpeed(state.Character, state.StaggerAnimator, out _);
-                    recheck = Mathf.Abs(speedNow - state.StaggerSpeed) > 0.02f ||
-                        now >= state.StaggerEnd;
+                    if (Mathf.Abs(speedNow - state.StaggerSpeed) > 0.02f && speedNow > 0.01f)
+                    {
+                        float left = Mathf.Max(0f, state.StaggerEnd - now) * state.StaggerSpeed / speedNow;
+                        state.StaggerEnd = now + left;
+                        state.StaggerSpeed = speedNow;
+                    }
+                    else if (now >= state.StaggerEnd)
+                        state.StaggerEnd = now + 0.1f;
                 }
-                if (recheck) Restagger(state, now);
             }
             overlay.gameObject.SetActive(staggering);
             if (!staggering) return;
