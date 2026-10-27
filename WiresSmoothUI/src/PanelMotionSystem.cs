@@ -79,7 +79,7 @@ namespace WiresSmoothUI
             return maxY > Corners[0].y && minY < Corners[1].y;
         }
 
-        internal static void Watch(Object target, bool list = false)
+        internal static void Watch(Object target, bool list = false, float startScale = 0.95f)
         {
             Transform t = target as Transform
                 ?? (target as GameObject)?.transform
@@ -90,14 +90,16 @@ namespace WiresSmoothUI
             if (watcher == null)
                 watcher = t.gameObject.AddComponent<PanelOpenWatcher>();
             watcher.List |= list;
+            watcher.StartScale = startScale;
         }
     }
 
     internal sealed class PanelOpenWatcher : MonoBehaviour
     {
         internal bool List;
+        internal float StartScale = 0.95f;
 
-        private void OnEnable() => PanelMotionSystem.Open(transform, 0.95f, List);
+        private void OnEnable() => PanelMotionSystem.Open(transform, StartScale, List);
 
         private void OnDisable() => UiMotion.Cancel(transform);
     }
@@ -116,6 +118,23 @@ namespace WiresSmoothUI
             PanelMotionSystem.Watch(__instance.m_splitDialog);
             PanelMotionSystem.Watch(__instance.m_craftProgressPanel);
         }
+    }
+
+    // The hammer's (and cauldron's) build menu pops in like other menus.
+    [HarmonyPatch(typeof(BuildUi), "Awake")]
+    internal static class SmoothUIPanelBuildMenuPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(BuildUi __instance) => PanelMotionSystem.Watch(__instance);
+    }
+
+    // The selected piece panel at the bottom is part of the HUD: it fades in
+    // when you take out the hammer.
+    [HarmonyPatch(typeof(Hud), "Awake")]
+    internal static class SmoothUIPanelBuildHudPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(Hud __instance) => PanelMotionSystem.Watch(__instance.m_buildHud, false, 1f);
     }
 
     [HarmonyPatch(typeof(TextInput), "Awake")]

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+
+* The build menu pops in like the other menus when you open it with the hammer.
+* The selected piece panel at the bottom fades in when you take out the hammer.
+
 ## 0.6.0
 
 * Equipping something fills its slot from the bottom up as it equips, and unequipping drains it. Works in the inventory and on the hotbar.
