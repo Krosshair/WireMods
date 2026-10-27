@@ -14,7 +14,7 @@ namespace WiresStackify
     {
         public const string PluginGuid = "kajetan.valheim.stackify";
         public const string PluginName = "Wire's Stackify";
-        public const string PluginVersion = "0.1.7";
+        public const string PluginVersion = "0.1.8";
 
         internal static StackifyPlugin Instance;
         internal static BepInEx.Logging.ManualLogSource Log;

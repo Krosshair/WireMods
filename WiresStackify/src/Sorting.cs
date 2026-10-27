@@ -129,11 +129,12 @@ namespace WiresStackify
             }
         }
 
-        // favorites: the player's, for your own inventory; null for
-        // containers. inContainer: the player's favorites again, for a
-        // container: favorited items stay where they are there too
-        // (favorited slots are only in your inventory). A container sorted
-        // by its owner on request uses no favorites. Returns the items that
+        // favorites: the player's, for your own inventory, where favorited
+        // items and slots stay where they are; null for containers.
+        // inContainer: the player's favorites again, for a container:
+        // favorited items are sorted too, but always come first, so they
+        // gather at the start (favorited slots are only in your inventory).
+        // A container sorted by its owner on request uses no favorites. Returns the items that
         // ended up somewhere else, in sorted order (stacks merged into
         // others count).
         private static List<ItemDrop.ItemData> Sort(Inventory inv, Favorites favorites, int rows, Mode mode,
@@ -145,8 +146,7 @@ namespace WiresStackify
             foreach (ItemDrop.ItemData it in inv.GetAllItems())
             {
                 bool sorted = it.m_gridPos.y < rows && (favorites == null ||
-                    (!favorites.IsItemFavorited(it.m_shared) && (it.m_gridPos.y > 0 || hotbar) && !favorites.IsSlotFavorited(it.m_gridPos))) &&
-                    (inContainer == null || !inContainer.IsItemFavorited(it.m_shared));
+                    (!favorites.IsItemFavorited(it.m_shared) && (it.m_gridPos.y > 0 || hotbar) && !favorites.IsSlotFavorited(it.m_gridPos)));
                 if (sorted) items.Add(it);
                 else kept.Add(it.m_gridPos); // never moves, and its slot stays its own
             }
@@ -155,7 +155,14 @@ namespace WiresStackify
 
             List<ItemDrop.ItemData> merged = new List<ItemDrop.ItemData>();
             if (StackifyPlugin.SortMergeStacks.Value) MergeStacks(items, inv, merged);
-            if (mode == Mode.Weight) items.Sort(WeightOrder); else items.Sort(TypeOrder);
+            Comparison<ItemDrop.ItemData> order = mode == Mode.Weight ? (Comparison<ItemDrop.ItemData>)WeightOrder : TypeOrder;
+            if (inContainer == null) items.Sort(order);
+            else items.Sort((a, b) =>
+            {
+                // Favorites first, then the usual order within each part.
+                int f = inContainer.IsItemFavorited(b.m_shared).CompareTo(inContainer.IsItemFavorited(a.m_shared));
+                return f != 0 ? f : order(a, b);
+            });
             List<Vector2i> slots = Slots(inv, rows, hotbar, favorites, kept);
             for (int i = 0; i < items.Count && i < slots.Count; i++) items[i].m_gridPos = slots[i];
 

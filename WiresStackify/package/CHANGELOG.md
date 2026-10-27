@@ -1,3 +1,7 @@
+## 0.1.8
+
+- Sorting a container sorts your favorited items too, but they always come first, so your favorites gather together at the start of the container. In your inventory, favorited items and slots still stay where they are.
+
 ## 0.1.7
 
 - Items can be favorited in containers too: hold the favorite key and left click. Favorited slots stay exclusive to your inventory.
