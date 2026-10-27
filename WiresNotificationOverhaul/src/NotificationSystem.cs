@@ -428,6 +428,16 @@ namespace WiresNotificationOverhaul
                 _panelGroup.alpha = 1f;
         }
 
+        // One decimal, halves rounded up (50.25% shows as 50.3%).
+        private static string Percent(float current, float required)
+        {
+            decimal value = (decimal)current * 100m / (decimal)required;
+            value = Math.Round(value, 1, MidpointRounding.AwayFromZero);
+            if (value > 100m) value = 100m;
+            if (value < 0m) value = 0m;
+            return value.ToString("0.0", CultureInfo.CurrentCulture) + "%";
+        }
+
         internal static void ShowSkillXp(
             Skills.SkillDef skill,
             float amount,
@@ -1153,7 +1163,14 @@ namespace WiresNotificationOverhaul
                 // XP has exactly one lowercase xp suffix and a plus
                 // sign ONLY when displaying gained XP. The same
                 // number syntax is used in both display modes.
-                string number = progress
+                bool percent =
+                    WiresNotificationOverhaulPlugin
+                        .XpProgressPercent.Value ==
+                    WiresNotificationOverhaulPlugin.Toggle.On &&
+                    notice.HasXpProgress && notice.RequiredXp > 0f;
+                string number = percent
+                    ? Percent(notice.CurrentXp, notice.RequiredXp)
+                    : progress
                     ? $"{notice.CurrentXp:0.##}/{notice.RequiredXp:0.##}xp"
                     : $"+{notice.XpAmount:0.##}xp";
                 view.Text.text = compact

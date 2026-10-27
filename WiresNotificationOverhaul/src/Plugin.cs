@@ -12,7 +12,7 @@ namespace WiresNotificationOverhaul
     {
         public const string PluginGuid = "wire.valheim.notificationoverhaul";
         public const string PluginName = "Wire's Notification Overhaul";
-        public const string PluginVersion = "1.1.8";
+        public const string PluginVersion = "1.1.9";
 
         internal enum Toggle
         {
@@ -61,6 +61,8 @@ namespace WiresNotificationOverhaul
         internal static ConfigEntry<Toggle> XpProgressNotifications;
         internal static ConfigEntry<Toggle> InWorldXpPopups;
         internal static ConfigEntry<Toggle> HideMovementXpPopups;
+        internal static ConfigEntry<Toggle> HideRunJumpXp;
+        internal static ConfigEntry<Toggle> XpProgressPercent;
 
         private Harmony _harmony;
         private static bool _pendingPreviousPresetMigration;
@@ -202,8 +204,12 @@ namespace WiresNotificationOverhaul
             const string Xp = "4- XP Notifications";
             XpGainNotifications = BindOrdered(Xp, "XP Gain Notifications", Toggle.Off,
                 "Show skill XP gains in the notification stack, not only level-ups.", 400);
+            HideRunJumpXp = BindOrdered(Xp, "No Notifications For Running And Jumping", Toggle.On,
+                "With XP Gain Notifications, leave out Run and Jump XP, which come in about once a second while you move. Their level-ups still show.", 350);
             XpProgressNotifications = BindOrdered(Xp, "Show Current / Required XP", Toggle.Off,
                 "With XP Gain Notifications, show current XP toward the next level out of the XP required for that level.", 300);
+            XpProgressPercent = BindOrdered(Xp, "Show XP Progress As Percent", Toggle.On,
+                "With XP Gain Notifications, show how far the skill is toward its next level in percent, with one decimal (100.5/200xp shows as 50.3%). Takes the place of the gained XP and of Show Current / Required XP.", 250);
             InWorldXpPopups = BindOrdered(Xp, "In-World XP Popups", Toggle.Off,
                 "Show each XP gain as a popup on your character, in the same style as damage numbers. Works with or without XP Gain Notifications. Only you see them.", 200);
             HideMovementXpPopups = BindOrdered(Xp, "No In-World Popups For Movement Skills", Toggle.On,
@@ -229,6 +235,7 @@ namespace WiresNotificationOverhaul
             NotificationTextColor.SettingChanged += OnIconSettingChanged;
             PreserveCenterMessageColor.SettingChanged += OnIconSettingChanged;
             XpProgressNotifications.SettingChanged += OnIconSettingChanged;
+            XpProgressPercent.SettingChanged += OnIconSettingChanged;
 
             Config.SaveOnConfigSet = true;
             Config.Save();

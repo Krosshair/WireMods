@@ -180,29 +180,46 @@ namespace WiresNotificationOverhaul
                  name.Contains("stamina") || name.Contains("eitr") ||
                  name.Contains("_hp_"));
 
+            // The game marks use cooldowns with a cooldown icon.
+            if (effect.m_cooldownIcon)
+                return true;
+
             SE_Stats stats = effect as SE_Stats;
             if (stats == null)
-                return instantNamedMead && effect.m_cooldownIcon;
+                return instantNamedMead;
 
-            bool ongoing =
-                stats.m_healthOverTime > 0f ||
-                stats.m_staminaOverTime > 0f ||
-                stats.m_eitrOverTime > 0f ||
+            // Lasting benefits (resistances, regen) make it a buff. Healing
+            // over a few seconds doesn't: a healing mead heals for 10 s and
+            // the rest of its timer is only the wait until the next one.
+            float ttl = effect.m_ttl;
+            bool lasting =
+                Lasts(stats.m_healthOverTime, stats.m_healthOverTimeDuration, ttl) ||
+                Lasts(stats.m_staminaOverTime, stats.m_staminaOverTimeDuration, ttl) ||
+                Lasts(stats.m_eitrOverTime, stats.m_eitrOverTimeDuration, ttl) ||
                 stats.m_healthRegenMultiplier != 1f ||
                 stats.m_staminaRegenMultiplier != 1f ||
-                stats.m_eitrRegenMultiplier != 1f;
+                stats.m_eitrRegenMultiplier != 1f ||
+                (stats.m_mods != null && stats.m_mods.Count > 0);
 
-            if (ongoing)
+            if (lasting)
                 return false;
 
-            bool instant =
+            bool restores =
                 stats.m_healthUpFront > 0f ||
                 stats.m_staminaUpFront > 0f ||
-                stats.m_eitrUpFront > 0f;
+                stats.m_eitrUpFront > 0f ||
+                stats.m_healthOverTime > 0f ||
+                stats.m_staminaOverTime > 0f ||
+                stats.m_eitrOverTime > 0f;
 
-            // Both direct restoration data and recognized names can
-            // identify a use-cooldown rather than a persistent buff.
-            return instant || instantNamedMead;
+            return restores || instantNamedMead;
+        }
+
+        // An over-time effect that runs for the whole timer (no duration
+        // means the whole timer, as in the game).
+        private static bool Lasts(float amount, float duration, float ttl)
+        {
+            return amount != 0f && (duration <= 0f || ttl <= 0f || duration >= ttl - 0.01f);
         }
 
         internal static void Clear()
@@ -401,6 +418,10 @@ namespace WiresNotificationOverhaul
                 WiresNotificationOverhaulPlugin.Toggle.On;
             bool world = WiresNotificationOverhaulPlugin.InWorldXpPopups.Value ==
                 WiresNotificationOverhaulPlugin.Toggle.On;
+            // Running and jumping gain XP all the time just by moving.
+            if (stack && (skillType == Skills.SkillType.Run || skillType == Skills.SkillType.Jump) &&
+                WiresNotificationOverhaulPlugin.HideRunJumpXp.Value == WiresNotificationOverhaulPlugin.Toggle.On)
+                stack = false;
             if (!__state || (!stack && !world))
                 return;
 
