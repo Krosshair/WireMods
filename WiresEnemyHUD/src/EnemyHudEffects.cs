@@ -121,7 +121,7 @@ namespace EnemyHudRework
             if (!_otherEffects.Value || (state.Kind == HudKind.Player && !_playerEffects.Value))
             {
                 if (ui != null && ui.Root != null && ui.Root.gameObject.activeSelf) ui.Root.gameObject.SetActive(false);
-                if (ui != null) ui.Revision = uint.MaxValue;
+                if (ui != null) { ui.Revision = uint.MaxValue; ui.Layout = -1; }
                 return;
             }
             // Only when the shared data or the layout changed, also while
@@ -129,9 +129,19 @@ namespace EnemyHudRework
             if (ui == null) ui = state.Effects = new EffectUi();
             if (ui.Revision == revision && ui.Layout == _layoutVersion) return;
             ui.Revision = revision;
-            ui.Layout = _layoutVersion;
+            // The creature's network data changes all the time in a fight
+            // (health, every damage tick of an effect): lay the icons out
+            // again only when the effects themselves or the layout changed.
+            bool same = ui.Layout == _layoutVersion;
             bool any = false;
-            for (int i = 0; i < MaxOtherEffects; i++) if (GetSharedInt(zdo, OtherKeys[i]) != 0) { any = true; break; }
+            for (int i = 0; i < MaxOtherEffects; i++)
+            {
+                int h = GetSharedInt(zdo, OtherKeys[i]);
+                if (h != 0) any = true;
+                if (ui.Hashes[i] != h) { ui.Hashes[i] = h; same = false; }
+            }
+            if (same && (ui.Root != null || !any)) return;
+            ui.Layout = _layoutVersion;
             if (ui.Root == null)
             {
                 if (!any) return; // nothing to show, nothing built

@@ -724,7 +724,9 @@ namespace EnemyHudRework
             [HarmonyPrefix]
             private static void Prefix(Character __instance, HitData hit)
             {
+                Prof.Begin(Prof.DamagePrefix);
                 Instance?.NoteOutgoingLocalHit(__instance, hit);
+                Prof.End(Prof.DamagePrefix);
             }
         }
 
@@ -761,6 +763,14 @@ BackstabTime(__instance);
             }
 
             private static void Postfix(
+                Character __instance, HitState __state)
+            {
+                Prof.Begin(Prof.DamageRpc);
+                try { PostfixTimed(__instance, __state); }
+                finally { Prof.End(Prof.DamageRpc); }
+            }
+
+            private static void PostfixTimed(
                 Character __instance, HitState __state)
             {
                 Vector3 before = __state.Snapshot;

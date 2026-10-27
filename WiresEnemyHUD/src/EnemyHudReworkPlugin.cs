@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.9.1";
+        public const string PluginVersion = "0.9.2";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -605,10 +605,19 @@ namespace EnemyHudRework
             Player localPlayer,
             float dt)
         {
+            Prof.Begin(Prof.Frame);
+            try { UpdateEnemyHudsTimed(localPlayer, dt); }
+            finally { Prof.End(Prof.Frame); }
+        }
+
+        private void UpdateEnemyHudsTimed(
+            Player localPlayer,
+            float dt)
+        {
             List<Character> remove = null;
             Character lookedAt = localPlayer != null ? localPlayer.GetHoverCreature() : null;
-            UpdateLookTarget(lookedAt);
-            ProcessPendingRanks();
+            Prof.Begin(Prof.Look); UpdateLookTarget(lookedAt); Prof.End(Prof.Look);
+            Prof.Begin(Prof.Ranks); ProcessPendingRanks(); Prof.End(Prof.Ranks);
             // The crosshair ray is only needed while another player's
             // nameplate is around (never in single player).
             Player directlyTargeted = _playerNameplateAimFade != null &&
@@ -637,7 +646,7 @@ namespace EnemyHudRework
                     localPlayer == null ||
                     BaseAI.IsEnemy(localPlayer, character);
 
-                ApplyHealthBarScale(state);
+                Prof.Begin(Prof.Scale); ApplyHealthBarScale(state); Prof.End(Prof.Scale);
 
                 if (state.Kind == HudKind.Player && directlyTargeted != null &&
                     ReferenceEquals(state.Character, directlyTargeted))
@@ -646,7 +655,7 @@ namespace EnemyHudRework
                 if (state.Kind == HudKind.Enemy)
                 {
                     GuardLevelStars(state);
-                    UpdateStatusName(state, isEnemy);
+                    Prof.Begin(Prof.Name); UpdateStatusName(state, isEnemy); Prof.End(Prof.Name);
                 }
                 else if (state.Kind == HudKind.Boss)
                     ApplyBossNameColor(state);
@@ -654,27 +663,29 @@ namespace EnemyHudRework
                 if (state.Kind == HudKind.Enemy || state.Kind == HudKind.Player)
                 {
                     ApplyStaggerPosition(state);
-                    UpdateStaggerBar(state, isEnemy, dt);
+                    Prof.Begin(Prof.Stagger); UpdateStaggerBar(state, isEnemy, dt); Prof.End(Prof.Stagger);
                 }
 
-                UpdateWorldBubble(state, isEnemy);
-                UpdateHealthValue(state);
-                UpdateHitPrediction(state, isEnemy, localPlayer, lookedAt, dt);
-                UpdateCriticalOutline(state);
-                UpdateSharedRanks(state);
-                UpdateWeaknessIcons(state, isEnemy);
-                UpdateBossDps(state);
-                UpdateEnhancedEffects(state, isEnemy);
-                UpdateStatusIcons(state);
-                ApplyFrameFlash(state);
-                UpdateViewportVisibility(state);
+                Prof.Begin(Prof.Bubble); UpdateWorldBubble(state, isEnemy); Prof.End(Prof.Bubble);
+                Prof.Begin(Prof.Health); UpdateHealthValue(state); Prof.End(Prof.Health);
+                Prof.Begin(Prof.Prediction); UpdateHitPrediction(state, isEnemy, localPlayer, lookedAt, dt); Prof.End(Prof.Prediction);
+                Prof.Begin(Prof.Outline); UpdateCriticalOutline(state); Prof.End(Prof.Outline);
+                Prof.Begin(Prof.SharedRanks); UpdateSharedRanks(state); Prof.End(Prof.SharedRanks);
+                Prof.Begin(Prof.Weakness); UpdateWeaknessIcons(state, isEnemy); Prof.End(Prof.Weakness);
+                Prof.Begin(Prof.BossDps); UpdateBossDps(state); Prof.End(Prof.BossDps);
+                Prof.Begin(Prof.Enhanced); UpdateEnhancedEffects(state, isEnemy); Prof.End(Prof.Enhanced);
+                Prof.Begin(Prof.Status); UpdateStatusIcons(state); Prof.End(Prof.Status);
+                Prof.Begin(Prof.Flash); ApplyFrameFlash(state); Prof.End(Prof.Flash);
+                Prof.Begin(Prof.Viewport); UpdateViewportVisibility(state); Prof.End(Prof.Viewport);
+                Prof.Begin(Prof.PlayerOpacity);
                 UpdatePlayerNameplateOpacity(
                     state, localPlayer, directlyTargeted, dt);
+                Prof.End(Prof.PlayerOpacity);
                 if (state.Kind == HudKind.Player && state.Character != localPlayer)
                     anyPlayerNameplate = true;
             }
             _hadPlayerNameplate = anyPlayerNameplate;
-            UpdateIconFlashes();
+            Prof.Begin(Prof.IconFlashes); UpdateIconFlashes(); Prof.End(Prof.IconFlashes);
 
             if (remove == null)
                 return;
@@ -1994,8 +2005,10 @@ namespace EnemyHudRework
                 Character c,
                 bool isMount)
             {
+                Prof.Begin(Prof.ShowHud);
                 if (Instance != null)
                     Instance.SetupHud(__instance, c, isMount);
+                Prof.End(Prof.ShowHud);
             }
         }
 

@@ -1,3 +1,7 @@
+## 0.9.2
+
+Less work on creatures with status effects: the effect icons right of the bar are only laid out again when the effects change, not on every damage tick or health change, and a status effect starting or ending only redoes the weakness icons when it actually changes a resistance.
+
 ## 0.9.1
 
 Fists no longer count as a blunt weapon for weapon focus (Highlight and Limited) or hit prediction.

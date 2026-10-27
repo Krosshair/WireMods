@@ -47,6 +47,13 @@ namespace EnemyHudRework
 
         internal void OnStatusChanged(StatusEffect se, bool on)
         {
+            Prof.Begin(Prof.StatusChanged);
+            try { OnStatusChangedTimed(se, on); }
+            finally { Prof.End(Prof.StatusChanged); }
+        }
+
+        private void OnStatusChangedTimed(StatusEffect se, bool on)
+        {
             if (se == null) return;
             // Your own effects starting or running out (meads, powers,
             // rested...) change what your next hit would do.

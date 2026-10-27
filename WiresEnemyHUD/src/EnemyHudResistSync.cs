@@ -52,7 +52,11 @@ namespace EnemyHudRework
                 if (view == null || !view.IsValid() || !view.IsOwner()) continue;
                 ZDO zdo = view.GetZDO();
                 int packed = PackRanks(c.GetDamageModifiers());
-                if (GetSharedInt(zdo, RanksKey) != packed) SetSharedInt(zdo, RanksKey, packed);
+                // Most effects starting or ending (a damage tick's burning,
+                // wet, a mead) don't change any strength: then nothing needs
+                // laying out again.
+                if (GetSharedInt(zdo, RanksKey) == packed) continue;
+                SetSharedInt(zdo, RanksKey, packed);
                 EnemyUiState state;
                 if (_states.TryGetValue(c, out state) && state != null && state.Weakness != null)
                 {
