@@ -29,7 +29,7 @@ namespace WiresSmoothUI
     {
         public const string PluginGuid = "wire.valheim.smoothui";
         public const string PluginName = "Wire's Smooth UI";
-        public const string PluginVersion = "0.6.2";
+        public const string PluginVersion = "0.6.3";
 
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<bool> HudEnabled;
@@ -56,6 +56,7 @@ namespace WiresSmoothUI
         internal static ConfigEntry<bool> EquipProgressFill;
         internal static ConfigEntry<bool> PanelAnimations;
         internal static ConfigEntry<bool> CraftingAnimations;
+        internal static ConfigEntry<bool> HideEmptyMaterialSlots;
         internal static ConfigEntry<bool> SlotAnimations;
         internal static ConfigEntry<float> DropTargetScale;
         internal static ConfigEntry<float> GamepadSelectionScale;
@@ -179,6 +180,8 @@ namespace WiresSmoothUI
             }
 
             Enabled.SettingChanged += (_, __) => SmoothUIDriver.Wake();
+            Enabled.SettingChanged += (_, __) => EmptyMaterialSlots.Refresh();
+            HideEmptyMaterialSlots.SettingChanged += (_, __) => EmptyMaterialSlots.Refresh();
             // Buttons can rest at their hover size without ticking; put them
             // back when the setting is turned off.
             ButtonAnimations.SettingChanged += (_, __) =>

@@ -11,9 +11,9 @@ namespace WiresSmoothUI
     //  - The recipe rows you can see slide in when the panel comes up and when
     //    you switch Craft/Upgrade, and the tab's label pops. Only rows move;
     //    tabs and the station header stay put.
-    //  - Picking a recipe pops its row icon and the required station level,
-    //    fades the selection marker in and slides the details in from the right.
-    //  - Finishing a craft pops the requirement icons.
+    //  - Picking a recipe pops its row icon, fades the selection marker in and
+    //    slides in only the details that differ from the last recipe's.
+    //  - Finishing an upgrade slides in the details it changed.
     // The craft button itself belongs to the button animation.
     internal static class CraftingMotion
     {
@@ -27,7 +27,7 @@ namespace WiresSmoothUI
         private static readonly Vector3 RowFrom = new Vector3(-16f, 0f, 0f);
         private const float RowStep = 0.025f;
         private const float RowDuration = 0.22f;
-        private const int MaxRows = 14;
+        private const float MaxRowDelay = 0.3f;
 
         internal static bool ListPending;
 
@@ -79,11 +79,9 @@ namespace WiresSmoothUI
             int index = 0;
             foreach (Component row in rows)
             {
-                if (index >= MaxRows)
-                    break;
                 if (!row.gameObject.activeInHierarchy || (viewport != null && !Overlaps(row.transform as RectTransform, viewport)))
                     continue;
-                UiMotion.Enter(row.transform, index * RowStep, RowDuration, RowFrom, 1f, true);
+                UiMotion.Enter(row.transform, Mathf.Min(MaxRowDelay, index * RowStep), RowDuration, RowFrom, 1f, true);
                 index++;
             }
         }
@@ -128,16 +126,16 @@ namespace WiresSmoothUI
         internal static void RecipeChanged(InventoryGui gui)
         {
             if (On)
-                UiMotion.NextFrame(() => PlayRecipe(gui));
+                UiMotion.NextFrame(() => PlayRecipe(gui, true));
         }
 
-        private static void PlayRecipe(InventoryGui gui)
+        private static void PlayRecipe(InventoryGui gui, bool picked)
         {
             object pair = gui != null ? Selected(gui) : null;
             if (pair == null)
                 return;
 
-            GameObject row = RowOf(pair);
+            GameObject row = picked ? RowOf(pair) : null;
             if (row != null)
             {
                 Transform icon = row.transform.Find("icon");
@@ -168,7 +166,10 @@ namespace WiresSmoothUI
                 Transform box = star.transform.parent != null && star.transform.parent.name == "level"
                     ? star.transform.parent
                     : star.transform;
-                Detail(box, ref i);
+                if (star.gameObject.activeSelf)
+                    Detail(box, ref i);
+                else
+                    Shown.Remove(box);
 
                 string level = star.gameObject.activeInHierarchy && gui.m_minStationLevelText != null
                     ? gui.m_minStationLevelText.text
@@ -179,35 +180,74 @@ namespace WiresSmoothUI
             }
 
             foreach (GameObject req in gui.m_recipeRequirementList)
+            {
+                // An empty slot (icon off) has nothing to slide in, and its fade
+                // would bring back a slot that EmptyMaterialSlots hid. Upgraders
+                // put their own buttons in those slots, so they still animate.
+                Transform icon = req != null ? req.transform.Find("res_icon") : null;
+                if (icon != null && !icon.gameObject.activeSelf && !EmptyMaterialSlots.AtUpgrader)
+                {
+                    Shown.Remove(req.transform);
+                    continue;
+                }
                 Detail(req, ref i);
+            }
         }
 
         private static string _lastLevel = "";
 
+        // What each detail part showed last time; a part only slides in when
+        // what it shows changed.
+        private static readonly Dictionary<Transform, string> Shown = new Dictionary<Transform, string>();
+        private static readonly List<TMPro.TMP_Text> Texts = new List<TMPro.TMP_Text>();
+        private static readonly List<Image> Images = new List<Image>();
+        private static readonly System.Text.StringBuilder Sig = new System.Text.StringBuilder();
+
+        internal static void ResetShown()
+        {
+            Shown.Clear();
+            _lastLevel = "";
+        }
+
+        private static string Signature(Transform t)
+        {
+            Sig.Length = 0;
+            t.GetComponentsInChildren(false, Texts);
+            foreach (TMPro.TMP_Text text in Texts)
+                Sig.Append(text.text).Append('|');
+            t.GetComponentsInChildren(false, Images);
+            foreach (Image image in Images)
+                Sig.Append(image.sprite != null ? image.sprite.GetInstanceID() : 0).Append('|');
+            return Sig.ToString();
+        }
+
         private static void Detail(Object part, ref int index)
         {
             Transform t = part is GameObject go ? go.transform : (part as Component)?.transform;
-            if (t == null || !t.gameObject.activeInHierarchy)
+            if (t == null)
                 return;
+            if (!t.gameObject.activeInHierarchy)
+            {
+                Shown.Remove(t);
+                return;
+            }
+            string sig = Signature(t);
+            if (Shown.TryGetValue(t, out string last) && last == sig)
+                return;
+            Shown[t] = sig;
             UiMotion.Enter(t, Mathf.Min(0.25f, index * DetailStep), DetailDuration, DetailFrom, 1f, true);
             index++;
         }
 
         // ---- Crafting ----
 
+        // An upgrade changes the quality, stats and materials of the item
+        // still selected: slide in what changed once the game has redrawn it.
         internal static void Crafted(InventoryGui gui)
         {
-            if (!On || gui == null)
+            if (!On || gui == null || !gui.InUpradeTab())
                 return;
-
-            foreach (GameObject req in gui.m_recipeRequirementList)
-            {
-                if (req == null || !req.activeInHierarchy)
-                    continue;
-                Transform icon = req.transform.Find("res_icon");
-                if (icon != null)
-                    UiMotion.Pop(icon, 0.85f, 1.12f, 0.24f);
-            }
+            UiMotion.NextFrame(() => PlayRecipe(gui, false));
         }
     }
 

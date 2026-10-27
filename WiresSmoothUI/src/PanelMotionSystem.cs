@@ -60,9 +60,93 @@ namespace WiresSmoothUI
             UiMotion.Enter(root, 0f, Duration, Vector3.zero, startScale, false);
         }
 
+        // These panels have a full-screen darkening backdrop as a child; pop
+        // the window itself (largest child that isn't stretched over the whole
+        // parent) and leave the backdrop alone. Falls back to the panel.
+        internal static Transform Frame(Object target)
+        {
+            Transform root = target as Transform
+                ?? (target as GameObject)?.transform
+                ?? (target as Component)?.transform;
+            if (root == null)
+                return null;
+            Transform best = null;
+            float bestArea = 0f;
+            foreach (Transform child in root)
+            {
+                RectTransform rt = child as RectTransform;
+                if (rt == null)
+                    continue;
+                bool fullScreen = rt.anchorMin == Vector2.zero && rt.anchorMax == Vector2.one &&
+                                  rt.sizeDelta.x >= -1f && rt.sizeDelta.y >= -1f;
+                float area = rt.rect.width * rt.rect.height;
+                if (!fullScreen && area > bestArea)
+                {
+                    best = child;
+                    bestArea = area;
+                }
+            }
+            return best != null ? best : root;
+        }
+
         internal static void WatchScaleOnly(Object target, float startScale)
         {
             Watch(target, startScale, true, true);
+        }
+
+        // Rows of a list inside the panel fade and rise in one after another,
+        // every row you can see (the list is laid out and scrolled first).
+        private const float RowStep = 0.025f;
+        private const float MaxRowDelay = 0.3f;
+        private const float RowDuration = 0.22f;
+        private static readonly Vector3 RowFrom = new Vector3(0f, -8f, 0f);
+        private static readonly Vector3[] Corners = new Vector3[4];
+
+        internal static void WatchRows(Object target)
+        {
+            Transform t = target as Transform
+                ?? (target as GameObject)?.transform
+                ?? (target as Component)?.transform;
+            PanelOpenWatcher watcher = t != null ? t.GetComponent<PanelOpenWatcher>() : null;
+            if (watcher != null)
+                watcher.Rows = true;
+        }
+
+        internal static void Rows(Transform root)
+        {
+            if (!On || root == null || !root.gameObject.activeInHierarchy)
+                return;
+            ScrollRect scroll = root.GetComponentInChildren<ScrollRect>();
+            if (scroll == null && root.parent != null)
+                scroll = root.parent.GetComponentInChildren<ScrollRect>();
+            if (scroll == null || scroll.content == null)
+                return;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(scroll.content);
+            RectTransform viewport = scroll.viewport != null ? scroll.viewport : scroll.transform as RectTransform;
+
+            // Some lists keep their rows in a single holder.
+            Transform content = scroll.content;
+            for (int depth = 0; depth < 2 && content.childCount == 1; depth++)
+                content = content.GetChild(0);
+
+            int index = 0;
+            foreach (Transform row in content)
+            {
+                if (!row.gameObject.activeInHierarchy || !Visible(row as RectTransform, viewport))
+                    continue;
+                UiMotion.Enter(row, Mathf.Min(MaxRowDelay, index * RowStep), RowDuration, RowFrom, 1f, true);
+                index++;
+            }
+        }
+
+        private static bool Visible(RectTransform row, RectTransform viewport)
+        {
+            if (row == null || viewport == null)
+                return false;
+            row.GetWorldCorners(Corners);
+            float minY = Corners[0].y, maxY = Corners[1].y;
+            viewport.GetWorldCorners(Corners);
+            return maxY > Corners[0].y && minY < Corners[1].y;
         }
 
         // ownCanvas: the panel gets a canvas of its own the first time it
@@ -92,6 +176,7 @@ namespace WiresSmoothUI
         internal float StartScale = 0.95f;
         internal bool ScaleOnly;
         internal bool OwnCanvas;
+        internal bool Rows;
         internal bool Ready;
         private int _canvas; // 0 not tried, 1 has one, -1 couldn't: don't animate
 
@@ -108,6 +193,12 @@ namespace WiresSmoothUI
             }
             if (ScaleOnly) PanelMotionSystem.Pop(transform, StartScale);
             else PanelMotionSystem.Open(transform, StartScale);
+            if (Rows)
+            {
+                // The game fills and scrolls the list right after showing it.
+                Transform root = transform;
+                UiMotion.NextFrame(() => PanelMotionSystem.Rows(root));
+            }
         }
 
         private void OnDisable() => UiMotion.Cancel(transform);
@@ -119,8 +210,13 @@ namespace WiresSmoothUI
         [HarmonyPostfix]
         private static void Postfix(InventoryGui __instance)
         {
-            // Skills, trophies and achievements open as they are, on purpose:
-            // animating their long lists cost too much.
+            // Skills, trophies and achievements hold long lists: a scale-only
+            // pop on their own canvas, like the build menu, so the lists
+            // aren't redrawn every frame of it.
+            PanelMotionSystem.WatchScaleOnly(PanelMotionSystem.Frame(__instance.m_skillsDialog), 0.93f);
+            PanelMotionSystem.WatchRows(PanelMotionSystem.Frame(__instance.m_skillsDialog));
+            PanelMotionSystem.WatchScaleOnly(PanelMotionSystem.Frame(__instance.m_trophiesPanel), 0.93f);
+            PanelMotionSystem.WatchScaleOnly(PanelMotionSystem.Frame(__instance.m_achievementsPanel), 0.93f);
             PanelMotionSystem.Watch(__instance.m_textsDialog);
             PanelMotionSystem.Watch(__instance.m_variantDialog);
             PanelMotionSystem.Watch(__instance.m_splitDialog);

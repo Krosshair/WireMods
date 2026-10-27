@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.3
+
+* Skills, trophies and achievements pop in again when they open, scale only and on their own canvas like the build menu, so their long lists don't lag it.
+* The skill rows you can see fade and rise in again when the skills open.
+* Every recipe row you can see slides in when the crafting list opens, not just the first 14: the lower ones were already there.
+* The crafting panel only animates what changes: picking another recipe slides in only the details that differ from the last one, and finishing an upgrade slides in what it changed. Crafting no longer pops the requirement icons.
+* New setting, on by default: Hide empty material slots. The crafting panel only shows as many material slots as the recipe uses, and hides the station level box when no level is needed or nothing is selected.
+
 ## 0.6.2
 
 * Opening the build menu no longer lags with many pieces unlocked: it gets a canvas of its own and only scales in (no fade), so the rest of the HUD isn't redrawn with it. The selected piece panel fades in on its own canvas too.
