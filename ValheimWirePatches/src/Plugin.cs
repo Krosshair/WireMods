@@ -11,7 +11,7 @@ namespace ValheimWirePatches
     {
         public const string Guid = "wire.valheimwirepatches";
         public const string Name = "Valheim Wire Patches";
-        public const string Version = "0.1.1";
+        public const string Version = "0.1.2";
 
         internal static Plugin Instance;
 

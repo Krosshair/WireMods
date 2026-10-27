@@ -1,3 +1,7 @@
+# 0.1.2
+
+* Double click sound fixed at the source: the inventory's buttons no longer ask for the panel switch sound, instead of the button's own click being skipped.
+
 # 0.1.1
 
 * Icon fixed.

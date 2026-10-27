@@ -1,35 +1,55 @@
+using System.Collections.Generic;
+using System.Reflection;
 using HarmonyLib;
-using UnityEngine;
 
 namespace ValheimWirePatches
 {
-    // SetActiveGroup plays m_setActiveGroupEffects (meant for gamepad bumper
-    // switching) on top of the button's own ButtonSfx, so mouse clicks on
-    // tabs/buttons that call it get two clicks. Drop the ButtonSfx one.
+    // InventoryGui calls SetActiveGroup(..., playSound: true) from its button
+    // handlers, so m_setActiveGroupEffects (meant for gamepad bumper switching)
+    // plays on top of the button's own ButtonSfx click.
+    // Every caller passes false except the gamepad paths and OnSelectedRecipe
+    // (recipe list entries have no ButtonSfx, that sound is their only click).
+    [HarmonyPatch]
     internal static class DoubleClickSound
     {
-        private static int _groupSoundFrame = -1;
-
-        [HarmonyPatch(typeof(InventoryGui), "SetActiveGroup", new[] { typeof(int), typeof(bool) })]
-        private static class SetActiveGroup
+        private static readonly HashSet<string> KeepSound = new HashSet<string>
         {
-            private static void Postfix(bool playSound)
+            "UpdateGamepad", "MoveToLowerInventoryGrid", "MoveToUpperInventoryGrid", "OnSelectedRecipe",
+            "SetActiveGroup"
+        };
+
+        private static bool IsSetActiveGroup(object operand) =>
+            operand is MethodInfo m && m.DeclaringType == typeof(InventoryGui) && m.Name == "SetActiveGroup";
+
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            foreach (MethodInfo m in AccessTools.GetDeclaredMethods(typeof(InventoryGui)))
             {
-                if (playSound && Player.m_localPlayer != null)
-                    _groupSoundFrame = Time.frameCount;
+                if (KeepSound.Contains(m.Name) || m.IsAbstract || m.ContainsGenericParameters) continue;
+                List<CodeInstruction> code;
+                try { code = PatchProcessor.GetOriginalInstructions(m); }
+                catch { continue; }
+                for (int i = 1; i < code.Count; i++)
+                    if (IsSetActiveGroup(code[i].operand) && code[i - 1].LoadsConstant(1))
+                    {
+                        yield return m;
+                        break;
+                    }
             }
         }
 
-        [HarmonyPatch(typeof(ButtonSfx), "PlaySfx")]
-        private static class PlaySfx
+        private static bool GroupSound() => !Plugin.DoubleClickSound.Value;
+
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
-            private static void Prefix(ref GameObject soundPrefab, ref GameObject vibrationPrefab)
+            var code = new List<CodeInstruction>(instructions);
+            for (int i = 1; i < code.Count; i++)
             {
-                if (!Plugin.DoubleClickSound.Value || _groupSoundFrame != Time.frameCount || soundPrefab == null)
-                    return;
-                soundPrefab = null;
-                vibrationPrefab = null;
+                if (!IsSetActiveGroup(code[i].operand) || !code[i - 1].LoadsConstant(1)) continue;
+                code[i - 1] = new CodeInstruction(System.Reflection.Emit.OpCodes.Call,
+                    AccessTools.Method(typeof(DoubleClickSound), nameof(GroupSound))).MoveLabelsFrom(code[i - 1]);
             }
+            return code;
         }
     }
 }

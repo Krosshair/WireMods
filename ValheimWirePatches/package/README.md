@@ -14,9 +14,9 @@ Every fix has its own setting, all on by default. Client-side.
 
 Inventory tabs and buttons (Craft, Upgrade, Skills, Trophies, Achievements...) play the click sound twice. More noticeable when the game is lagging, like at a big base.
 
-Cause: `InventoryGui.SetActiveGroup` plays `m_setActiveGroupEffects` (the sound for switching panels with a controller's bumpers), and the button plays its own `ButtonSfx` click in the same frame.
+Cause: the inventory's button handlers call `InventoryGui.SetActiveGroup` with the default `playSound: true`, so `m_setActiveGroupEffects` (the sound for switching panels with a controller's bumpers) plays on top of the button's own `ButtonSfx` click.
 
-Fix: when `SetActiveGroup` has played its sound this frame, the button's own click is skipped.
+Fix: those calls pass `playSound: false`. The gamepad switching paths and the recipe list (which has no `ButtonSfx`, so that sound is its only click) keep the sound.
 
 ### Lighting breaking after teleporting
 
