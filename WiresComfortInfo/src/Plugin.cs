@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using BepInEx;
 using HarmonyLib;
 using TMPro;
@@ -15,14 +16,20 @@ namespace WiresComfortInfo
     {
         public const string Guid = "wire.valheim.comfortinfo";
         public const string Name = "Wire's Comfort Info";
-        public const string Version = "0.1.2";
+        public const string Version = "0.1.3";
 
         private Harmony _harmony;
 
         private void Awake()
         {
             _harmony = new Harmony(Guid);
-            _harmony.PatchAll();
+            // One class at a time: a patch broken by a game update only
+            // switches off its own part.
+            foreach (Type type in AccessTools.GetTypesFromAssembly(typeof(Plugin).Assembly))
+            {
+                try { _harmony.CreateClassProcessor(type).Patch(); }
+                catch (Exception e) { Logger.LogError("Patch failed for " + type.FullName + ": " + e.Message); }
+            }
             Logger.LogInfo(Name + " " + Version + " loaded.");
         }
 
@@ -85,11 +92,16 @@ namespace WiresComfortInfo
                 hypothetical.m_comfort <= 0)
                 return 0;
 
-            // A conditional comfort object (e.g. fire) that starts
-            // inactive will not give comfort until its condition is met.
+            // A conditional comfort object (a fire's flames) only gives
+            // comfort while it's on. A new fire is lit with its starting
+            // fuel, so it counts; anything else that starts off doesn't.
             if (hypothetical.m_comfortObject != null &&
                 !hypothetical.m_comfortObject.activeSelf)
-                return 0;
+            {
+                Fireplace fire = hypothetical.GetComponent<Fireplace>();
+                if (fire == null || fire.m_startFuel <= 0f)
+                    return 0;
+            }
 
             Entries.Clear();
             foreach (Piece existing in Nearby)
@@ -240,27 +252,21 @@ namespace WiresComfortInfo
             _number.text = "";
         }
     }
+    // Filled in when the build menu opens or shows a different set of
+    // pieces, in the same frame, so the numbers are there as it appears.
+    // Nothing runs while the menu just sits open.
     internal static class Icons
     {
-        private static float _nextRefresh;
-        private static float _nextLegacyRefresh;
-
-        // Looked up once, not on every refresh.
         private static readonly AccessTools.FieldRef<BuildUi, List<BuildUiPieceButton>> PieceButtons =
             AccessTools.FieldRefAccess<BuildUi, List<BuildUiPieceButton>>("m_pieceButtons");
 
-        internal static void UpdateAdvanced(BuildUi ui)
+        internal static void Refresh(BuildUi ui)
         {
             Player player = Player.m_localPlayer;
-            if (ui == null || !ui.isActiveAndEnabled ||
-                player == null || !player.InPlaceMode() ||
-                Time.unscaledTime < _nextRefresh)
+            if (ui == null || player == null || !player.InPlaceMode())
                 return;
 
-            _nextRefresh = Time.unscaledTime + 0.45f;
-
             List<BuildUiPieceButton> buttons = PieceButtons(ui);
-
             if (buttons == null)
                 return;
 
@@ -269,15 +275,12 @@ namespace WiresComfortInfo
                 RefreshButton(button);
         }
 
-        internal static void RefreshButton(
-            BuildUiPieceButton button)
+        private static void RefreshButton(BuildUiPieceButton button)
         {
             if (button == null)
                 return;
 
-            ComfortNumber number =
-                button.GetComponent<ComfortNumber>();
-
+            ComfortNumber number = button.GetComponent<ComfortNumber>();
             Piece piece = button.Piece;
             if (piece == null || piece.m_comfort <= 0)
             {
@@ -287,85 +290,79 @@ namespace WiresComfortInfo
             }
 
             if (number == null)
-                number =
-                    button.gameObject.AddComponent<ComfortNumber>();
-
+                number = button.gameObject.AddComponent<ComfortNumber>();
             number.Set(Comfort.Gain(piece));
-        }
-
-        internal static void UpdateLegacy(
-            Hud hud,
-            Player player)
-        {
-            if (hud == null || player == null ||
-                hud.m_pieceListRoot == null ||
-                Time.unscaledTime < _nextLegacyRefresh)
-                return;
-
-            _nextLegacyRefresh = Time.unscaledTime + 0.45f;
-            Comfort.Begin(player);
-            List<Piece> pieces = player.GetBuildPieces();
-
-            RectTransform root = hud.m_pieceListRoot;
-            for (int i = 0; i < root.childCount; i++)
-            {
-                Transform child = root.GetChild(i);
-                ComfortNumber number =
-                    child.GetComponent<ComfortNumber>();
-
-                Piece piece = i < pieces.Count ? pieces[i] : null;
-                if (piece == null || piece.m_comfort <= 0)
-                {
-                    if (number != null)
-                        number.Set(0);
-                    continue;
-                }
-
-                if (number == null)
-                    number = child.gameObject
-                        .AddComponent<ComfortNumber>();
-
-                number.Set(Comfort.Gain(piece));
-            }
         }
     }
 
-    [HarmonyPatch(typeof(BuildUi), "Update")]
-    internal static class AdvancedUpdatePatch
+    [HarmonyPatch(typeof(BuildUi), nameof(BuildUi.OpenBuildMenu))]
+    internal static class OpenPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(BuildUi __instance) => Icons.Refresh(__instance);
+    }
+
+    // Tabs, tags and favorites all rebuild the piece buttons here.
+    [HarmonyPatch(typeof(BuildUi), "UpdatePieceButtons")]
+    internal static class PieceButtonsPatch
     {
         [HarmonyPostfix]
         private static void Postfix(BuildUi __instance)
         {
-            Icons.UpdateAdvanced(__instance);
+            if (__instance.gameObject.activeInHierarchy)
+                Icons.Refresh(__instance);
         }
     }
 
-    [HarmonyPatch(typeof(Hud), "UpdatePieceList")]
-    internal static class LegacyUpdatePatch
-    {
-        [HarmonyPostfix]
-        private static void Postfix(
-            Hud __instance,
-            Player player)
-        {
-            Icons.UpdateLegacy(__instance, player);
-        }
-    }
-
+    // The game rewrites the selected piece's description every frame while
+    // building. Its own Localize call is swapped for a cached text with the
+    // comfort line, so this costs nothing extra (less than vanilla, even).
     [HarmonyPatch(typeof(Hud), "SetupPieceInfo")]
     internal static class RawComfortDescriptionPatch
     {
-        [HarmonyPostfix]
-        private static void Postfix(
-            Hud __instance, Piece piece)
-        {
-            if (piece == null ||
-                piece.m_comfort <= 0 ||
-                __instance.m_pieceDescription == null)
-                return;
+        private static Piece _piece;
+        private static string _raw;
+        private static string _text;
+        private static Localization _localization;
+        private static string _language;
 
-            __instance.m_pieceDescription.text +=
-                "\nComfort: " + piece.m_comfort;
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> input)
+        {
+            FieldInfo description = AccessTools.Field(typeof(Piece), nameof(Piece.m_description));
+            MethodInfo localize = AccessTools.Method(typeof(Localization), nameof(Localization.Localize), new[] { typeof(string) });
+            MethodInfo describe = AccessTools.Method(typeof(RawComfortDescriptionPatch), nameof(Describe));
+            bool afterDescription = false, done = false;
+            foreach (CodeInstruction code in input)
+            {
+                if (!done && afterDescription && code.Calls(localize))
+                {
+                    done = true;
+                    yield return new CodeInstruction(OpCodes.Ldarg_1);
+                    yield return new CodeInstruction(OpCodes.Call, describe) { labels = code.labels, blocks = code.blocks };
+                    continue;
+                }
+                afterDescription = !done && code.LoadsField(description);
+                yield return code;
+            }
+            if (!done)
+                Debug.LogWarning("[Comfort Info] Piece description hook not found; the comfort line won't show.");
+        }
+
+        private static string Describe(Localization localization, string raw, Piece piece)
+        {
+            string language = localization.GetSelectedLanguage();
+            if (piece != _piece || raw != _raw || localization != _localization || language != _language || _text == null)
+            {
+                _language = language;
+                _piece = piece;
+                _raw = raw;
+                _localization = localization;
+                string text = localization.Localize(raw);
+                if (piece != null && piece.m_comfort > 0)
+                    text += "\nComfort: <color=orange>" + piece.m_comfort + "</color>";
+                _text = text;
+            }
+            return _text;
         }
     }
 }
