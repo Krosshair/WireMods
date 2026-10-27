@@ -1,3 +1,7 @@
+## 0.9.1
+
+Fists no longer count as a blunt weapon for weapon focus (Highlight and Limited) or hit prediction.
+
 ## 0.9.0
 
 If a game update breaks one part of Enemy HUD, the rest keeps working instead of the whole mod stopping.

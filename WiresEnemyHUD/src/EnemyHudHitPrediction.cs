@@ -134,8 +134,7 @@ namespace EnemyHudRework
             ItemDrop.ItemData weapon = local.GetCurrentWeapon();
             if (weapon == null || weapon.m_shared == null) return false;
             // Bare hands: no prediction.
-            ItemDrop unarmed = UnarmedWeapon(local);
-            if (unarmed != null && ReferenceEquals(weapon, unarmed.m_itemData)) return false;
+            if (BareHands(local, weapon)) return false;
             // The attack you are doing right now, otherwise the default one.
             bool secondary = _attackKind != 0
                 ? _attackKind == 2

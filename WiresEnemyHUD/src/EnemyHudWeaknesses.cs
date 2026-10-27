@@ -61,12 +61,25 @@ namespace EnemyHudRework
         private static readonly HarmonyLib.AccessTools.FieldRef<Humanoid, ItemDrop> UnarmedWeapon =
             HarmonyLib.AccessTools.FieldRefAccess<Humanoid, ItemDrop>("m_unarmedWeapon");
 
+        // Bare fists: the game's unarmed "weapon", however it reaches us (the
+        // prefab's own item, a copy of it, or a hand with nothing usable in it).
+        internal static bool BareHands(Player local, ItemDrop.ItemData weapon)
+        {
+            if (weapon == null || weapon.m_shared == null) return true;
+            ItemDrop unarmed = local != null ? UnarmedWeapon(local) : null;
+            ItemDrop.ItemData fists = unarmed != null ? unarmed.m_itemData : null;
+            if (fists == null) return false;
+            return ReferenceEquals(weapon, fists) || ReferenceEquals(weapon.m_shared, fists.m_shared) ||
+                (fists.m_shared != null && weapon.m_shared.m_name == fists.m_shared.m_name) ||
+                (weapon.m_dropPrefab != null && weapon.m_dropPrefab == unarmed.gameObject);
+        }
+
         private static int DealableMask(Player local)
         {
             if (local == null) return 0;
             ItemDrop.ItemData weapon = local.GetCurrentWeapon();
-            ItemDrop unarmed = UnarmedWeapon(local);
-            if (weapon == null || (unarmed != null && ReferenceEquals(weapon, unarmed.m_itemData))) return 0;
+            // Fists don't count: they'd mark blunt for every fight.
+            if (BareHands(local, weapon)) return 0;
 
             int mask = MaskOf(weapon.GetDamage());
             string ammoType = weapon.m_shared.m_ammoType;
