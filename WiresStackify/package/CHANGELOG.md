@@ -1,3 +1,8 @@
+## 0.1.7
+
+- Items can be favorited in containers too: hold the favorite key and left click. Favorited slots stay exclusive to your inventory.
+- A favorited item keeps its frame while you hold it on the cursor.
+
 ## 0.1.6
 
 - Favorited items stay where they are when you sort a container too.

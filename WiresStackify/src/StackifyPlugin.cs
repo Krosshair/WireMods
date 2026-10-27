@@ -14,7 +14,7 @@ namespace WiresStackify
     {
         public const string PluginGuid = "kajetan.valheim.stackify";
         public const string PluginName = "Wire's Stackify";
-        public const string PluginVersion = "0.1.6";
+        public const string PluginVersion = "0.1.7";
 
         internal static StackifyPlugin Instance;
         internal static BepInEx.Logging.ManualLogSource Log;
@@ -179,7 +179,7 @@ namespace WiresStackify
             Renamed(QuietChests, OldSecNearby, "Quiet chests");
 
             FavoriteKey1 = Bind(SecFavorites, "Favorite key", new KeyboardShortcut(KeyCode.LeftAlt),
-                "Hold and left click an item to favorite it (every item of that kind), right click to favorite the slot. Favorites are never quick stacked.");
+                "Hold and left click an item, in your inventory or a container, to favorite it (every item of that kind); right click a slot in your inventory to favorite the slot. Favorites are never quick stacked.");
             FavoriteKey2 = Bind(SecFavorites, "Second favorite key", new KeyboardShortcut(KeyCode.RightAlt),
                 "Works the same as Favorite key.");
             // Wood tones from the game's own inventory panel: its warm grain

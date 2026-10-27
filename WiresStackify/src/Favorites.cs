@@ -135,9 +135,13 @@ namespace WiresStackify
         internal static readonly AccessTools.FieldRef<InventoryGrid, List<InventoryElement>> GridElements =
             AccessTools.FieldRefAccess<InventoryGrid, List<InventoryElement>>("m_elements");
 
+        // Your inventory and the open container. Item favorites work in
+        // both; favorited slots are only in your inventory.
         private static bool Favoriting(InventoryGrid grid)
         {
-            return InventoryGui.instance != null && grid == InventoryGui.instance.m_playerGrid &&
+            InventoryGui gui = InventoryGui.instance;
+            return gui != null && grid != null &&
+                (grid == gui.m_playerGrid || (grid == gui.ContainerGrid && StackifyPlugin.CurrentContainer(gui) != null)) &&
                 Player.m_localPlayer != null && !Player.m_localPlayer.IsTeleporting() &&
                 StackifyPlugin.DragGo(InventoryGui.instance) == null &&
                 (StackifyPlugin.Held(StackifyPlugin.FavoriteKey1.Value) || StackifyPlugin.Held(StackifyPlugin.FavoriteKey2.Value));
@@ -148,6 +152,7 @@ namespace WiresStackify
             if (handler == null || !Favoriting(grid)) return true;
             Vector2i pos = ButtonPos(grid, handler.gameObject);
             if (pos == new Vector2i(-1, -1)) return true;
+            if (!left && grid != InventoryGui.instance.m_playerGrid) return true;
             Favorites fav = For(Player.m_localPlayer);
             bool on;
             if (!left) { fav.ToggleSlot(pos); on = fav.IsSlotFavorited(pos); }
@@ -222,6 +227,58 @@ namespace WiresStackify
             }
             if (r != null) r.localScale = Vector3.one;
             if (img != null) { Color c = img.color; c.a = full.a; img.color = c; }
+        }
+
+        // ---- The item you're holding keeps its frame ----
+        // Set up once when you pick it up; it moves with the held icon.
+        [HarmonyPatch(typeof(InventoryGui), "SetupDragItem")]
+        private static class HeldFramePatch
+        {
+            private static void Postfix(InventoryGui __instance, ItemDrop.ItemData item)
+            {
+                Player p = Player.m_localPlayer;
+                GameObject drag = StackifyPlugin.DragGo(__instance);
+                if (drag == null || item == null || p == null || !For(p).IsItemFavorited(item.m_shared)) return;
+                try { HeldFrame(__instance, drag); }
+                catch (Exception e) { StackifyPlugin.Log.LogWarning("Stackify held frame: " + e.Message); }
+            }
+        }
+
+        private static void HeldFrame(InventoryGui gui, GameObject drag)
+        {
+            List<InventoryElement> elements = gui.m_playerGrid != null ? GridElements(gui.m_playerGrid) : null;
+            InventoryElement sample = null;
+            if (elements != null)
+                foreach (InventoryElement e in elements)
+                    if (e != null) { sample = e; break; }
+            if (sample == null || drag.transform.parent == null) return;
+
+            Transform icon = drag.transform.Find("icon");
+            GameObject go = new GameObject(ItemFrame, typeof(RectTransform), typeof(Image));
+            RectTransform r = (RectTransform)go.transform;
+            r.SetParent(drag.transform, false);
+            if (icon != null) r.SetSiblingIndex(icon.GetSiblingIndex() + 1);
+            r.anchorMin = r.anchorMax = r.pivot = new Vector2(0.5f, 0.5f);
+
+            // The same size on screen as the frame in a slot, centred on the icon.
+            RectTransform slot = (RectTransform)sample.transform;
+            float scale = slot.lossyScale.x / Mathf.Max(0.0001f, drag.transform.parent.lossyScale.x);
+            r.sizeDelta = (slot.rect.size - new Vector2(6f, 6f)) * scale;
+            RectTransform iconRect = icon as RectTransform;
+            r.position = iconRect != null ? iconRect.TransformPoint(iconRect.rect.center) : drag.transform.position;
+
+            Image img = go.GetComponent<Image>();
+            Image vanilla = sample.m_selected != null ? sample.m_selected.GetComponentInChildren<Image>(true) : null;
+            if (vanilla != null && vanilla.sprite != null)
+            {
+                img.sprite = vanilla.sprite;
+                img.type = vanilla.type;
+                img.pixelsPerUnitMultiplier = vanilla.pixelsPerUnitMultiplier;
+                img.fillCenter = false;
+            }
+            else img.sprite = BorderSprite();
+            img.raycastTarget = false;
+            img.color = StackifyPlugin.ColorItem.Value;
         }
 
         // ---- Borders: redone only when favorites or the inventory change ----
