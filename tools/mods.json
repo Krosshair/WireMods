@@ -327,6 +327,17 @@
       "nexus_mod_id": 4557,
       "nexus_file_id": null,
       "publish": true
+    },
+    "ValheimWirePatches": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "client-side",
+        "tweaks"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
     }
   }
 }
