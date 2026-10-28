@@ -6,11 +6,13 @@ This mod is meant to be temporary. The fixes are here so people can have them no
 
 Source code: https://github.com/Krosshair/WireMods/tree/main/ValheimWirePatches
 
-Every fix has its own setting, all on by default. Client-side.
+Every fix has its own setting. Client-side.
 
 ## Fixes
 
-### Double click sound
+### Double click sound (added to VCP)
+
+Off by default, since Valheim Community Patch has it now.
 
 Inventory tabs and buttons (Craft, Upgrade, Skills, Trophies, Achievements...) play the click sound twice. More noticeable when the game is lagging, like at a big base.
 
@@ -18,7 +20,9 @@ Cause: the inventory's button handlers call `InventoryGui.SetActiveGroup` with t
 
 Fix: those calls pass `playSound: false`. The gamepad switching paths and the recipe list (which has no `ButtonSfx`, so that sound is its only click) keep the sound.
 
-### Lighting breaking after teleporting
+### Lighting breaking after teleporting (added to VCP, bugged)
+
+Valheim Community Patch has its own version of this fix, but it doesn't work yet: it doesn't stop the probes from following the player (the first cause below), so the lighting still breaks after teleporting. Until it does, use this one and turn VCP's off, since the two fight over the same probes.
 
 After going through a portal, a dungeon entrance or exit, or loading in, the lighting looks right, then breaks (flat, orange, like everything is lit by the sky) and comes back a few seconds later in a wave spreading out from you.
 
@@ -30,7 +34,9 @@ Cause: lighting and reflections come from two realtime reflection probes (`Refle
 
 Fix: the probes no longer follow the player (their position is set on every render anyway). No probe renders during a teleport. On arrival one renders where the player stands and shows at once, and another once the distant terrain is rebuilt for the new place.
 
-### Lighting stuck on lightning flashes
+### Lighting stuck on lightning flashes (added to VCP, bugged)
+
+Valheim Community Patch has its own version of this fix too, but it doesn't work properly yet either, so use this one and turn VCP's off for now.
 
 If a probe renders during a lightning flash, the flash stays baked into the lighting until the next one.
 

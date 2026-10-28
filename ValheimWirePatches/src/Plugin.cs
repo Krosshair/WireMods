@@ -11,7 +11,7 @@ namespace ValheimWirePatches
     {
         public const string Guid = "wire.valheimwirepatches";
         public const string Name = "Valheim Wire Patches";
-        public const string Version = "0.1.2";
+        public const string Version = "0.1.3";
 
         internal static Plugin Instance;
 
@@ -25,12 +25,15 @@ namespace ValheimWirePatches
         {
             Instance = this;
 
-            DoubleClickSound = Config.Bind("Fixes", "Double click sound", true,
+            DoubleClickSound = Config.Bind("Fixes", "Double click sound", false,
                 "Inventory tabs and buttons (Craft, Upgrade, Skills, Trophies, Achievements...) play the click sound twice. Only one plays.");
             TeleportLighting = Config.Bind("Fixes", "Lighting after teleporting", true,
                 "After a portal, a dungeon entrance or loading in, the lighting breaks for a few seconds and comes back in a wave spreading out from you. It stays right.");
             LightningLighting = Config.Bind("Fixes", "Lighting stuck on lightning flashes", true,
                 "The lighting can get stuck with a lightning flash in it for a few seconds. It waits until the flash is over.");
+
+            Config.Remove(Config.Bind("Performance", "Shadow maps sized to the light", true, "Removed.").Definition);
+            Config.Remove(Config.Bind("Fixes", "Shadows for building lights", false, "Removed.").Definition);
 
             TeleportLighting.SettingChanged += (_, __) => ReflectionSnapshots.SettingChanged();
 
