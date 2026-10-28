@@ -22,7 +22,7 @@ Fix: those calls pass `playSound: false`. The gamepad switching paths and the re
 
 ### Lighting breaking after teleporting (added to VCP, bugged)
 
-Valheim Community Patch has its own version of this fix, but it doesn't work yet: it doesn't stop the probes from following the player (the first cause below), so the lighting still breaks after teleporting. Until it does, use this one and turn VCP's off, since the two fight over the same probes.
+Valheim Community Patch has its own version of this fix, but it doesn't work yet: it doesn't stop the probes from following the player (the first cause below), so the lighting still breaks after teleporting. This one works with or without VCP installed.
 
 After going through a portal, a dungeon entrance or exit, or loading in, the lighting looks right, then breaks (flat, orange, like everything is lit by the sky) and comes back a few seconds later in a wave spreading out from you.
 
@@ -36,7 +36,7 @@ Fix: the probes no longer follow the player (their position is set on every rend
 
 ### Lighting stuck on lightning flashes (added to VCP, bugged)
 
-Valheim Community Patch has its own version of this fix too, but it doesn't work properly yet either, so use this one and turn VCP's off for now.
+Valheim Community Patch has its own version of this fix too, but it doesn't work properly yet either. This one works with or without VCP installed.
 
 If a probe renders during a lightning flash, the flash stays baked into the lighting until the next one.
 

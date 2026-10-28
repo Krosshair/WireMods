@@ -1,3 +1,8 @@
+# 0.1.4
+
+* Works with Valheim Performance Optimizations: its reflection probe replacement is turned off, since it skipped the reflection fixes.
+* README: the lighting fixes work with or without Valheim Community Patch, nothing needs turning off there.
+
 # 0.1.3
 
 * The double click sound fix is off by default now, since Valheim Community Patch has it. Configs that already have it on keep it on.

@@ -6,12 +6,13 @@ using HarmonyLib;
 namespace ValheimWirePatches
 {
     [BepInPlugin(Guid, Name, Version)]
+    [BepInDependency(VpoCompat.Guid, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInProcess("valheim.exe")]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheimwirepatches";
         public const string Name = "Valheim Wire Patches";
-        public const string Version = "0.1.3";
+        public const string Version = "0.1.4";
 
         internal static Plugin Instance;
 
@@ -43,6 +44,9 @@ namespace ValheimWirePatches
                 try { _harmony.CreateClassProcessor(type).Patch(); }
                 catch (Exception e) { Logger.LogError("Couldn't patch " + type.Name + ": " + e.Message); }
             }
+
+            // VPO swaps in its own reflection renderer, which skips the snapshot fixes.
+            VpoCompat.Remove(_harmony, Logger, AccessTools.Method(typeof(ReflectionUpdate), "Start"), "ValheimPerformanceOptimizations.Patches.VPOReflectionRenderer");
         }
 
         // Invoke() targets for ReflectionSnapshots
