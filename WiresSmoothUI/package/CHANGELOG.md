@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.5
+
+* Picking a recipe no longer slides the whole station level box in: only its number pops, and only when it's a different number.
+* Smooth scrolling scrolls like a browser now: each wheel notch eases the list along on a smooth curve instead of stepping, and fast scrolling flows on without stopping between notches.
+* New settings under Scrolling: Smooth scrolling (on) and Smoothness (how long a scroll takes to ease into place). Before, smooth scrolling could only be turned off with all animations.
+
 ## 0.6.4
 
 * Hide empty material slots works at the Forge of Goodtential too: a slot only counts as empty when nothing at all shows in it, so its idol and trophy slots and swap buttons stay as they are.

@@ -157,25 +157,15 @@ namespace WiresSmoothUI
             Detail(gui.m_qualityPanel, ref i);
             Detail(gui.m_variantButton, ref i);
 
-            // The required station level sits in its own box at the start of
-            // the requirements row: it slides in first, then the materials. The
-            // star pops only when the level differs from the last recipe's.
+            // The station level box stays put; only its number pops, and only
+            // when it's a different number.
             Image star = gui.m_minStationLevelIcon;
-            if (star != null)
+            TMPro.TMP_Text number = gui.m_minStationLevelText;
+            if (star != null && number != null)
             {
-                Transform box = star.transform.parent != null && star.transform.parent.name == "level"
-                    ? star.transform.parent
-                    : star.transform;
-                if (star.gameObject.activeSelf)
-                    Detail(box, ref i);
-                else
-                    Shown.Remove(box);
-
-                string level = star.gameObject.activeInHierarchy && gui.m_minStationLevelText != null
-                    ? gui.m_minStationLevelText.text
-                    : "";
+                string level = star.gameObject.activeInHierarchy ? number.text : "";
                 if (level != _lastLevel && level.Length > 0)
-                    UiMotion.Pop(star.transform, 0.6f, 1.25f, 0.28f);
+                    UiMotion.Pop(number.transform, 0.6f, 1.25f, 0.28f);
                 _lastLevel = level;
             }
 
