@@ -2,12 +2,10 @@ using HarmonyLib;
 
 namespace WiresStackify
 {
-    // Items coming into your inventory without a slot chosen (picking up,
-    // auto pickup, crafting) skip favorited slots and take the next free
-    // slot instead. Stacking onto a stack that's already in a favorited slot
-    // still happens as usual, favorited items may still use favorited
-    // slots, and when no other slot is free a favorited one is used anyway.
-    // Placing an item into a slot yourself is never affected.
+    // Items entering without a chosen slot prefer the first empty
+    // favorited slot if their type is favorited. Ordinary items avoid
+    // favorited slots unless all other slots are full. Existing stacks
+    // still merge normally; manual slot placement remains untouched.
     internal static class PickupSlots
     {
         private static ItemDrop.ItemData _adding;
@@ -36,8 +34,10 @@ namespace WiresStackify
                 Player p = Player.m_localPlayer;
                 if (p == null || __instance != p.GetInventory()) return;
                 Favorites fav = Favorites.For(p);
-                if (!fav.IsSlotFavorited(__result)) return;
-                if (_adding != null && fav.IsItemFavorited(_adding.m_shared)) return;
+                bool favoriteItem = _adding != null && fav.IsItemFavorited(_adding.m_shared);
+                // Favorited items prefer empty favorite slots. Other items
+                // avoid those slots unless no ordinary slot is available.
+                if (!favoriteItem && !fav.IsSlotFavorited(__result)) return;
 
                 int w = __instance.GetWidth();
                 int rows = StackifyPlugin.MainRows(__instance, p);
@@ -47,14 +47,14 @@ namespace WiresStackify
                     for (int x = 0; x < w; x++)
                     {
                         Vector2i v = new Vector2i(x, y);
-                        if (__instance.GetItemAt(x, y) == null && !fav.IsSlotFavorited(v))
+                        if (fav.IsSlotFavorited(v) == favoriteItem && __instance.GetItemAt(x, y) == null)
                         {
                             __result = v;
                             return;
                         }
                     }
                 }
-                // Nothing else free: the favorited slot it is.
+                // No preferred slot free: keep the game's original free slot.
             }
         }
     }

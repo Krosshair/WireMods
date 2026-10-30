@@ -1,3 +1,9 @@
+## 0.1.9
+
+- Sorting supports every available inventory row, while leaving Equipment and Quick Slots' own slots untouched.
+- The inventory pouch is anchored midway between armor and weight, including with inventory upgrades.
+- Favorited items now prefer empty favorited inventory slots when picked up or added automatically.
+
 ## 0.1.8
 
 - Sorting a container sorts your favorited items too, but they always come first, so your favorites gather together at the start of the container. In your inventory, favorited items and slots still stay where they are.

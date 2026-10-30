@@ -1,0 +1,848 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using HarmonyLib;
+using UnityEngine;
+
+namespace EquipmentAndQuickSlots;
+
+public static class InventoryPatches
+{
+	[HarmonyPatch(typeof(Player), "Awake")]
+	private static class Player_Awake_SetInventoryHeight
+	{
+		[HarmonyPriority(0)]
+		private static void Postfix(Player __instance)
+		{
+			Slots.CaptureBaseRows(((Humanoid)__instance).m_inventory);
+			Slots.UpdateSlotsGridPosition();
+			((Humanoid)__instance).m_inventory.m_height = Slots.FullHeight;
+			ApplyBaseCarryWeight(__instance);
+		}
+	}
+
+	[HarmonyPatch(typeof(Player), "OnSpawned")]
+	private static class Player_OnSpawned_UpdateInventoryOnSpawn
+	{
+		private static void Postfix(Player __instance)
+		{
+			if (!((Object)(object)__instance != (Object)(object)Player.m_localPlayer))
+			{
+				UpdatePlayerInventorySize();
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Player), "SetInventorySize")]
+	private static class Player_SetInventorySize_FollowVanillaRows
+	{
+		[HarmonyPriority(800)]
+		private static void Prefix(Player __instance, int rows)
+		{
+			if (!((Object)(object)__instance != (Object)(object)Slots.CurrentPlayer))
+			{
+				Slots.SetBaseRows(Mathf.Clamp(rows, 0, 9));
+			}
+		}
+
+		[HarmonyPriority(0)]
+		private static void Postfix(Player __instance)
+		{
+			if ((Object)(object)__instance == (Object)(object)Slots.CurrentPlayer)
+			{
+				((Humanoid)__instance).m_inventory.m_height = Slots.FullHeight;
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Humanoid), "DropInvalidItems")]
+	private static class Humanoid_DropInvalidItems_KeepSlotRegion
+	{
+		[HarmonyPriority(800)]
+		private static void Prefix(Humanoid __instance)
+		{
+			if (!((Object)(object)__instance != (Object)(object)Slots.CurrentPlayer))
+			{
+				__instance.m_inventory.m_height = Slots.FullHeight;
+				SlotValidation.ValidateItems();
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Player), "Load")]
+	private static class Player_Load_LayOutSlotsForCharacterRows
+	{
+		[HarmonyPriority(800)]
+		private static void Postfix(Player __instance)
+		{
+			if (!Object.op_Implicit((Object)(object)FejdStartup.instance) && !Slots.IsValidPlayer((Character)(object)__instance))
+			{
+				return;
+			}
+			string s = default(string);
+			int result;
+			int baseRowsForLoad = ((__instance.TryGetUniqueKeyValue("invrows", ref s) && int.TryParse(s, out result)) ? Mathf.Clamp(result, 0, 9) : Slots.PrefabRows);
+			Slots.loadedPlayer = __instance;
+			try
+			{
+				Slots.SetBaseRowsForLoad(baseRowsForLoad);
+			}
+			finally
+			{
+				Slots.loadedPlayer = null;
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Player), "Update")]
+	private static class Player_Update_UpdateInventoryHeight
+	{
+		private static void Postfix(Player __instance)
+		{
+			if (!((Object)(object)__instance != (Object)(object)Player.m_localPlayer))
+			{
+				((Humanoid)__instance).m_inventory.m_height = Slots.FullHeight;
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Player), "Save")]
+	private static class Player_Save_SaveLastEquippedSlots
+	{
+		private static void Prefix(Player __instance)
+		{
+			if (((Humanoid)__instance).GetInventory() == Slots.PlayerInventory)
+			{
+				Slots.SaveLastEquippedSlotsToItems();
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Player), "AutoPickup")]
+	public static class Player_AutoPickup_PreventAutoPickupInSlots
+	{
+		public static bool preventAddItem;
+
+		[HarmonyPriority(800)]
+		private static void Prefix(Player __instance)
+		{
+			preventAddItem = ValConfig.PreventAutoPickup.Value && (Object)(object)__instance == (Object)(object)Slots.CurrentPlayer;
+		}
+
+		[HarmonyPriority(800)]
+		private static void Postfix()
+		{
+			preventAddItem = false;
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "SlotsUsedPercentage")]
+	private static class Inventory_SlotsUsedPercentage_ExcludeInactiveSlots
+	{
+		private static void Postfix(Inventory __instance, ref float __result)
+		{
+			if (__instance == Slots.PlayerInventory)
+			{
+				__result = (float)__instance.m_inventory.Count / (float)Slots.InventorySizeActive * 100f;
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "GetEmptySlots")]
+	private static class Inventory_GetEmptySlots_CountVisibleAndQuickSlots
+	{
+		[HarmonyPriority(800)]
+		private static void Postfix(Inventory __instance, ref int __result)
+		{
+			if (__instance == Slots.PlayerInventory)
+			{
+				__result = Slots.VisibleRows * __instance.m_width - __instance.m_inventory.Count((ItemData item) => !Slots.IsItemInSlot(item)) + ((!Player_AutoPickup_PreventAutoPickupInSlots.preventAddItem) ? Slots.GetEmptyQuickSlots() : 0);
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "HaveEmptySlot")]
+	private static class Inventory_HaveEmptySlot_CountVisibleAndQuickSlots
+	{
+		[HarmonyPriority(800)]
+		private static void Postfix(Inventory __instance, ref bool __result)
+		{
+			if (__instance == Slots.PlayerInventory)
+			{
+				__result = __instance.GetEmptySlots() > 0;
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "FindEmptySlot")]
+	private static class Inventory_FindEmptySlot_VisibleRowsThenQuickSlots
+	{
+		[HarmonyPriority(800)]
+		private static void Prefix(Inventory __instance)
+		{
+			if (__instance == Slots.PlayerInventory)
+			{
+				__instance.m_height = Slots.VisibleRows;
+			}
+		}
+
+		[HarmonyPriority(800)]
+		private static void Postfix(Inventory __instance, ref Vector2i __result)
+		{
+			//IL_0015: Unknown result type (might be due to invalid IL or missing references)
+			//IL_001a: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0044: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0049: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0077: Unknown result type (might be due to invalid IL or missing references)
+			//IL_007c: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0039: Unknown result type (might be due to invalid IL or missing references)
+			//IL_003e: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0090: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0095: Unknown result type (might be due to invalid IL or missing references)
+			//IL_006c: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0071: Unknown result type (might be due to invalid IL or missing references)
+			if (__instance != Slots.PlayerInventory)
+			{
+				return;
+			}
+			__instance.m_height = Slots.FullHeight;
+			if (__result == Slots.emptyPosition)
+			{
+				Slots.Slot upgradeSourceSlot = InventoryGui_DoCrafting_UpgradeInSlot.UpgradeSourceSlot;
+				if (upgradeSourceSlot != null && upgradeSourceSlot.IsFree)
+				{
+					__result = upgradeSourceSlot.GridPosition;
+				}
+			}
+			if (__result == Slots.emptyPosition && Inventory_AddItem_ByName_FindAppropriateSlot.itemToFindSlot != null && Slots.TryFindFreeSlotForItem(Inventory_AddItem_ByName_FindAppropriateSlot.itemToFindSlot, out var slot))
+			{
+				__result = slot.GridPosition;
+			}
+			if (__result == Slots.emptyPosition && !Player_AutoPickup_PreventAutoPickupInSlots.preventAddItem)
+			{
+				__result = Slots.FindEmptyQuickSlot();
+			}
+		}
+
+		[HarmonyPriority(800)]
+		private static void Finalizer(Inventory __instance)
+		{
+			if (__instance == Slots.PlayerInventory)
+			{
+				__instance.m_height = Slots.FullHeight;
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(InventoryGui), "DoCrafting")]
+	internal static class InventoryGui_DoCrafting_UpgradeInSlot
+	{
+		internal static Slots.Slot UpgradeSourceSlot;
+
+		private static bool wasEquipped;
+
+		[HarmonyPriority(800)]
+		private static void Prefix(InventoryGui __instance)
+		{
+			//IL_0018: Unknown result type (might be due to invalid IL or missing references)
+			UpgradeSourceSlot = null;
+			wasEquipped = false;
+			ItemData craftUpgradeItem = __instance.m_craftUpgradeItem;
+			if (craftUpgradeItem != null)
+			{
+				UpgradeSourceSlot = Slots.GetSlotInGrid(craftUpgradeItem.m_gridPos);
+				wasEquipped = (Object)(object)Slots.CurrentPlayer != (Object)null && ((Humanoid)Slots.CurrentPlayer).IsItemEquiped(craftUpgradeItem);
+			}
+		}
+
+		private static void Postfix()
+		{
+			Slots.Slot upgradeSourceSlot = UpgradeSourceSlot;
+			bool num = wasEquipped;
+			UpgradeSourceSlot = null;
+			wasEquipped = false;
+			if (num && upgradeSourceSlot != null && !((Object)(object)Slots.CurrentPlayer == (Object)null))
+			{
+				ItemData item = upgradeSourceSlot.Item;
+				if (item != null && !((Humanoid)Slots.CurrentPlayer).IsItemEquiped(item))
+				{
+					((Humanoid)Slots.CurrentPlayer).EquipItem(item, false);
+				}
+			}
+		}
+
+		private static void Finalizer()
+		{
+			UpgradeSourceSlot = null;
+			wasEquipped = false;
+		}
+	}
+
+	[HarmonyPatch(typeof(InventoryGui), "OnSelectedItem")]
+	public static class InventoryGui_OnSelectedItem_DragRules
+	{
+		private static Vector2i? _equipAfterDropPos;
+
+		private static Vector2i? _unequipAfterDropPos;
+
+		private static SharedData _droppedShared;
+
+		public static bool Prefix(InventoryGui __instance, InventoryGrid grid, Vector2i pos)
+		{
+			//IL_007b: Unknown result type (might be due to invalid IL or missing references)
+			//IL_016e: Unknown result type (might be due to invalid IL or missing references)
+			//IL_00f0: Unknown result type (might be due to invalid IL or missing references)
+			//IL_00f6: Unknown result type (might be due to invalid IL or missing references)
+			//IL_00c1: Unknown result type (might be due to invalid IL or missing references)
+			//IL_014b: Unknown result type (might be due to invalid IL or missing references)
+			_equipAfterDropPos = null;
+			_unequipAfterDropPos = null;
+			_droppedShared = null;
+			Player localPlayer = Player.m_localPlayer;
+			if ((Object)(object)localPlayer == (Object)null || ((Character)localPlayer).IsTeleporting() || !Object.op_Implicit((Object)(object)__instance.m_dragGo) || __instance.m_dragItem == null || __instance.m_dragInventory == null)
+			{
+				return true;
+			}
+			ItemData dragItem = __instance.m_dragItem;
+			bool flag = grid.m_inventory == Slots.PlayerInventory;
+			bool flag2 = __instance.m_dragInventory == Slots.PlayerInventory;
+			Slots.Slot slot = (flag ? Slots.GetSlotInGrid(pos) : null);
+			Slots.Slot slot2 = (flag2 ? Slots.GetItemSlot(dragItem) : null);
+			bool flag3 = ((Humanoid)localPlayer).IsItemEquiped(dragItem);
+			if (slot != null && Slots.WouldFitEquipmentSlot(slot, dragItem) && !flag3)
+			{
+				if (flag2)
+				{
+					__instance.SetupDragItem((ItemData)null, (Inventory)null, 1);
+					Slots.QueueEquip(localPlayer, dragItem);
+					return false;
+				}
+				_equipAfterDropPos = pos;
+				_droppedShared = dragItem.m_shared;
+			}
+			if ((slot2?.IsEquipmentSlot ?? false) && flag3)
+			{
+				ItemData itemAt = grid.m_inventory.GetItemAt(pos.x, pos.y);
+				if (flag && itemAt != null && itemAt != dragItem && Slots.WouldFitEquipmentSlot(slot2, itemAt) && !((Humanoid)localPlayer).IsItemEquiped(itemAt))
+				{
+					__instance.SetupDragItem((ItemData)null, (Inventory)null, 1);
+					Slots.QueueEquip(localPlayer, itemAt);
+					return false;
+				}
+				if (flag && (slot == null || !slot.IsEquipmentSlot) && itemAt == null)
+				{
+					_unequipAfterDropPos = pos;
+					_droppedShared = dragItem.m_shared;
+				}
+			}
+			return PassDropItem("InventoryGui.OnSelectedItem", grid, __instance.m_dragInventory, dragItem, pos);
+		}
+
+		public static void Postfix()
+		{
+			//IL_0050: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0055: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0057: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0078: Unknown result type (might be due to invalid IL or missing references)
+			//IL_007d: Unknown result type (might be due to invalid IL or missing references)
+			//IL_007f: Unknown result type (might be due to invalid IL or missing references)
+			Vector2i? equipAfterDropPos = _equipAfterDropPos;
+			Vector2i? unequipAfterDropPos = _unequipAfterDropPos;
+			SharedData droppedShared = _droppedShared;
+			_equipAfterDropPos = null;
+			_unequipAfterDropPos = null;
+			_droppedShared = null;
+			Player localPlayer = Player.m_localPlayer;
+			if ((Object)(object)localPlayer == (Object)null || Slots.PlayerInventory == null)
+			{
+				return;
+			}
+			if (equipAfterDropPos.HasValue)
+			{
+				Vector2i valueOrDefault = equipAfterDropPos.GetValueOrDefault();
+				ItemData val = LandedItem(valueOrDefault, droppedShared);
+				if (val != null)
+				{
+					Slots.QueueEquip(localPlayer, val);
+				}
+			}
+			if (!unequipAfterDropPos.HasValue)
+			{
+				return;
+			}
+			Vector2i valueOrDefault2 = unequipAfterDropPos.GetValueOrDefault();
+			ItemData val2 = LandedItem(valueOrDefault2, droppedShared);
+			if (val2 != null)
+			{
+				Slots.Slot itemSlot = Slots.GetItemSlot(val2);
+				if (itemSlot == null || !itemSlot.IsEquipmentSlot)
+				{
+					Slots.QueueUnequip(localPlayer, val2);
+				}
+			}
+		}
+
+		private static ItemData LandedItem(Vector2i pos, SharedData shared)
+		{
+			//IL_0005: Unknown result type (might be due to invalid IL or missing references)
+			//IL_000b: Unknown result type (might be due to invalid IL or missing references)
+			ItemData itemAt = Slots.PlayerInventory.GetItemAt(pos.x, pos.y);
+			if (itemAt == null || itemAt.m_shared != shared)
+			{
+				return null;
+			}
+			return itemAt;
+		}
+	}
+
+	[HarmonyPatch(typeof(InventoryGrid), "DropItem")]
+	public static class InventoryGrid_DropItem_DropPrevention
+	{
+		public static bool Prefix(InventoryGrid __instance, Inventory fromInventory, ItemData item, Vector2i pos)
+		{
+			//IL_0008: Unknown result type (might be due to invalid IL or missing references)
+			return PassDropItem("InventoryGrid.DropItem", __instance, fromInventory, item, pos);
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "AddItem", new Type[]
+	{
+		typeof(ItemData),
+		typeof(int),
+		typeof(int),
+		typeof(int),
+		typeof(bool)
+	})]
+	private static class Inventory_AddItem_ItemData_amount_x_y_TargetPositionRerouting
+	{
+		[HarmonyPriority(0)]
+		private static void Prefix(Inventory __instance, ItemData item, ref int x, ref int y)
+		{
+			//IL_0032: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0056: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0063: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0079: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0081: Unknown result type (might be due to invalid IL or missing references)
+			if (__instance != Slots.PlayerInventory || (Inventory_AddItem_OnLoad_Marker.inCall && Slots.CurrentPlayer.m_isLoading) || item == null || __instance.GetItemAt(x, y) != null)
+			{
+				return;
+			}
+			Slots.Slot slotInGrid = Slots.GetSlotInGrid(new Vector2i(x, y));
+			if (slotInGrid != null && !slotInGrid.ItemFits(item))
+			{
+				Vector2i gridPos;
+				if (Slots.TryFindFreeSlotForItem(item, out var slot))
+				{
+					x = slot.GridPosition.x;
+					y = slot.GridPosition.y;
+				}
+				else if (Slots.TryMakeFreeSpaceInPlayerInventory(out gridPos))
+				{
+					x = gridPos.x;
+					y = gridPos.y;
+				}
+			}
+		}
+
+		[HarmonyPriority(0)]
+		private static void Postfix(Inventory __instance, ItemData item, int x, int y, int amount, ref bool __result)
+		{
+			//IL_0083: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0088: Unknown result type (might be due to invalid IL or missing references)
+			//IL_00b0: Unknown result type (might be due to invalid IL or missing references)
+			//IL_00b5: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0099: Unknown result type (might be due to invalid IL or missing references)
+			//IL_009a: Unknown result type (might be due to invalid IL or missing references)
+			if (!((__instance != Slots.PlayerInventory || !Inventory_AddItem_OnLoad_Marker.inCall) | __result))
+			{
+				amount = Mathf.Min(amount, item.m_stack);
+				ItemData val = item.Clone();
+				val.m_stack = amount;
+				EquipmentAndQuickSlots.LogWarning($"Item loss prevention on load: {item.m_shared.m_name} at {x},{y} amount {amount}");
+				Vector2i gridPos;
+				if (Slots.TryFindFreeSlotForItem(val, out var slot))
+				{
+					val.m_gridPos = slot.GridPosition;
+				}
+				else if (Slots.TryMakeFreeSpaceInPlayerInventory(out gridPos))
+				{
+					val.m_gridPos = gridPos;
+				}
+				else
+				{
+					val.m_gridPos = new Vector2i(Slots.InventoryWidth - 1, Slots.FullHeight - 1);
+				}
+				__instance.m_inventory.Add(val);
+				item.m_stack -= amount;
+				__result = true;
+				__instance.Changed(false, false);
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "AddItem", new Type[] { typeof(ItemData) })]
+	private static class Inventory_AddItem_ItemData_QuickSlotFallback
+	{
+		[HarmonyPriority(800)]
+		private static void Postfix(Inventory __instance, ItemData item, bool __runOriginal, ref bool __result)
+		{
+			//IL_0026: Unknown result type (might be due to invalid IL or missing references)
+			//IL_002b: Unknown result type (might be due to invalid IL or missing references)
+			if (__instance == Slots.PlayerInventory && !__result && __runOriginal && !Player_AutoPickup_PreventAutoPickupInSlots.preventAddItem && Slots.TryFindFreeSlotForItem(item, out var slot))
+			{
+				item.m_gridPos = slot.GridPosition;
+				__instance.m_inventory.Add(item);
+				__instance.Changed(false, false);
+				__result = true;
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "AddItem", new Type[]
+	{
+		typeof(ItemData),
+		typeof(Vector2i)
+	})]
+	private static class Inventory_AddItem_ItemData_pos_TargetPositionRerouting
+	{
+		[HarmonyPriority(800)]
+		private static void Prefix(Inventory __instance, ItemData item, ref Vector2i pos)
+		{
+			//IL_0034: Unknown result type (might be due to invalid IL or missing references)
+			//IL_00be: Unknown result type (might be due to invalid IL or missing references)
+			//IL_00c3: Unknown result type (might be due to invalid IL or missing references)
+			//IL_00d3: Unknown result type (might be due to invalid IL or missing references)
+			//IL_00d4: Unknown result type (might be due to invalid IL or missing references)
+			if (__instance != Slots.PlayerInventory || item == null || __instance.GetItemAt(pos.x, pos.y) != null)
+			{
+				return;
+			}
+			Slots.Slot slotInGrid = Slots.GetSlotInGrid(pos);
+			if (slotInGrid != null && !slotInGrid.ItemFits(item) && (item.m_shared.m_maxStackSize <= 1 || (from itemInv in __instance.GetAllItems()
+				where item.m_shared.m_name == itemInv.m_shared.m_name && item.m_quality == itemInv.m_quality && item.m_worldLevel == itemInv.m_worldLevel
+				select itemInv).Sum((ItemData itemInv) => itemInv.m_shared.m_maxStackSize - itemInv.m_stack) <= item.m_stack))
+			{
+				Vector2i gridPos;
+				if (Slots.TryFindFreeSlotForItem(item, out var slot))
+				{
+					pos = slot.GridPosition;
+				}
+				else if (Slots.TryMakeFreeSpaceInPlayerInventory(out gridPos))
+				{
+					pos = gridPos;
+				}
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "AddItem", new Type[]
+	{
+		typeof(string),
+		typeof(int),
+		typeof(int),
+		typeof(int),
+		typeof(long),
+		typeof(string),
+		typeof(Vector2i),
+		typeof(bool),
+		typeof(bool),
+		typeof(bool)
+	})]
+	public static class Inventory_AddItem_ByName_FindAppropriateSlot
+	{
+		public static ItemData itemToFindSlot;
+
+		[HarmonyPriority(800)]
+		private static void Prefix(Inventory __instance, string name)
+		{
+			if (__instance == Slots.PlayerInventory)
+			{
+				ObjectDB instance = ObjectDB.instance;
+				object obj;
+				if (instance == null)
+				{
+					obj = null;
+				}
+				else
+				{
+					GameObject itemPrefab = instance.GetItemPrefab(name);
+					obj = ((itemPrefab != null) ? itemPrefab.GetComponent<ItemDrop>() : null);
+				}
+				ItemDrop val = (ItemDrop)obj;
+				if (!((Object)(object)val == (Object)null) && val.m_itemData.m_shared.m_maxStackSize <= 1)
+				{
+					itemToFindSlot = val.m_itemData;
+				}
+			}
+		}
+
+		[HarmonyPriority(800)]
+		private static void Postfix()
+		{
+			itemToFindSlot = null;
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "AddItem", new Type[]
+	{
+		typeof(int),
+		typeof(int),
+		typeof(float),
+		typeof(Vector2i),
+		typeof(bool),
+		typeof(int),
+		typeof(int),
+		typeof(long),
+		typeof(string),
+		typeof(Dictionary<string, string>),
+		typeof(int),
+		typeof(bool),
+		typeof(bool),
+		typeof(bool)
+	})]
+	public static class Inventory_AddItem_OnLoad_Marker
+	{
+		public static bool inCall;
+
+		[HarmonyPriority(800)]
+		private static void Prefix()
+		{
+			inCall = true;
+		}
+
+		[HarmonyPriority(800)]
+		private static void Finalizer()
+		{
+			inCall = false;
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "CanAddItem", new Type[]
+	{
+		typeof(ItemData),
+		typeof(int)
+	})]
+	private static class Inventory_CanAddItem_ItemData_CountSlotCapacity
+	{
+		private static readonly List<ItemData> tempItems = new List<ItemData>();
+
+		[HarmonyPriority(800)]
+		private static void Prefix(Inventory __instance)
+		{
+			if (__instance != Slots.PlayerInventory)
+			{
+				return;
+			}
+			__instance.m_height = Slots.VisibleRows;
+			tempItems.Clear();
+			for (int num = __instance.m_inventory.Count - 1; num >= 0; num--)
+			{
+				ItemData item = __instance.m_inventory[num];
+				if (Slots.IsItemInSlot(item))
+				{
+					tempItems.Add(item);
+					__instance.m_inventory.RemoveAt(num);
+				}
+			}
+			tempItems.Reverse();
+		}
+
+		[HarmonyPriority(800)]
+		private static void Postfix(Inventory __instance, ItemData item, int stack, ref bool __result)
+		{
+			if (__instance != Slots.PlayerInventory)
+			{
+				return;
+			}
+			RestoreState(__instance);
+			if (!__result)
+			{
+				int num = __instance.FindFreeStackSpace(item.m_shared.m_name, (float)item.m_worldLevel);
+				int num2 = __instance.GetEmptySlots() * item.m_shared.m_maxStackSize;
+				int num3 = num + num2;
+				if (num3 < 0)
+				{
+					num3 = int.MaxValue;
+				}
+				if (num3 >= stack)
+				{
+					__result = true;
+				}
+				else if (stack <= item.m_shared.m_maxStackSize && !Player_AutoPickup_PreventAutoPickupInSlots.preventAddItem)
+				{
+					__result = Slots.TryFindFreeSlotForItem(item, out var _);
+				}
+			}
+		}
+
+		[HarmonyPriority(800)]
+		private static void Finalizer(Inventory __instance)
+		{
+			if (__instance == Slots.PlayerInventory)
+			{
+				RestoreState(__instance);
+			}
+		}
+
+		private static void RestoreState(Inventory inventory)
+		{
+			inventory.m_height = Slots.FullHeight;
+			if (tempItems.Count > 0)
+			{
+				inventory.m_inventory.AddRange(tempItems);
+				tempItems.Clear();
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(Inventory), "MoveInventoryToGrave")]
+	private static class Inventory_MoveInventoryToGrave_KeepFullHeight
+	{
+		private static void Prefix(Inventory original)
+		{
+			if (original == Slots.PlayerInventory)
+			{
+				original.m_height = Slots.FullHeight;
+			}
+		}
+	}
+
+	private static class PreventStackAll
+	{
+		[HarmonyPatch(typeof(Inventory), "StackAll")]
+		internal static class Inventory_StackAll_PreventStackingItemsFromSlots
+		{
+			public static bool inCall;
+
+			[HarmonyPriority(800)]
+			private static void Prefix(Inventory fromInventory)
+			{
+				if (inCall = fromInventory == Slots.PlayerInventory && ValConfig.PreventStackAll.Value)
+				{
+					RemoveItemsFromPlayerInventory();
+				}
+			}
+
+			[HarmonyPriority(800)]
+			private static void Finalizer()
+			{
+				if (inCall)
+				{
+					BringItemsBack();
+				}
+				inCall = false;
+			}
+		}
+
+		[HarmonyPatch(typeof(Inventory), "Changed")]
+		private static class Inventory_Changed_BringItemsBack
+		{
+			[HarmonyPriority(800)]
+			private static void Prefix(Inventory __instance)
+			{
+				if (__instance == Slots.PlayerInventory && Inventory_StackAll_PreventStackingItemsFromSlots.inCall)
+				{
+					BringItemsBack();
+				}
+			}
+		}
+
+		private static readonly List<ItemData> removedItems = new List<ItemData>();
+
+		internal static void RemoveItemsFromPlayerInventory()
+		{
+			for (int num = Slots.PlayerInventory.m_inventory.Count - 1; num >= 0; num--)
+			{
+				ItemData item = Slots.PlayerInventory.m_inventory[num];
+				if (Slots.IsItemInSlot(item))
+				{
+					removedItems.Add(item);
+					Slots.PlayerInventory.m_inventory.RemoveAt(num);
+				}
+			}
+		}
+
+		internal static void BringItemsBack()
+		{
+			if (removedItems.Count != 0)
+			{
+				Slots.PlayerInventory.m_inventory.AddRange(removedItems);
+				removedItems.Clear();
+			}
+		}
+	}
+
+	public static void UpdatePlayerInventorySize()
+	{
+		if (!((Object)(object)Slots.CurrentPlayer == (Object)null))
+		{
+			if (((Humanoid)Slots.CurrentPlayer).m_inventory.m_height != Slots.FullHeight)
+			{
+				EquipmentAndQuickSlots.Log($"Player inventory height changed {((Humanoid)Slots.CurrentPlayer).m_inventory.m_height} -> {Slots.FullHeight}");
+				((Humanoid)Slots.CurrentPlayer).m_inventory.m_height = Slots.FullHeight;
+				((Humanoid)Slots.CurrentPlayer).m_inventory.Changed(false, false);
+			}
+			SlotValidation.ValidateItems();
+		}
+	}
+
+	internal static void ApplyBaseCarryWeight(Player player)
+	{
+		if (!((Object)(object)player == (Object)null))
+		{
+			float value = ValConfig.BaseCarryWeight.Value;
+			if (!Mathf.Approximately(value, 300f))
+			{
+				player.m_maxCarryWeight = value;
+			}
+		}
+	}
+
+	private static bool PassDropItem(string source, InventoryGrid grid, Inventory fromInventory, ItemData item, Vector2i pos)
+	{
+		//IL_0001: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0006: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00d2: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00d9: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0089: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0049: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0050: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00f6: Unknown result type (might be due to invalid IL or missing references)
+		if (item.m_gridPos == pos && grid.m_inventory == fromInventory)
+		{
+			return true;
+		}
+		Player localPlayer = Player.m_localPlayer;
+		if (fromInventory == Slots.PlayerInventory)
+		{
+			Slots.Slot itemSlot = Slots.GetItemSlot(item);
+			if (itemSlot != null && itemSlot.IsEquipmentSlot && ((Humanoid)localPlayer).IsItemEquiped(item) && grid.m_inventory.GetItemAt(pos.x, pos.y) != null)
+			{
+				EquipmentAndQuickSlots.Log($"{source}: prevented swapping equipped item {item.m_shared.m_name} out of {itemSlot}");
+				return false;
+			}
+		}
+		if (grid.m_inventory == Slots.PlayerInventory)
+		{
+			Slots.Slot slotInGrid = Slots.GetSlotInGrid(pos);
+			if (slotInGrid != null && (!slotInGrid.ItemFits(item) || (slotInGrid.IsEquipmentSlot && !Slots.WouldFitEquipmentSlot(slotInGrid, item))))
+			{
+				EquipmentAndQuickSlots.Log($"{source}: prevented dropping {item.m_shared.m_name} into unfit slot {slotInGrid}");
+				return false;
+			}
+		}
+		ItemData itemAt = grid.m_inventory.GetItemAt(pos.x, pos.y);
+		if (itemAt != null && itemAt != item && fromInventory == Slots.PlayerInventory)
+		{
+			Slots.Slot slotInGrid2 = Slots.GetSlotInGrid(item.m_gridPos);
+			if (slotInGrid2 != null && !slotInGrid2.ItemFits(itemAt))
+			{
+				EquipmentAndQuickSlots.Log(source + ": prevented swapping " + item.m_shared.m_name + " with unfit item " + itemAt.m_shared.m_name);
+				return false;
+			}
+		}
+		return true;
+	}
+}
+You are not using the latest version of the tool, please update.
+Latest version is '11.2.0.10050' (yours is '9.1.0.7988')

@@ -1,0 +1,1191 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using BepInEx.Configuration;
+using EquipmentAndQuickSlots.src.MultiUtility;
+using UnityEngine;
+
+namespace EquipmentAndQuickSlots;
+
+public static class Slots
+{
+	public class Slot
+	{
+		private readonly string _id;
+
+		private readonly Func<string> _getName;
+
+		private readonly Func<KeyboardShortcut> _getShortcut;
+
+		private readonly Func<string> _getShortcutText;
+
+		private readonly Func<ItemData, bool> _itemIsValid;
+
+		private readonly Func<bool> _isActive;
+
+		private readonly int _index;
+
+		private Vector2i _gridPos = emptyPosition;
+
+		public string ID => _id;
+
+		public string Name
+		{
+			get
+			{
+				if (_getName == null)
+				{
+					return "";
+				}
+				return Localization.instance.Localize(_getName());
+			}
+		}
+
+		public bool IsActive
+		{
+			get
+			{
+				if (_isActive != null)
+				{
+					return _isActive();
+				}
+				return true;
+			}
+		}
+
+		public Vector2i GridPosition => _gridPos;
+
+		public int Index => _index;
+
+		public bool IsHotkeySlot => _getShortcut != null;
+
+		public bool IsQuickSlot
+		{
+			get
+			{
+				if (_index >= 0)
+				{
+					return _index < 6;
+				}
+				return false;
+			}
+		}
+
+		public bool IsEquipmentSlot
+		{
+			get
+			{
+				if (_index >= 8)
+				{
+					return _index < 16;
+				}
+				return false;
+			}
+		}
+
+		public bool IsCustomSlot
+		{
+			get
+			{
+				if (Array.IndexOf(ReservedIndices, _index) >= 0)
+				{
+					return !IsEmptySlot;
+				}
+				return false;
+			}
+		}
+
+		public bool IsEmptySlot => _id == "Empty";
+
+		public string OwnerGuid { get; internal set; }
+
+		public ItemData Item
+		{
+			get
+			{
+				//IL_0008: Unknown result type (might be due to invalid IL or missing references)
+				//IL_000d: Unknown result type (might be due to invalid IL or missing references)
+				//IL_0021: Unknown result type (might be due to invalid IL or missing references)
+				if (PlayerInventory == null || _gridPos == emptyPosition)
+				{
+					return null;
+				}
+				if (cachedItems.TryGetValue(_gridPos, out var value))
+				{
+					return value;
+				}
+				return CacheItem();
+			}
+		}
+
+		public bool IsFree => Item == null;
+
+		internal void UpdateGridPosition(bool moveItem = true)
+		{
+			//IL_002c: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0031: Unknown result type (might be due to invalid IL or missing references)
+			//IL_003b: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0040: Unknown result type (might be due to invalid IL or missing references)
+			ItemData val = (moveItem ? Item : null);
+			_gridPos = new Vector2i(_index % InventoryWidth, VisibleRows + _index / InventoryWidth);
+			if (val != null)
+			{
+				val.m_gridPos = _gridPos;
+			}
+		}
+
+		internal static bool CanUseHotkeys()
+		{
+			Player localPlayer = Player.m_localPlayer;
+			if (localPlayer != null && ((Character)localPlayer).TakeInput())
+			{
+				return !Hud.IsPieceSelectionVisible();
+			}
+			return false;
+		}
+
+		public bool IsShortcutDown()
+		{
+			//IL_001d: Unknown result type (might be due to invalid IL or missing references)
+			if (IsActive && _getShortcut != null && CanUseHotkeys())
+			{
+				return PreventSimilarHotkeys.IsShortcutDown(_getShortcut());
+			}
+			return false;
+		}
+
+		public bool IsShortcutDownWithItem()
+		{
+			if (Item != null)
+			{
+				return IsShortcutDown();
+			}
+			return false;
+		}
+
+		public bool IsShortcutPressed()
+		{
+			//IL_001d: Unknown result type (might be due to invalid IL or missing references)
+			if (IsActive && _getShortcut != null && CanUseHotkeys())
+			{
+				return PreventSimilarHotkeys.IsShortcutPressed(_getShortcut());
+			}
+			return false;
+		}
+
+		public bool IsShortcutPressedWithItem()
+		{
+			if (Item != null)
+			{
+				return IsShortcutPressed();
+			}
+			return false;
+		}
+
+		public KeyboardShortcut GetShortcut()
+		{
+			//IL_0014: Unknown result type (might be due to invalid IL or missing references)
+			//IL_000e: Unknown result type (might be due to invalid IL or missing references)
+			if (_getShortcut != null)
+			{
+				return _getShortcut();
+			}
+			return KeyboardShortcut.Empty;
+		}
+
+		public string GetShortcutText()
+		{
+			if (_getShortcutText != null)
+			{
+				return Localization.instance.Localize(_getShortcutText());
+			}
+			return Name;
+		}
+
+		internal ItemData CacheItem()
+		{
+			//IL_0030: Unknown result type (might be due to invalid IL or missing references)
+			if (PlayerInventory == null)
+			{
+				return null;
+			}
+			ItemData itemAt = PlayerInventory.GetItemAt(_gridPos.x, _gridPos.y);
+			cachedItems[_gridPos] = itemAt;
+			return itemAt;
+		}
+
+		public bool ItemFits(ItemData item)
+		{
+			if (item != null && IsActive)
+			{
+				if (_itemIsValid != null)
+				{
+					return _itemIsValid(item);
+				}
+				return true;
+			}
+			return false;
+		}
+
+		public bool ItemBelongs(ItemData item)
+		{
+			if (ItemFits(item))
+			{
+				if (IsEquipmentSlot && !IsEquippedByPlayer(item) && !IsEquipQueued(item))
+				{
+					return IsParkedHere(item);
+				}
+				return true;
+			}
+			return false;
+		}
+
+		public bool IsParkedHere(ItemData item)
+		{
+			if (item != null && item.m_customData.TryGetValue("eaqs_parked", out var value))
+			{
+				return value == _id;
+			}
+			return false;
+		}
+
+		internal void Park(ItemData item)
+		{
+			if (item != null)
+			{
+				item.m_customData["eaqs_parked"] = _id;
+			}
+		}
+
+		public bool IsFreeQuickSlot()
+		{
+			if (IsQuickSlot && IsActive)
+			{
+				return IsFree;
+			}
+			return false;
+		}
+
+		public void ClearItemCache()
+		{
+			//IL_0006: Unknown result type (might be due to invalid IL or missing references)
+			cachedItems.Remove(_gridPos);
+		}
+
+		public Slot(string slotID, int slotIndex, Func<string> getName, Func<ItemData, bool> itemIsValid, Func<bool> isActive)
+		{
+			//IL_0001: Unknown result type (might be due to invalid IL or missing references)
+			//IL_0006: Unknown result type (might be due to invalid IL or missing references)
+			_id = slotID;
+			_index = slotIndex;
+			_getName = getName;
+			_itemIsValid = itemIsValid;
+			_isActive = isActive;
+		}
+
+		public Slot(string slotID, int slotIndex, Func<string> getName, Func<ItemData, bool> itemIsValid, Func<bool> isActive, Func<KeyboardShortcut> getShortcut, Func<string> getShortcutText)
+			: this(slotID, slotIndex, getName, itemIsValid, isActive)
+		{
+			_getShortcut = getShortcut;
+			_getShortcutText = getShortcutText;
+		}
+
+		public override string ToString()
+		{
+			return ((Name == "") ? ID : Name) + (IsActive ? "" : " (inactive)");
+		}
+	}
+
+	public const string quickSlotID = "Quick";
+
+	public const string helmetSlotID = "Helmet";
+
+	public const string chestSlotID = "Chest";
+
+	public const string legsSlotID = "Legs";
+
+	public const string shoulderSlotID = "Shoulder";
+
+	public const string utilitySlotID = "Utility";
+
+	public const string trinketSlotID = "Trinket";
+
+	public const string utilitySlot2ID = "Utility2";
+
+	public const string utilitySlot3ID = "Utility3";
+
+	public const string emptySlotID = "Empty";
+
+	public const int SlotCount = 24;
+
+	public const int HiddenRows = 3;
+
+	public const int QuickSlotStartIndex = 0;
+
+	public const int EquipmentSlotStartIndex = 8;
+
+	public static readonly Vector2i emptyPosition = new Vector2i(-1, -1);
+
+	public const string customKeyPlayerID = "eaqs_player";
+
+	public const string customKeySlotID = "eaqs_slot";
+
+	internal const string customKeyWeaponShield = "eaqs_weaponshield";
+
+	internal const string customKeyParked = "eaqs_parked";
+
+	public static readonly Slot[] slots = new Slot[24];
+
+	public static readonly Dictionary<Vector2i, ItemData> cachedItems = new Dictionary<Vector2i, ItemData>();
+
+	public static readonly int[] ReservedIndices = new int[10] { 6, 7, 16, 17, 18, 19, 20, 21, 22, 23 };
+
+	public const string customSlotPrefix = "Custom";
+
+	public const int VanillaInventoryHeight = 4;
+
+	public const int VanillaInventoryWidth = 8;
+
+	public const int EquipmentSlotCount = 8;
+
+	public const int MaxUtilitySlots = 3;
+
+	public const int MaxExtraRows = 5;
+
+	public static Player loadedPlayer;
+
+	private static bool _baseRowsCaptured;
+
+	private static readonly List<ItemData> itemsInGridOrder = new List<ItemData>();
+
+	private const int MaxStaleSlotCacheWarnings = 20;
+
+	private static int _staleSlotCacheWarnings;
+
+	public static readonly ItemType[] EquipmentSlotTypes;
+
+	public static int WearableUtilityItems => Mathf.Clamp(ValConfig.UtilitySlotCount?.Value ?? 1, 1, 3);
+
+	public static int ExtraWearableUtilityItems => WearableUtilityItems - 1;
+
+	public static int ActiveExtraUtilitySlots
+	{
+		get
+		{
+			if (!ValConfig.EquipmentSlotsEnabled.Value)
+			{
+				return 0;
+			}
+			return ExtraWearableUtilityItems;
+		}
+	}
+
+	public static int BaseRows { get; private set; } = 4;
+
+	public static int ExtraRows => Mathf.Clamp(ValConfig.ExtraInventoryRows?.Value ?? 0, 0, 5);
+
+	public static int VisibleRows => BaseRows + ExtraRows;
+
+	public static PlayerProfile CurrentPlayerProfile
+	{
+		get
+		{
+			Game instance = Game.instance;
+			object obj = ((instance != null) ? instance.GetPlayerProfile() : null);
+			if (obj == null)
+			{
+				FejdStartup instance2 = FejdStartup.instance;
+				if (instance2 == null)
+				{
+					return null;
+				}
+				obj = instance2.m_profiles[FejdStartup.instance.m_profileIndex];
+			}
+			return (PlayerProfile)obj;
+		}
+	}
+
+	public static Player CurrentPlayer => Player.m_localPlayer ?? loadedPlayer;
+
+	public static Inventory PlayerInventory
+	{
+		get
+		{
+			Player currentPlayer = CurrentPlayer;
+			if (currentPlayer == null)
+			{
+				return null;
+			}
+			return ((Humanoid)currentPlayer).GetInventory();
+		}
+	}
+
+	public static int InventoryWidth
+	{
+		get
+		{
+			if (PlayerInventory == null)
+			{
+				return 8;
+			}
+			return PlayerInventory.GetWidth();
+		}
+	}
+
+	public static int FullHeight => VisibleRows + 3;
+
+	public static int InventorySizeVisible => VisibleRows * InventoryWidth;
+
+	public static int InventorySizeFull => FullHeight * InventoryWidth;
+
+	public static int InventorySizeActive => InventorySizeVisible + slots.Count((Slot slot) => slot.IsActive);
+
+	internal static int PrefabRows { get; private set; } = 4;
+
+	public static bool IsValidPlayer(Character character)
+	{
+		if ((Object)(object)character != (Object)null && character.IsPlayer() && (Object)(object)Player.m_localPlayer == (Object)(object)character && Object.op_Implicit((Object)(object)character.m_nview) && character.m_nview.IsValid())
+		{
+			return character.m_nview.IsOwner();
+		}
+		return false;
+	}
+
+	internal static void CaptureBaseRows(Inventory inventory)
+	{
+		if (!_baseRowsCaptured)
+		{
+			_baseRowsCaptured = true;
+			BaseRows = (PrefabRows = Mathf.Max(1, inventory.m_height));
+		}
+	}
+
+	internal static void SetBaseRows(int rows)
+	{
+		rows = Mathf.Max(1, rows);
+		if (rows != BaseRows)
+		{
+			EquipmentAndQuickSlots.LogInfo($"Vanilla inventory rows changed {BaseRows} -> {rows}; the slot region moves with them");
+			_baseRowsCaptured = true;
+			BaseRows = rows;
+			OnVisibleRowsChanged();
+		}
+	}
+
+	internal static void SetBaseRowsForLoad(int rows)
+	{
+		rows = Mathf.Max(1, rows);
+		if (rows != BaseRows)
+		{
+			EquipmentAndQuickSlots.LogInfo($"Loading a character with {rows} vanilla inventory rows; slot cells laid out for {BaseRows} follow, items keep their saved positions");
+			_baseRowsCaptured = true;
+			BaseRows = rows;
+			UpdateSlotsGridPosition(moveResidents: false);
+		}
+	}
+
+	internal static void OnVisibleRowsChanged()
+	{
+		//IL_0087: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0098: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00e5: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00ea: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00ec: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00f8: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00fa: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0110: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0115: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0152: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0157: Unknown result type (might be due to invalid IL or missing references)
+		Inventory playerInventory = PlayerInventory;
+		if (playerInventory == null)
+		{
+			UpdateSlotsGridPosition();
+			return;
+		}
+		ClearCachedItems();
+		Dictionary<Slot, ItemData> dictionary = slots.ToDictionary((Slot result) => result, (Slot slot2) => slot2.Item);
+		UpdateSlotsGridPosition();
+		bool flag = false;
+		foreach (ItemData item in playerInventory.m_inventory.ToList())
+		{
+			if (!IsGridPositionASlot(item.m_gridPos))
+			{
+				continue;
+			}
+			Slot slotInGrid = GetSlotInGrid(item.m_gridPos);
+			dictionary.TryGetValue(slotInGrid ?? slots[0], out var value);
+			if (slotInGrid == null || (value != null && value != item) || (value == null && !slotInGrid.ItemBelongs(item)))
+			{
+				Vector2i val = playerInventory.FindEmptySlot(true);
+				Slot slot;
+				if (val.x >= 0)
+				{
+					item.m_gridPos = val;
+				}
+				else if (TryFindFreeSlotForItem(item, out slot))
+				{
+					item.m_gridPos = slot.GridPosition;
+				}
+				else if (item.m_gridPos.y >= FullHeight || item.m_gridPos.x >= InventoryWidth)
+				{
+					item.m_gridPos = new Vector2i(InventoryWidth - 1, FullHeight - 1);
+				}
+				ClearCachedItems();
+				flag = true;
+			}
+		}
+		if (flag)
+		{
+			playerInventory.Changed(false, false);
+		}
+		SlotValidation.ValidateItems();
+		SlotValidation.ValidateSlots();
+	}
+
+	internal static void OnSlotActivationChanged()
+	{
+		if (PlayerInventory != null)
+		{
+			ClearCachedItems();
+			SlotValidation.ValidateItems();
+			SlotValidation.ValidateSlots();
+			PlayerInventory.Changed(false, false);
+		}
+	}
+
+	public static Slot[] GetEquipmentSlots(bool onlyActive = true)
+	{
+		return slots.Where((Slot slot) => slot.IsEquipmentSlot && (!onlyActive || slot.IsActive)).ToArray();
+	}
+
+	public static Slot[] GetQuickSlots()
+	{
+		return Array.FindAll(slots, (Slot slot) => slot.IsQuickSlot);
+	}
+
+	public static bool TryGetSavedPlayerSlot(ItemData item, out Slot slot)
+	{
+		slot = null;
+		if (item.m_customData.TryGetValue("eaqs_player", out var value) && item.m_customData.TryGetValue("eaqs_slot", out var value2))
+		{
+			string text = value;
+			PlayerProfile currentPlayerProfile = CurrentPlayerProfile;
+			if (text == ((currentPlayerProfile != null) ? currentPlayerProfile.GetPlayerID().ToString() : null) && (slot = FindSlot(value2)) != null)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public static Slot FindSlot(string slotID)
+	{
+		return slots.FirstOrDefault((Slot slot) => slot.ID == slotID);
+	}
+
+	public static bool TryFindFreeSlotForItem(ItemData item, out Slot slot)
+	{
+		if (!FindFreeSlotForItem(item, out slot))
+		{
+			return false;
+		}
+		if (IsStillFree(slot, item))
+		{
+			return true;
+		}
+		return FindFreeSlotForItem(item, out slot);
+	}
+
+	private static bool FindFreeSlotForItem(ItemData item, out Slot slot)
+	{
+		slot = null;
+		if (item == null)
+		{
+			return false;
+		}
+		if (TryGetSavedPlayerSlot(item, out var slot2) && slot2.IsActive && slot2.ItemBelongs(item) && (slot2.IsFree || item == slot2.Item))
+		{
+			slot = slot2;
+			return true;
+		}
+		int num = Array.FindIndex(slots, (Slot s) => s.IsActive && s.IsFree && s.ItemBelongs(item));
+		if (num == -1)
+		{
+			return false;
+		}
+		slot = slots[num];
+		return true;
+	}
+
+	public static bool TryFindFreeEquipmentSlotForItem(ItemData item, out Slot slot)
+	{
+		slot = null;
+		if (item == null)
+		{
+			return false;
+		}
+		slot = GetEquipmentSlots().FirstOrDefault((Slot s) => s.IsFree && s.ItemBelongs(item));
+		return slot != null;
+	}
+
+	public static bool TryFindFirstUnequippedSlotForItem(ItemData item, out Slot slot)
+	{
+		slot = null;
+		if (item == null)
+		{
+			return false;
+		}
+		slot = GetEquipmentSlots().FirstOrDefault((Slot s) => !s.IsFree && s.ItemFits(item) && !((Humanoid)CurrentPlayer).IsItemEquiped(s.Item) && !IsEquipQueued(s.Item));
+		return slot != null;
+	}
+
+	public static bool TryMakeFreeSpaceInPlayerInventory(out Vector2i gridPos)
+	{
+		//IL_0001: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0006: Unknown result type (might be due to invalid IL or missing references)
+		//IL_003c: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0041: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0042: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0043: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0048: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0049: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0099: Unknown result type (might be due to invalid IL or missing references)
+		//IL_009e: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00a7: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00ac: Unknown result type (might be due to invalid IL or missing references)
+		gridPos = emptyPosition;
+		itemsInGridOrder.Clear();
+		for (int num = VisibleRows - 1; num >= 0; num--)
+		{
+			for (int num2 = InventoryWidth - 1; num2 >= 0; num2--)
+			{
+				ItemData itemAt = PlayerInventory.GetItemAt(num2, num);
+				if (itemAt == null)
+				{
+					return (gridPos = new Vector2i(num2, num)) != emptyPosition;
+				}
+				itemsInGridOrder.Add(itemAt);
+			}
+		}
+		ClearCachedItems();
+		foreach (ItemData item in itemsInGridOrder)
+		{
+			if (TryFindFreeSlotForItem(item, out var slot))
+			{
+				gridPos = item.m_gridPos;
+				item.m_gridPos = slot.GridPosition;
+				ClearCachedItems();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public static bool HaveEmptyQuickSlot()
+	{
+		return slots.Any((Slot slot) => slot.IsFreeQuickSlot());
+	}
+
+	public static int GetEmptyQuickSlots()
+	{
+		return slots.Count((Slot slot) => slot.IsFreeQuickSlot());
+	}
+
+	public static Vector2i FindEmptyQuickSlot()
+	{
+		//IL_0010: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0009: Unknown result type (might be due to invalid IL or missing references)
+		if (!TryFindEmptyQuickSlot(out var slot))
+		{
+			return emptyPosition;
+		}
+		return slot.GridPosition;
+	}
+
+	public static bool TryFindEmptyQuickSlot(out Slot slot)
+	{
+		slot = slots.FirstOrDefault((Slot s) => s.IsFreeQuickSlot());
+		if (slot != null && !IsStillFree(slot, null))
+		{
+			slot = slots.FirstOrDefault((Slot s) => s.IsFreeQuickSlot());
+		}
+		return slot != null;
+	}
+
+	internal static bool IsStillFree(Slot slot, ItemData forItem)
+	{
+		//IL_0001: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0006: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0013: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0019: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0047: Unknown result type (might be due to invalid IL or missing references)
+		Vector2i gridPosition = slot.GridPosition;
+		Inventory playerInventory = PlayerInventory;
+		ItemData val = ((playerInventory != null) ? playerInventory.GetOtherItemAt(gridPosition.x, gridPosition.y, forItem) : null);
+		if (val == null)
+		{
+			return true;
+		}
+		if (_staleSlotCacheWarnings++ < 20)
+		{
+			EquipmentAndQuickSlots.LogWarning($"Slot {slot.ID} at {gridPosition} was cached as empty but holds {val.m_shared.m_name}; " + "refreshing the slot cache. Caller: " + DescribeCaller() + ((_staleSlotCacheWarnings == 20) ? " (further occurrences are not logged)" : ""));
+		}
+		ClearCachedItems();
+		return false;
+	}
+
+	private static string DescribeCaller()
+	{
+		StackFrame[] frames = new StackTrace(2, fNeedFileInfo: false).GetFrames();
+		if (frames == null)
+		{
+			return "unknown";
+		}
+		return string.Join(" <- ", from frame in frames.Take(10)
+			select frame.GetMethod() into method
+			where method != null
+			select method.DeclaringType?.Name + "." + method.Name);
+	}
+
+	internal static void SaveLastEquippedSlotsToItems()
+	{
+		if (!Object.op_Implicit((Object)(object)Game.instance))
+		{
+			return;
+		}
+		long playerID = Game.instance.GetPlayerProfile().GetPlayerID();
+		Slot[] array = slots;
+		foreach (Slot slot in array)
+		{
+			ItemData item = slot.Item;
+			if (item != null)
+			{
+				item.m_customData["eaqs_player"] = playerID.ToString();
+				item.m_customData["eaqs_slot"] = slot.ID;
+			}
+		}
+	}
+
+	internal static void PruneLastEquippedSlotFromItem(ItemData item)
+	{
+		if (item != null && item.m_customData.ContainsKey("eaqs_slot"))
+		{
+			item.m_customData.Remove("eaqs_player");
+			item.m_customData.Remove("eaqs_slot");
+		}
+	}
+
+	public static bool IsGridPositionASlot(Vector2i gridPos)
+	{
+		//IL_0000: Unknown result type (might be due to invalid IL or missing references)
+		return gridPos.y >= VisibleRows;
+	}
+
+	public static bool IsItemInSlot(ItemData item)
+	{
+		//IL_0004: Unknown result type (might be due to invalid IL or missing references)
+		if (item != null)
+		{
+			return IsGridPositionASlot(item.m_gridPos);
+		}
+		return false;
+	}
+
+	public static bool IsItemInEquipmentSlot(ItemData item)
+	{
+		return GetItemSlot(item)?.IsEquipmentSlot ?? false;
+	}
+
+	public static Slot GetSlotInGrid(Vector2i pos)
+	{
+		//IL_0000: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0019: Unknown result type (might be due to invalid IL or missing references)
+		//IL_001e: Unknown result type (might be due to invalid IL or missing references)
+		if (!IsGridPositionASlot(pos))
+		{
+			return null;
+		}
+		Slot[] array = slots;
+		foreach (Slot slot in array)
+		{
+			if (slot.GridPosition == pos)
+			{
+				return slot;
+			}
+		}
+		return null;
+	}
+
+	public static Slot GetItemSlot(ItemData item)
+	{
+		//IL_002f: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0035: Unknown result type (might be due to invalid IL or missing references)
+		if (!IsItemInSlot(item))
+		{
+			return null;
+		}
+		if (PlayerInventory == null || !PlayerInventory.ContainsItem(item))
+		{
+			return null;
+		}
+		Slot[] array = slots;
+		foreach (Slot slot in array)
+		{
+			if (slot.GridPosition == item.m_gridPos)
+			{
+				return slot;
+			}
+		}
+		return null;
+	}
+
+	public static IEnumerable<ItemData> GetAllSlotItems()
+	{
+		Slot[] array = slots;
+		for (int i = 0; i < array.Length; i++)
+		{
+			ItemData item = array[i].Item;
+			if (item != null)
+			{
+				yield return item;
+			}
+		}
+	}
+
+	public static bool IsEquipmentSlotItem(ItemData item)
+	{
+		return slots.Any((Slot slot) => slot.IsEquipmentSlot && slot.IsActive && slot.ItemFits(item));
+	}
+
+	public static bool IsExtraUtilitySlot(Slot slot)
+	{
+		if (slot != null)
+		{
+			if (!(slot.ID == "Utility2"))
+			{
+				return slot.ID == "Utility3";
+			}
+			return true;
+		}
+		return false;
+	}
+
+	public static ItemType GetEquipmentSlotType(Slot slot)
+	{
+		if (slot.IsEquipmentSlot)
+		{
+			return EquipmentSlotTypes[slot.Index - 8];
+		}
+		return (ItemType)0;
+	}
+
+	public static bool WouldFitEquipmentSlot(Slot slot, ItemData item)
+	{
+		//IL_0019: Unknown result type (might be due to invalid IL or missing references)
+		//IL_001f: Unknown result type (might be due to invalid IL or missing references)
+		if (item != null && slot.IsEquipmentSlot && slot.IsActive && item.m_shared.m_itemType == GetEquipmentSlotType(slot))
+		{
+			return MultiUtility.CanEquipIntoUtilityCell(slot, item);
+		}
+		return false;
+	}
+
+	internal static bool IsEquippedByPlayer(ItemData item)
+	{
+		if (item != null)
+		{
+			if (!item.m_equipped)
+			{
+				Player currentPlayer = CurrentPlayer;
+				if (currentPlayer == null)
+				{
+					return false;
+				}
+				return ((Humanoid)currentPlayer).IsItemEquiped(item);
+			}
+			return true;
+		}
+		return false;
+	}
+
+	private static bool IsActionQueued(ItemData item, ActionType type)
+	{
+		//IL_003c: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0041: Unknown result type (might be due to invalid IL or missing references)
+		Player currentPlayer = CurrentPlayer;
+		if (item == null || (Object)(object)currentPlayer == (Object)null || currentPlayer.m_actionQueue == null)
+		{
+			return false;
+		}
+		foreach (MinorActionData item2 in currentPlayer.m_actionQueue)
+		{
+			if (item2.m_item == item && item2.m_type == type)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	internal static bool IsEquipQueued(ItemData item)
+	{
+		return IsActionQueued(item, (ActionType)0);
+	}
+
+	internal static bool IsUnequipQueued(ItemData item)
+	{
+		return IsActionQueued(item, (ActionType)1);
+	}
+
+	internal static void QueueEquip(Player player, ItemData item)
+	{
+		if (!((Object)(object)player == (Object)null) && item != null && !((Humanoid)player).IsItemEquiped(item) && !IsEquipQueued(item))
+		{
+			if (IsUnequipQueued(item))
+			{
+				((Humanoid)player).RemoveEquipAction(item);
+			}
+			else
+			{
+				player.QueueEquipAction(item);
+			}
+		}
+	}
+
+	internal static void QueueUnequip(Player player, ItemData item)
+	{
+		if (!((Object)(object)player == (Object)null) && item != null && ((Humanoid)player).IsItemEquiped(item) && !IsUnequipQueued(item))
+		{
+			if (IsEquipQueued(item))
+			{
+				((Humanoid)player).RemoveEquipAction(item);
+			}
+			else
+			{
+				player.QueueUnequipAction(item);
+			}
+		}
+	}
+
+	private static Func<ItemData, bool> EquipmentSlotValidator(ItemType itemType)
+	{
+		//IL_0006: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0007: Unknown result type (might be due to invalid IL or missing references)
+		return (ItemData item) => item != null && item.m_shared.m_itemType == itemType;
+	}
+
+	private static bool IsQuickSlotAvailable(int index)
+	{
+		if (ValConfig.QuickSlotsEnabled.Value)
+		{
+			return ValConfig.QuickSlotCount.Value > index;
+		}
+		return false;
+	}
+
+	private static bool EquipmentSlotsAvailable()
+	{
+		return ValConfig.EquipmentSlotsEnabled.Value;
+	}
+
+	private static bool IsExtraUtilitySlotAvailable(int extraIndex)
+	{
+		return ActiveExtraUtilitySlots > extraIndex;
+	}
+
+	private unsafe static string GetQuickSlotText(int index)
+	{
+		//IL_001e: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0023: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0026: Unknown result type (might be due to invalid IL or missing references)
+		string value = ValConfig.QuickSlotLabels[index].Value;
+		if (!string.IsNullOrEmpty(value))
+		{
+			return value;
+		}
+		KeyboardShortcut value2 = ValConfig.QuickSlotKeys[index].Value;
+		object obj = KeyboardShortcut.Empty;
+		if (!((object)(*(KeyboardShortcut*)(&value2))/*cast due to .constrained prefix*/).Equals(obj))
+		{
+			return ((object)(*(KeyboardShortcut*)(&value2))/*cast due to .constrained prefix*/).ToString();
+		}
+		return "";
+	}
+
+	private static string GetQuickSlotShortcutText(int index)
+	{
+		if (!ZInput.IsGamepadActive())
+		{
+			return GetQuickSlotText(index);
+		}
+		return GamepadQuickSlots.GetComboText(index);
+	}
+
+	internal static void InitializeSlots()
+	{
+		int index = 0;
+		for (int i = 0; i < 6; i++)
+		{
+			int quickIndex = i;
+			AddHotkeySlot(string.Format("{0}{1}", "Quick", i + 1), () => GetQuickSlotText(quickIndex), null, () => IsQuickSlotAvailable(quickIndex), () => ValConfig.QuickSlotKeys[quickIndex].Value, () => GetQuickSlotShortcutText(quickIndex));
+		}
+		AddReservedSlot();
+		AddReservedSlot();
+		AddSlot("Helmet", () => "Head", EquipmentSlotValidator((ItemType)6), EquipmentSlotsAvailable);
+		AddSlot("Chest", () => "Chest", EquipmentSlotValidator((ItemType)7), EquipmentSlotsAvailable);
+		AddSlot("Legs", () => "Legs", EquipmentSlotValidator((ItemType)11), EquipmentSlotsAvailable);
+		AddSlot("Shoulder", () => "Shoulders", EquipmentSlotValidator((ItemType)17), EquipmentSlotsAvailable);
+		AddSlot("Utility", () => "Utility", EquipmentSlotValidator((ItemType)18), EquipmentSlotsAvailable);
+		AddSlot("Trinket", () => "Trinket", EquipmentSlotValidator((ItemType)24), EquipmentSlotsAvailable);
+		AddSlot("Utility2", () => "Utility", EquipmentSlotValidator((ItemType)18), () => IsExtraUtilitySlotAvailable(0));
+		AddSlot("Utility3", () => "Utility", EquipmentSlotValidator((ItemType)18), () => IsExtraUtilitySlotAvailable(1));
+		while (index < 24)
+		{
+			AddReservedSlot();
+		}
+		UpdateSlotsGridPosition();
+		void AddHotkeySlot(string id, Func<string> getName, Func<ItemData, bool> itemIsValid, Func<bool> isActive, Func<KeyboardShortcut> getShortcut, Func<string> getShortcutText)
+		{
+			slots[index] = new Slot(id, index, getName, itemIsValid, isActive, getShortcut, getShortcutText);
+			index++;
+		}
+		void AddReservedSlot()
+		{
+			AddSlot("Empty", () => "", (ItemData item) => false, () => false);
+		}
+		void AddSlot(string id, Func<string> getName, Func<ItemData, bool> itemIsValid, Func<bool> isActive)
+		{
+			slots[index] = new Slot(id, index, getName, itemIsValid, isActive);
+			index++;
+		}
+	}
+
+	public static Slot[] GetCustomSlots()
+	{
+		return slots.Where((Slot slot) => slot.IsCustomSlot).ToArray();
+	}
+
+	internal static bool TryAddCustomSlot(string slotId, string ownerGuid, Func<string> getName, Func<ItemData, bool> itemIsValid, Func<bool> isActive)
+	{
+		int[] reservedIndices = ReservedIndices;
+		for (int i = 0; i < reservedIndices.Length; i++)
+		{
+			if (TryAddCustomSlotAt(reservedIndices[i], slotId, ownerGuid, getName, itemIsValid, isActive))
+			{
+				return true;
+			}
+		}
+		EquipmentAndQuickSlots.LogWarning($"Could not add custom slot {slotId}: all {ReservedIndices.Length} custom slots are taken");
+		return false;
+	}
+
+	internal static bool TryAddCustomSlotAt(int index, string slotId, string ownerGuid, Func<string> getName, Func<ItemData, bool> itemIsValid, Func<bool> isActive)
+	{
+		if (Array.IndexOf(ReservedIndices, index) < 0)
+		{
+			return false;
+		}
+		string internalId = "Custom" + slotId;
+		if (slots.Any((Slot slot) => slot.ID == internalId))
+		{
+			return false;
+		}
+		if (!slots[index].IsEmptySlot)
+		{
+			return false;
+		}
+		slots[index] = new Slot(internalId, index, getName, itemIsValid, isActive)
+		{
+			OwnerGuid = ownerGuid
+		};
+		slots[index].UpdateGridPosition();
+		ClearCachedItems();
+		return true;
+	}
+
+	internal static bool TryRemoveCustomSlot(string slotId)
+	{
+		//IL_00cb: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00d0: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00d1: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00db: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00dc: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00f0: Unknown result type (might be due to invalid IL or missing references)
+		//IL_00f5: Unknown result type (might be due to invalid IL or missing references)
+		string internalId = "Custom" + slotId;
+		int num = Array.FindIndex(slots, (Slot slot2) => slot2.IsCustomSlot && slot2.ID == internalId);
+		if (num == -1)
+		{
+			return false;
+		}
+		ItemData item = slots[num].Item;
+		slots[num] = new Slot("Empty", num, () => "", (ItemData i) => false, () => false);
+		slots[num].UpdateGridPosition();
+		ClearCachedItems();
+		if (item != null)
+		{
+			Vector2i val = PlayerInventory.FindEmptySlot(true);
+			Slot slot;
+			if (val.x >= 0)
+			{
+				item.m_gridPos = val;
+			}
+			else if (TryFindFreeSlotForItem(item, out slot))
+			{
+				item.m_gridPos = slot.GridPosition;
+			}
+			else if ((Object)(object)CurrentPlayer != (Object)null)
+			{
+				((Humanoid)CurrentPlayer).DropItem(PlayerInventory, item, item.m_stack);
+			}
+			Inventory playerInventory = PlayerInventory;
+			if (playerInventory != null)
+			{
+				playerInventory.Changed(false, false);
+			}
+		}
+		return true;
+	}
+
+	internal static void UpdateSlotsGridPosition(bool moveResidents = true)
+	{
+		ClearCachedItems();
+		Slot[] array;
+		if (moveResidents)
+		{
+			array = slots;
+			for (int i = 0; i < array.Length; i++)
+			{
+				array[i].CacheItem();
+			}
+		}
+		array = slots;
+		for (int i = 0; i < array.Length; i++)
+		{
+			array[i].UpdateGridPosition(moveResidents);
+		}
+		ClearCachedItems();
+		InventoryPatches.UpdatePlayerInventorySize();
+		BetterArcheryCompat.SyncQuiverRow();
+	}
+
+	internal static void ClearCachedItems()
+	{
+		cachedItems.Clear();
+	}
+
+	static Slots()
+	{
+		//IL_0002: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0007: Unknown result type (might be due to invalid IL or missing references)
+		ItemType[] array = new ItemType[8];
+		RuntimeHelpers.InitializeArray(array, (RuntimeFieldHandle)/*OpCode not supported: LdMemberToken*/);
+		EquipmentSlotTypes = (ItemType[])(object)array;
+	}
+}
+You are not using the latest version of the tool, please update.
+Latest version is '11.2.0.10050' (yours is '9.1.0.7988')

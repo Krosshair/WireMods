@@ -460,9 +460,16 @@ namespace WiresStackify
             WeightShake.Add(weight, false);
             if (chestWeight != null) WeightShake.Add(chestWeight, true);
 
-            // Inventory: halfway between armor and weight.
+            // Position once. Averaging the anchors makes the pouch stay
+            // midway between armor and weight as the inventory panel grows.
             RectTransform inv = Clone(armor, gui.m_armor, false, template);
-            inv.localPosition = (armor.localPosition + weight.localPosition) * 0.5f;
+            if (armor.parent == weight.parent)
+            {
+                inv.anchorMin = (armor.anchorMin + weight.anchorMin) * 0.5f;
+                inv.anchorMax = (armor.anchorMax + weight.anchorMax) * 0.5f;
+                inv.anchoredPosition = (armor.anchoredPosition + weight.anchoredPosition) * 0.5f;
+            }
+            else inv.position = (armor.position + weight.position) * 0.5f;
 
             // Chest: the same distance above the chest's weight as the
             // inventory button sits above yours.

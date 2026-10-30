@@ -1,0 +1,168 @@
+using System.Reflection;
+using Auga;
+using BepInEx;
+using BepInEx.Bootstrap;
+using BepInEx.Configuration;
+using Common;
+using HarmonyLib;
+using Jotunn.Utils;
+using UnityEngine;
+
+namespace EquipmentAndQuickSlots;
+
+[BepInPlugin("randyknapp.mods.equipmentandquickslots", "Equipment and Quick Slots", "3.2.0")]
+[BepInDependency(/*Could not decode attribute arguments.*/)]
+[SynchronizationMode(/*Could not decode attribute arguments.*/)]
+[BepInDependency(/*Could not decode attribute arguments.*/)]
+[BepInDependency(/*Could not decode attribute arguments.*/)]
+[BepInDependency(/*Could not decode attribute arguments.*/)]
+[BepInDependency(/*Could not decode attribute arguments.*/)]
+[BepInDependency(/*Could not decode attribute arguments.*/)]
+[BepInIncompatibility("Azumatt.AzuExtendedPlayerInventory")]
+[BepInIncompatibility("aedenthorn.ExtendedPlayerInventory")]
+[BepInIncompatibility("shudnal.ExtraSlots")]
+[BepInIncompatibility("com.bruce.valheim.comfyquickslots")]
+public class EquipmentAndQuickSlots : BaseUnityPlugin
+{
+	public const string PluginId = "randyknapp.mods.equipmentandquickslots";
+
+	public const string Version = "3.2.0";
+
+	public static Sprite PaperdollMale;
+
+	public static Sprite PaperdollFemale;
+
+	public static GameObject Paperdolls;
+
+	private static EquipmentAndQuickSlots _instance;
+
+	private Harmony _harmony;
+
+	private const float AugaQuickSlotsY = 74f;
+
+	private const float OldAugaQuickSlotsY = 86f;
+
+	public static bool HasAuga { get; private set; }
+
+	private void Awake()
+	{
+		_instance = this;
+		HasAuga = Auga.API.IsLoaded();
+		if (!HasAuga && Chainloader.PluginInfos.ContainsKey("randyknapp.mods.auga"))
+		{
+			LogWarning("Project Auga is installed but its API did not attach to Equipment and Quick Slots; the Auga layout is off. Check the log for an APIManager error.");
+		}
+		new ValConfig(((BaseUnityPlugin)this).Config);
+		FixQuickSlotPositionForAuga();
+		LoadAssets();
+		Slots.InitializeSlots();
+		EpicLootCompat.Initialize();
+		ItemFavoritesCompat.Initialize();
+		_harmony = Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly(), "randyknapp.mods.equipmentandquickslots");
+		BetterArcheryCompat.Initialize(_harmony);
+	}
+
+	private void Update()
+	{
+		Player localPlayer = Player.m_localPlayer;
+		GamepadQuickSlots.UsePending(localPlayer);
+		if ((Object)(object)localPlayer == (Object)null)
+		{
+			return;
+		}
+		Slots.Slot[] slots = Slots.slots;
+		foreach (Slots.Slot slot in slots)
+		{
+			if (slot.IsHotkeySlot && slot.IsShortcutDownWithItem())
+			{
+				((Humanoid)localPlayer).UseItem((Inventory)null, slot.Item, false);
+			}
+		}
+	}
+
+	private void LateUpdate()
+	{
+		SlotValidation.Validate();
+		API.DetectSlotItemChanges();
+	}
+
+	private static void FixQuickSlotPositionForAuga()
+	{
+		//IL_000a: Unknown result type (might be due to invalid IL or missing references)
+		//IL_000f: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0012: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0024: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0039: Unknown result type (might be due to invalid IL or missing references)
+		//IL_003e: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0064: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0065: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0046: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0047: Unknown result type (might be due to invalid IL or missing references)
+		//IL_007b: Unknown result type (might be due to invalid IL or missing references)
+		//IL_006d: Unknown result type (might be due to invalid IL or missing references)
+		//IL_006e: Unknown result type (might be due to invalid IL or missing references)
+		//IL_005d: Unknown result type (might be due to invalid IL or missing references)
+		//IL_004f: Unknown result type (might be due to invalid IL or missing references)
+		//IL_0050: Unknown result type (might be due to invalid IL or missing references)
+		Vector2 val = (Vector2)((ConfigEntryBase)ValConfig.QuickSlotsPosition).DefaultValue;
+		Vector2 val2 = default(Vector2);
+		((Vector2)(ref val2))..ctor(val.x, 74f);
+		Vector2 val3 = default(Vector2);
+		((Vector2)(ref val3))..ctor(val.x, 86f);
+		Vector2 value = ValConfig.QuickSlotsPosition.Value;
+		if (HasAuga)
+		{
+			if (value == val || value == val3)
+			{
+				ValConfig.QuickSlotsPosition.Value = val2;
+			}
+		}
+		else if (value == val2 || value == val3)
+		{
+			ValConfig.QuickSlotsPosition.Value = val;
+		}
+	}
+
+	private static void LoadAssets()
+	{
+		AssetBundle val = LoadAssetBundle("eaqs");
+		if ((Object)(object)val == (Object)null)
+		{
+			LogError("Failed to load the 'eaqs' asset bundle. The paperdoll will not be shown.");
+			return;
+		}
+		PaperdollMale = val.LoadAsset<Sprite>("PaperdollMale");
+		PaperdollFemale = val.LoadAsset<Sprite>("PaperdollFemale");
+		Paperdolls = val.LoadAsset<GameObject>("Paperdolls");
+	}
+
+	public static AssetBundle LoadAssetBundle(string filename)
+	{
+		return AssetBundleLoader.LoadFromResources(filename, typeof(EquipmentAndQuickSlots).Assembly);
+	}
+
+	public static void Log(string message)
+	{
+		if (ValConfig.LoggingEnabled.Value)
+		{
+			((BaseUnityPlugin)_instance).Logger.LogMessage((object)message);
+		}
+	}
+
+	public static void LogWarning(string message)
+	{
+		((BaseUnityPlugin)_instance).Logger.LogWarning((object)message);
+	}
+
+	public static void LogError(string message)
+	{
+		((BaseUnityPlugin)_instance).Logger.LogError((object)message);
+	}
+
+	public static void LogInfo(string message)
+	{
+		((BaseUnityPlugin)_instance).Logger.LogInfo((object)message);
+	}
+}
+You are not using the latest version of the tool, please update.
+Latest version is '11.2.0.10050' (yours is '9.1.0.7988')

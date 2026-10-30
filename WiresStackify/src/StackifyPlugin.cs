@@ -14,7 +14,7 @@ namespace WiresStackify
     {
         public const string PluginGuid = "kajetan.valheim.stackify";
         public const string PluginName = "Wire's Stackify";
-        public const string PluginVersion = "0.1.8";
+        public const string PluginVersion = "0.1.9";
 
         internal static StackifyPlugin Instance;
         internal static BepInEx.Logging.ManualLogSource Log;
@@ -232,11 +232,16 @@ namespace WiresStackify
         // under your normal inventory rows. Those are its own: quick stack
         // and sort never touch them.
         private static bool? _hasEaqs;
+
+        // EAQS always appends three reserved rows after the normal inventory.
+        // All other rows remain sortable, including vanilla inventory upgrades.
         internal static int MainRows(Inventory inv, Player player)
         {
-            if (_hasEaqs == null) _hasEaqs = Chainloader.PluginInfos.ContainsKey("randyknapp.mods.equipmentandquickslots");
-            int h = inv.GetHeight();
-            return _hasEaqs.Value && player != null && inv == player.GetInventory() ? Mathf.Min(h, 4) : h;
+            int height = inv.GetHeight();
+            if (player == null || inv != player.GetInventory()) return height;
+            if (!_hasEaqs.HasValue)
+                _hasEaqs = Chainloader.PluginInfos.ContainsKey("randyknapp.mods.equipmentandquickslots");
+            return _hasEaqs.Value ? Mathf.Max(0, height - 3) : height;
         }
 
         internal static readonly AccessTools.FieldRef<InventoryGui, Container> CurrentContainer =
