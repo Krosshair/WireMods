@@ -48,48 +48,30 @@ namespace EnemyHudRework
                 p.m_poison != 0f || p.m_spirit != 0f;
         }
 
-        // What goes in the list for this character. Creatures: the data rule
-        // above, plus wet (fire burns them five times faster). Players, with
-        // Player nameplate effects on: only what you can't tell from where
-        // they are or what they wear. Rested, encumbered, their Forsaken
-        // power, wet, cold (or freezing). Damage effects are on the left.
+        // Creatures use their real resistance/combat-affecting statuses.
+        // Players use the broader lifecycle-cached selection in
+        // EnemyHudPlayerEffects.cs (six strict player effect groups).
         private bool CountsAsOther(StatusEffect se, Character c)
         {
-            if (se == null || se.m_icon == null || StatusBit(se.NameHash()) != 0 || se is SE_Shield) return false;
-            int h = se.NameHash();
-            Player p = c as Player;
-            if (p == null) return h == SEMan.s_statusEffectWet || AffectsTarget(se);
-            return PlayerSlot(se, p) >= 0;
+            if (se == null || se.m_icon == null || StatusBit(se.NameHash()) != 0 ||
+                se is SE_Shield) return false;
+            if (c is Player) return PlayerEffectGroup(se) >= 0;
+            return se.NameHash() == SEMan.s_statusEffectWet || AffectsTarget(se);
         }
 
-        // The order on a player's nameplate, outward from the bar; -1 for
-        // effects that don't show there.
-        private static int PlayerSlot(StatusEffect se, Player p)
-        {
-            int h = se.NameHash();
-            if (h == SEMan.s_statusEffectRested) return 0;
-            if (h == SEMan.s_statusEffectEncumbered) return 1;
-            StatusEffect power; float cooldown;
-            p.GetGuardianPowerHUD(out power, out cooldown);
-            if (power != null && power.NameHash() == h) return 2;
-            if (h == SEMan.s_statusEffectWet) return 3;
-            if (h == SEMan.s_statusEffectCold || h == SEMan.s_statusEffectFreezing) return 4;
-            return -1;
-        }
-
-        // Never more than four: on players that's the order above, on
-        // creatures the order they got them.
-        private int OtherPriority(StatusEffect se, Character c)
-        {
-            Player p = c as Player;
-            return p != null ? PlayerSlot(se, p) : 0;
-        }
+        private static int OtherPriority(StatusEffect se, Character c) => 0;
 
         // ---- Owner side: when an effect starts or ends ----
 
-        private void ShareOtherEffects(Character c, ZDO zdo, StatusEffect leaving)
+        private void ShareOtherEffects(Character c, ZDO zdo,
+            StatusEffect leaving, StatusEffect starting = null)
         {
-            // Keep the four with the best priority, in priority order.
+            if (c is Player player)
+            {
+                RebuildPlayerEffects(player, zdo, leaving, starting);
+                return;
+            }
+            // Creatures keep their existing prioritized data-driven rule.
             int n = 0;
             SEMan seman = c.GetSEMan();
             if (seman != null)
@@ -109,6 +91,17 @@ namespace EnemyHudRework
                     _otherWork[at] = h; _otherPrio[at] = pr;
                     if (n < MaxOtherEffects) n++;
                 }
+            // StatusEffect.Setup may run before SEMan inserts the effect.
+            // Creatures need the same start-event handling as players.
+            if (starting != null && !ReferenceEquals(starting, leaving) &&
+                CountsAsOther(starting, c) && n < MaxOtherEffects)
+            {
+                int added = starting.NameHash();
+                bool alreadyThere = false;
+                for (int i = 0; i < n; i++)
+                    if (_otherWork[i] == added) { alreadyThere = true; break; }
+                if (!alreadyThere) _otherWork[n++] = added;
+            }
             for (int i = 0; i < MaxOtherEffects; i++)
                 SetSharedInt(zdo, OtherKeys[i], i < n ? _otherWork[i] : 0);
         }

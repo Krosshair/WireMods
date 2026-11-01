@@ -193,7 +193,7 @@ namespace EnemyHudRework
                 "The game's icons, right of the health bar, for other effects that change the creature or player itself: its resistances, speed, damage, stagger or armor (wet, tarred, harpooned, resistance meads...). Effects that don't (cold, rested...) aren't shown, except wet, which makes fire burn faster. Players have their own list, see Player nameplate effects.",
                 null, null);
             _playerEffects = Bind(SecEnemy, "Player nameplate effects", true,
-                "Status effect icons right of other players' health bars: rested, encumbered, their Forsaken power, wet, then cold or freezing, in that order. Other players need Enemy HUD for theirs to show.",
+                "Up to four icons right of other players' health bars, in this exact order: Rested; active Forsaken powers; active potion buffs (Ratatosk, Lightfoot, etc.); potion cooldowns (healing, stamina, eitr, etc.); Wet/Cold/Freezing; Encumbered/Tarred/Harpooned. No other effects. Forsaken powers, potion buffs and cooldowns cycle independently every 0.5 seconds when needed. Other players need Enemy HUD to share their effects.",
                 null, null);
             _nameColorMode = Bind(SecEnemy, "Awareness display", NameColorMode.Pastel,
                 "How a creature shows that it noticed you. Pastel: soft name colors. Normal: stronger Valheim name colors. Icons: the vanilla awareness icons. None: nothing.",

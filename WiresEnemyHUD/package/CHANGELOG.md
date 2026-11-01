@@ -1,3 +1,11 @@
+## 0.9.4
+
+Player nameplate status effects now use six specific priority groups, within the existing four-icon limit: Rested (always first); active Forsaken powers; active potion buffs (such as Ratatosk and Lightfoot); potion cooldowns (such as healing and stamina); Wet, Cold and Freezing; and finally Encumbered, Tarred and Harpooned. Other effects, including permanent equipment bonuses, are not shown.
+
+When multiple Forsaken powers, potion buffs or potion cooldowns are active, each group cycles its icon independently every 0.5 seconds without changing the effects' own durations. The timer runs only while a displayed group needs cycling, with no new per-frame polling.
+
+Fixed status-effect icon synchronization when Valheim starts an effect, when player/creature network ownership changes (including players with no previously shared icon data), and when players disappear. Stale player status-effect caches are now cleared on destruction.
+
 ## 0.9.3
 
 Enemy and boss health bars now disappear immediately when their health reaches zero. Killing blows no longer show 0 HP or allow last-frame HUD effects, flashes or trails to play.

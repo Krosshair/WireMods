@@ -67,7 +67,14 @@ namespace EnemyHudRework
             ZNetView view = CharacterView(c);
             if (view == null || !view.IsValid() || !view.IsOwner()) return;
             ZDO zdo = view.GetZDO();
-            if (other) { ShareOtherEffects(c, zdo, on ? null : se); return; }
+            if (other)
+            {
+                // Setup may run before SEMan adds the instance. Include the
+                // effect that just started, but ignore an effect ending while
+                // it remains in SEMan's list during the Stop postfix.
+                ShareOtherEffects(c, zdo, on ? null : se, on ? se : null);
+                return;
+            }
             int mask = GetSharedInt(zdo, StatusKey);
             int next = on ? mask | bit : mask & ~bit;
             if (next == mask) return;
@@ -79,7 +86,13 @@ namespace EnemyHudRework
         internal void ResyncStatus(Character c, ZDO zdo)
         {
             if (c == null || zdo == null) return;
-            if (zdo.GetInt(OtherKeys[0]) != 0) ShareOtherEffects(c, zdo, null);
+            // Resync all player icons when a character starts or takes
+            // ownership. The first slot could have been empty previously.
+            bool hadOther = false;
+            for (int i = 0; i < OtherKeys.Length; i++)
+                hadOther |= zdo.GetInt(OtherKeys[i]) != 0;
+            if (c is Player || hadOther)
+                ShareOtherEffects(c, zdo, null);
             if (zdo.GetInt(StatusKey) == 0) return;
             int mask = 0;
             SEMan se = c.GetSEMan();

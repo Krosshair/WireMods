@@ -480,7 +480,7 @@ namespace EnemyHudRework
         private static class PlayerStart { private static void Postfix() { if (P != null) P.InvalidatePredictions(); } }
 
         [HarmonyLib.HarmonyPatch(typeof(Player), "OnDestroy")]
-        private static class PlayerGone { private static void Postfix() { if (P != null) P.InvalidatePredictions(); } }
+        private static class PlayerGone { private static void Postfix(Player __instance) { if (P != null) { P.InvalidatePredictions(); P.ForgetPlayerEffectOwner(__instance); } } }
 
         [HarmonyLib.HarmonyPatch(typeof(Skills), nameof(Skills.RaiseSkill))]
         private static class Raise { private static void Postfix() { if (P != null) P.InvalidatePredictions(); } }

@@ -159,10 +159,21 @@ namespace EnemyHudRework
         // On login a creature can start before this machine owns it, so the
         // check above skips it; run it again the moment this machine becomes
         // its owner.
+        private static readonly int PlayerPrefabHash = "Player".GetStableHashCode();
         internal void OnOwnerChanged(ZDO zdo)
         {
-            if (zdo == null || !zdo.IsOwner() || ZNetScene.instance == null ||
-                (zdo.GetFloat(BubbleMaxKey) <= 0f && zdo.GetInt(StatusKey) == 0 && zdo.GetInt(RanksKey) == 0)) return;
+            if (zdo == null || !zdo.IsOwner() || ZNetScene.instance == null)
+                return;
+            // Player effects can be active before any HUD ZDO key exists.
+            // Check the cheap prefab hash before the existing key-based
+            // early exit, otherwise acquiring ownership may never publish
+            // those effects until the next status change.
+            if (zdo.GetPrefab() != PlayerPrefabHash &&
+                zdo.GetFloat(BubbleMaxKey) <= 0f && zdo.GetInt(StatusKey) == 0 &&
+                zdo.GetInt(RanksKey) == 0 &&
+                zdo.GetInt(OtherKeys[0]) == 0 && zdo.GetInt(OtherKeys[1]) == 0 &&
+                zdo.GetInt(OtherKeys[2]) == 0 && zdo.GetInt(OtherKeys[3]) == 0)
+                return;
             ZNetView view = ZNetScene.instance.FindInstance(zdo);
             Character c = view != null ? view.GetComponent<Character>() : null;
             if (c != null) OnCharacterStart(c);
