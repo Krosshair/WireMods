@@ -24,6 +24,8 @@ namespace WiresNotificationOverhaul
             internal bool IsXp;
             internal bool IsCenter;
             internal bool ForceCenterColor;
+            internal bool IsRepair;
+            internal bool NeverMerge;
             internal bool IsFoodStats;
             internal float FoodHealth;
             internal float FoodStamina;
@@ -107,7 +109,9 @@ namespace WiresNotificationOverhaul
             int amount,
             Sprite icon,
             bool showDespiteHiddenHud,
-            bool isRepair = false)
+            bool isRepair = false,
+            string contextCompact = null,
+            bool neverMerge = false)
         {
             bool topLeft =
                 type == MessageHud.MessageType.TopLeft;
@@ -223,7 +227,9 @@ namespace WiresNotificationOverhaul
                 }
             }
 
-            Notice existing =
+            // Actions and toggles represent separate user inputs.
+            // Never swallow another repair or snapping change.
+            Notice existing = neverMerge ? null :
                 FindExisting(localized, center);
 
             if (existing != null)
@@ -243,14 +249,19 @@ namespace WiresNotificationOverhaul
 
                 string compactOverride = null;
                 Sprite matchedIcon = null;
-                if (isRepair)
+                if (contextCompact != null)
+                {
+                    compactOverride = CompactLocalization.IsEnglish
+                        ? contextCompact : localized;
+                }
+                else if (isRepair)
                 {
                     // The verbose notification and vanilla message
                     // history retain "Repaired <item name>". In Compact
                     // Mode the UI renders the actual item icon and
                     // simply "repaired", without repeating its name.
                     compactOverride = CompactLocalization.IsEnglish
-                        ? "repaired" : localized;
+                        ? "Repaired" : localized;
                 }
                 else if (kind == CompactFormat.Kind.Other)
                 {
@@ -272,6 +283,8 @@ namespace WiresNotificationOverhaul
                         Text = localized,
                         Original = text,
                         CompactOverride = compactOverride,
+                        IsRepair = isRepair,
+                        NeverMerge = neverMerge,
                         Kind = kind,
                         Icon = ContextIcons.Choose(
                             text, localized,
@@ -587,6 +600,7 @@ namespace WiresNotificationOverhaul
             {
                 if (!node.Value.IsXp &&
                     !node.Value.IsFoodStats &&
+                    !node.Value.NeverMerge &&
                     node.Value.UnlockCategory == null &&
                     node.Value.IsCenter == isCenter &&
                     node.Value.Text == localizedText)
@@ -1112,6 +1126,11 @@ namespace WiresNotificationOverhaul
                 textColor = _hud.m_messageCenterText.color;
             }
 
+            // The original repair emphasis should not be lost just
+            // because the message is displayed in the compact stack.
+            // Use the mod's existing golden-yellow accent.
+            if (notice.IsRepair)
+                textColor = new Color(231f / 255f, 199f / 255f, 69f / 255f, 1f);
             if (view.Text.color != textColor)
                 view.Text.color = textColor;
 

@@ -119,6 +119,37 @@ namespace WiresNotificationOverhaul
                         return "Requires station";
                     case "$msg_needfire":
                         return "Requires nearby fire";
+                    // Actual Player.TryPlacePiece / RemovePiece messages.
+                    // Only match exact game tokens; preserve details in
+                    // unknown messages and non-English languages.
+                    case "$msg_nobuildzone":
+                        return "Can't build here";
+                    case "$msg_privatezone":
+                        return "Private area";
+                    case "$msg_cantremovenow":
+                        return "Can't remove now";
+                    case "$msg_blocked":
+                        return "Blocked";
+                    case "$msg_needspace":
+                        return "Need space";
+                    case "$msg_noteleportarea":
+                        return "No building here";
+                    case "$msg_invalidplacement":
+                        return "Invalid placement";
+                    case "$msg_extensionmissingstation":
+                        return "Requires station";
+                    case "$msg_wrongbiome":
+                        return "Wrong biome";
+                    case "$msg_needcultivated":
+                        return "Requires cultivated ground";
+                    case "$msg_needdirt":
+                        return "Requires dirt";
+                    case "$msg_notindungeon":
+                        return "Can't build in dungeon";
+                    case "$msg_snowtoodeep":
+                        return "Snow too deep";
+                    case "$msg_nosnow":
+                        return "Requires snow";
                 }
             }
 

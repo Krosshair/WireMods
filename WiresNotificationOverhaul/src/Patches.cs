@@ -256,6 +256,25 @@ namespace WiresNotificationOverhaul
             if (isRepair && repairedIcon != null)
                 icon = repairedIcon;
 
+            // Hammer repairs are TopLeft notifications, unlike
+            // inventory repairs, and can also say no repair was needed.
+            Sprite buildingIcon;
+            string buildingCompact;
+            bool buildingRepair = BuildingRepairCapture.TryGetMessage(
+                type, text, out buildingIcon, out buildingCompact);
+            if (buildingRepair && buildingIcon != null)
+                icon = buildingIcon;
+
+            // Snap mode changes are center messages, emitted only when
+            // the player's selected snap point changes. Display the
+            // currently selected build piece, not a generic hammer.
+            Sprite snapIcon;
+            string snapCompact;
+            bool snapping = SnapMessageCapture.TryResolve(
+                type, text, out snapIcon, out snapCompact);
+            if (snapping && icon == null && snapIcon != null)
+                icon = snapIcon;
+
             return !NotificationSystem.TryHandleMessage(
                 __instance,
                 type,
@@ -263,7 +282,10 @@ namespace WiresNotificationOverhaul
                 amount,
                 icon,
                 showDespiteHiddenHUD,
-                isRepair);
+                isRepair || buildingRepair,
+                buildingRepair ? buildingCompact :
+                snapping ? snapCompact : null,
+                isRepair || buildingRepair || snapping);
         }
     }
 
