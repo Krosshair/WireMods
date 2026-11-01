@@ -1,3 +1,7 @@
+## 0.9.3
+
+Enemy and boss health bars now disappear immediately when their health reaches zero. Killing blows no longer show 0 HP or allow last-frame HUD effects, flashes or trails to play.
+
 ## 0.9.2
 
 Less work on creatures with status effects: the effect icons right of the bar are only laid out again when the effects change, not on every damage tick or health change, and a status effect starting or ending only redoes the weakness icons when it actually changes a resistance.

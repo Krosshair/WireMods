@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.9.2";
+        public const string PluginVersion = "0.9.3";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -246,7 +246,7 @@ namespace EnemyHudRework
                 character == null)
                 return;
 
-            if (isMount)
+            if (isMount || (!character.IsPlayer() && character.GetHealth() <= 0f))
                 return;
 
             // The game calls this every frame for every shown nameplate:
@@ -639,6 +639,12 @@ namespace EnemyHudRework
                         remove = new List<Character>();
 
                     remove.Add(character);
+                    continue;
+                }
+
+                if (state.Kind != HudKind.Player && character.GetHealth() <= 0f)
+                {
+                    HideDeadHud(character);
                     continue;
                 }
 
@@ -1997,9 +2003,45 @@ namespace EnemyHudRework
                 Destroy(state.HealthValueObject);
         }
 
+        // Called exactly when the owning character reaches zero HP.
+        // Hide the entire UI immediately, not a fade or a 0 HP frame.
+        private void HideDeadHud(Character character)
+        {
+            if (character == null || character.IsPlayer() || character.GetHealth() > 0f)
+                return;
+            EnemyUiState state;
+            if (_states.TryGetValue(character, out state) && state != null)
+            {
+                if (state.Gui != null) state.Gui.SetActive(false);
+                if (state.HealthValueObject != null) state.HealthValueObject.SetActive(false);
+            }
+            // Also handles a vanilla HUD created before our SetupHud registered it.
+            EnemyHud native = EnemyHud.instance;
+            if (native != null)
+            {
+                object data;
+                GameObject gui = GetHudGui(native, character, out data);
+                if (gui != null && gui.activeSelf) gui.SetActive(false);
+            }
+        }
+
+        [HarmonyPatch(typeof(Character), "SetHealth")]
+        private static class EnemyDeathInstantHide
+        {
+            private static void Postfix(Character __instance, float health)
+            {
+                if (health <= 0f && __instance != null && !__instance.IsPlayer())
+                    Instance?.HideDeadHud(__instance);
+            }
+        }
         [HarmonyPatch(typeof(EnemyHud), "ShowHud")]
         private static class EnemyHudShowHudPatch
         {
+            private static bool Prefix(Character c, bool isMount)
+            {
+                return c == null || c.IsPlayer() || c.GetHealth() > 0f;
+            }
+
             private static void Postfix(
                 EnemyHud __instance,
                 Character c,
