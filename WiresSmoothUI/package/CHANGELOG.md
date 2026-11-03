@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.6
+
+* Equipping and unequipping fill animations now ease in and out.
+* Fixed the bow reticle sometimes not coming back when drawing a new arrow right after a shot.
+* CDEV.EquipmentSlots quick slots now fade with the hotbar under Dynamic hotbar.
+
 ## 0.6.5
 
 * Picking a recipe no longer slides the whole station level box in: only its number pops, and only when it's a different number.

@@ -20,6 +20,7 @@ namespace WiresSmoothUI
 
         private float _crosshairVisibility;
         private bool _bowReleaseWaitingForZero;
+        private float _lastBowDraw, _bowDrawAtRelease;
         private GameObject _lastHoverObject;
         private bool _lastHoverInteractable;
 
@@ -126,6 +127,11 @@ namespace WiresSmoothUI
             {
                 // Valheim can report the previous bow draw for a frame after firing.
                 // Keep our independent ring hidden until the draw value has actually reset to zero.
+                // A new draw started before the old value ever hit zero: it restarts
+                // from below what was released, so show a fresh ring for it.
+                if (_bowReleaseWaitingForZero && bowDrawPercentage < _bowDrawAtRelease - .01f)
+                    _bowReleaseWaitingForZero = false;
+                _lastBowDraw = bowDrawPercentage;
                 if (_bowReleaseWaitingForZero)
                 {
                     HideRing(hud);
@@ -138,6 +144,7 @@ namespace WiresSmoothUI
 
             if (bowDrawPercentage <= 0f && _bowReleaseWaitingForZero)
                 _bowReleaseWaitingForZero = false;
+            _lastBowDraw = 0f;
 
             if (!WiresSmoothUIPlugin.ProjectileReticle.Value)
             {
@@ -517,6 +524,7 @@ namespace WiresSmoothUI
                 // until Valheim reports bowDrawPercentage == 0.
                 HideRing(Hud.instance);
                 _bowReleaseWaitingForZero = true;
+                _bowDrawAtRelease = _lastBowDraw;
                 return;
             }
 

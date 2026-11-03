@@ -147,8 +147,10 @@ namespace WiresSmoothUI
                 return;
 
             bool unequip = item.m_equipped;
+            // Ease in and out so the fill doesn't move at a flat robotic rate.
+            float eased = Mathf.SmoothStep(0f, 1f, progress);
             float fill = data.m_item == item
-                ? (data.m_type == Player.MinorActionData.ActionType.Unequip ? 1f - progress : progress)
+                ? (data.m_type == Player.MinorActionData.ActionType.Unequip ? 1f - eased : eased)
                 : (unequip ? 1f : 0f);
 
             if (!Filled.ContainsKey(queued))

@@ -674,6 +674,9 @@ namespace WiresSmoothUI
 
         private HudVisibilityReworkSystem.CanvasFadeGate _hotbarGate;
         private HudVisibilityReworkSystem.CanvasFadeGate _quickbarGate;
+        // CDEV.EquipmentSlots' HUD quick slots, clones of the forsaken power widget.
+        private readonly List<HudVisibilityReworkSystem.CanvasFadeGate> _cdevGates =
+            new List<HudVisibilityReworkSystem.CanvasFadeGate>();
 
 
         private HudVisibilityReworkSystem.CanvasFadeGate _staminaGate;
@@ -1254,6 +1257,8 @@ namespace WiresSmoothUI
             Transform root =
                 _hud.m_rootObject.transform;
 
+            BindCdevQuickSlots();
+
             // AzuEPI's public HotkeyBars property does not point at the same
             // visible quick-access root that Smooth UI historically faded.
             // Restore the proven HUD binding here rather than targeting the
@@ -1400,6 +1405,31 @@ namespace WiresSmoothUI
                 dt);
         }
 
+        private void BindCdevQuickSlots()
+        {
+            bool alive = _cdevGates.Count > 0;
+            foreach (var gate in _cdevGates)
+                alive &= gate.IsAlive;
+            if (alive || _hud.m_gpRoot == null)
+                return;
+            _cdevGates.Clear();
+            Transform parent = _hud.m_gpRoot.parent;
+            for (int i = 1; i <= 3; i++)
+            {
+                Transform slot = parent != null ? parent.Find("CDEV_QuickSlot" + i) : null;
+                if (slot != null)
+                    _cdevGates.Add(new HudVisibilityReworkSystem.CanvasFadeGate(
+                        slot.gameObject, WiresSmoothUIPlugin.DynamicHotbar.Value,
+                        preserveInteractable: true));
+            }
+        }
+
+        private void RestoreCdevQuickSlots()
+        {
+            foreach (var gate in _cdevGates)
+                gate.Restore();
+        }
+
         private void UpdateHotbars(
             Player player,
             bool combat,
@@ -1410,6 +1440,7 @@ namespace WiresSmoothUI
             {
                 _hotbarGate?.Restore();
                 _quickbarGate?.Restore();
+                RestoreCdevQuickSlots();
                 _hotbarActionWasActive = false;
                 _hotbarRevealUntil = -999f;
                 return;
@@ -1478,6 +1509,13 @@ namespace WiresSmoothUI
                 0f,
                 WiresSmoothUIPlugin.HotbarFadeSeconds.Value,
                 WiresSmoothUIPlugin.HotbarFadeSeconds.Value);
+
+            // CDEV quick slots ride along with the hotbar.
+            foreach (var gate in _cdevGates)
+                if (gate.IsAlive)
+                    gate.Update(wanted, dt, 0f,
+                        WiresSmoothUIPlugin.HotbarFadeSeconds.Value,
+                        WiresSmoothUIPlugin.HotbarFadeSeconds.Value);
 
             if (WiresSmoothUIPlugin.DynamicAzuQuickbar.Value)
                 _quickbarGate?.Update(wanted, dt, 0f,
@@ -2045,6 +2083,7 @@ namespace WiresSmoothUI
             RestoreHealthUnderfillColors();
             _hotbarGate?.Restore();
             _quickbarGate?.Restore();
+            RestoreCdevQuickSlots();
             _hotbarActionWasActive = false;
             _hotbarRevealUntil = -999f;
             _mluiWeightGate?.Restore();
@@ -2060,6 +2099,7 @@ namespace WiresSmoothUI
             RestoreHealthUnderfillColors();
             _hotbarGate?.Restore();
             _quickbarGate?.Restore();
+            RestoreCdevQuickSlots();
             _hotbarActionWasActive = false;
             _hotbarRevealUntil = -999f;
             _staminaGate?.Restore();
