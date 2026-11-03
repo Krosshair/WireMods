@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.7
+
+* Fixed the bow reticle not showing for a draw buffered during the previous shot's recovery.
+
 ## 0.6.6
 
 * Equipping and unequipping fill animations now ease in and out.

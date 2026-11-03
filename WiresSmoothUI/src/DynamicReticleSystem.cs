@@ -523,7 +523,10 @@ namespace WiresSmoothUI
                 // Hide exactly when Valheim fires the arrow, and suppress the stale draw value
                 // until Valheim reports bowDrawPercentage == 0.
                 HideRing(Hud.instance);
-                _bowReleaseWaitingForZero = true;
+                // The game usually zeroes the draw on release, before this launch
+                // event. Only wait when it still reports the old draw; otherwise a
+                // buffered next draw would never show its reticle.
+                _bowReleaseWaitingForZero = _lastBowDraw > 0f;
                 _bowDrawAtRelease = _lastBowDraw;
                 return;
             }
