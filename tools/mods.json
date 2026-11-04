@@ -338,6 +338,20 @@
       "nexus_mod_id": null,
       "nexus_file_id": null,
       "publish": true
+    },
+    "WiresAI": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "server-side",
+        "mods",
+        "tweaks"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
     }
   }
 }
