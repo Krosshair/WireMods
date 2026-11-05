@@ -179,9 +179,9 @@ namespace WiresAI
         private float CalcFearSensitivity()
         {
             if (Species.Contains("Skeleton")) return .12f;
-            if (Species.Contains("Seeker")) return .34f;
-            if (Species.Contains("Troll")) return .68f;
-            return 1f;
+            if (Species.Contains("Seeker")) return .25f;
+            if (Species.Contains("Troll")) return .4f;
+            return .7f;
         }
 
         private float CalcLossRageBias()

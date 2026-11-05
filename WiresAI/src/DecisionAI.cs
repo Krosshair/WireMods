@@ -31,9 +31,11 @@ private static float Roll(Individual p, uint index)
             float fear = Mathf.Clamp01(b.Fear * p.FearSensitivity);
             float aggression = p.Aggression, courage = p.Courage;
             float disadvantage = Mathf.Clamp01(-groupEffect);
-            float retreat = Mathf.Clamp01(.012f - .10f * aggression - .10f * courage +
-                .19f * disadvantage + .17f * (1f-hp) + .24f * fear -
-                .19f * confidence - .09f * b.Rage - .10f * b.Overpower);
+            // Running is a last resort: outnumbered, badly hurt or truly scared, and anger cancels it.
+            float hurt = 1f - hp;
+            float retreat = Mathf.Clamp01(-.03f - .12f * aggression - .14f * courage +
+                .10f * disadvantage + .14f * hurt * hurt + .12f * fear -
+                .19f * confidence - .20f * b.Rage - .10f * b.Overpower);
             // Pack contagion: social species copy their friends. Fearful ones follow the
             // fearless more readily than the other way round, and bold ones scoff at runners.
             float social = Mathf.Clamp01(p.SpeciesGroupFactor - .5f) * (.6f + .4f * p.Cohesion);
@@ -44,7 +46,7 @@ private static float Roll(Individual p, uint index)
                 {
                     float n = Mathf.Min(1f, b.PackRetreating / 2f);
                     if (courage > .3f) followCommit += social * .2f * courage * n; // "what a coward"
-                    else retreat = Mathf.Clamp01(retreat + social * .35f * Mathf.Clamp01(.5f - courage) * n);
+                    else retreat = Mathf.Clamp01(retreat + social * .15f * Mathf.Clamp01(.5f - courage) * n);
                 }
                 if (b.PackCommitting > 0)
                     followCommit += social * .25f * Mathf.Min(1f, b.PackCommitting / 2f) *
@@ -56,7 +58,7 @@ private static float Roll(Individual p, uint index)
             bool opening = b.Counts[1] + b.Counts[2] + b.Counts[3] + b.Counts[4] == 0;
             float temper = aggression + courage;
             if (now - b.LastRetreat < 10f) retreat = 0f; // no retreat spam
-            if (opening && temper < -.4f && roll >= retreat)
+            if (opening && temper < -.7f && roll >= retreat)
             { SetPosture(ai, b, p, Posture.Hesitate, now, "opening-timid", drive, retreat, confidence, hp, preyWounded);
               b.DecisionReason = null; b.NextDecisionAt = now + 3f; return; }
             if (opening && temper > .5f && roll >= retreat)
@@ -71,7 +73,7 @@ private static float Roll(Individual p, uint index)
                 if (now - b.StaggeredAt < 3f) followCommit -= .3f * SmartChance(p);
                 float direct = Mathf.Clamp01(followCommit + .46f + .26f*aggression +
                     .14f*courage + .20f*confidence + .13f*preyWounded +
-                    .14f*groupEffect + .12f*b.Rage - .15f*fear + .18f*b.Overpower);
+                    .14f*groupEffect + .20f*b.Rage - .08f*fear + .18f*b.Overpower);
                 float strategic = Mathf.Clamp01(.33f + .22f*p.Tactics -
                     .10f*aggression + .08f*disadvantage);
                 float choice = (roll - retreat) / Mathf.Max(.001f, 1f-retreat);

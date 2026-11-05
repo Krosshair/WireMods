@@ -52,7 +52,9 @@ namespace WiresAI
             {
                 float hitsToKillThem = Mathf.Max(1f, target.GetHealth()) / mine.GetTotalDamage();
                 float hitsToKillMe = Mathf.Max(1f, self.GetHealth()) / theirs.GetTotalDamage();
-                op += .55f * (float)System.Math.Tanh(Mathf.Log(hitsToKillMe / hitsToKillThem) / 1.5f);
+                // They can't know how strong you are: a bad matchup never makes them doubt, a good one
+                // still makes them bolder.
+                op += Mathf.Max(0f, .55f * (float)System.Math.Tanh(Mathf.Log(hitsToKillMe / hitsToKillThem) / 1.5f));
             }
             op += .25f * Mathf.Clamp(Mathf.Log(Mathf.Max(.05f, BodyRadius(self)) /
                 Mathf.Max(.05f, BodyRadius(target)), 2f) / 2f, -1f, 1f);

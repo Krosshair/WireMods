@@ -12,7 +12,7 @@ namespace WiresAI
     public sealed partial class WiresAIPlugin : BaseUnityPlugin
     {
         public const string Guid = "kajetan.valheim.wiresai";
-        public const string Version = "0.1.0";
+        public const string Version = "0.1.1";
         // Required on server and clients, gameplay settings follow the server.
         private static readonly ServerSync.ConfigSync Sync = new ServerSync.ConfigSync(Guid)
         {
@@ -89,7 +89,7 @@ namespace WiresAI
             {
                 float dt = Mathf.Max(0f, now - StateTime);
                 Rage *= Mathf.Exp(-.1155f * dt); // 6-second half-life
-                Fear *= Mathf.Exp(-.0866f * dt); // 8-second half-life
+                Fear *= Mathf.Exp(-.1386f * dt); // 5-second half-life
                 Confidence *= Mathf.Exp(-.05776f * dt); // 12s half-life
                 StateTime = now;
             }
@@ -385,8 +385,8 @@ namespace WiresAI
             if (incomingDamage > 0f && !self.IsBoss())
             {
                 float fraction = incomingDamage / Mathf.Max(1f,self.GetMaxHealth());
-                b.Rage = Mathf.Clamp01(b.Rage + fraction * 2.0f);
-                b.Fear = Mathf.Clamp01(b.Fear + fraction * 1.4f);
+                b.Rage = Mathf.Clamp01(b.Rage + fraction * 2.6f);
+                b.Fear = Mathf.Clamp01(b.Fear + fraction * .6f);
                 b.Confidence *= .94f;
                 // Nearly killed by this player: remembers to be careful.
                 b.NextDecisionAt = 0f;
@@ -494,7 +494,7 @@ namespace WiresAI
                 float rage = b.Rage * (.55f+.45f*Mathf.Max(0f,retaliation+.5f));
                 float fear = b.Fear * fearSensitivity * (1f-.25f*courage);
                 drive = .52f*agg + .24f*tactics + .50f*groupEffect +
-                    .35f*rage - .28f*fear;
+                    .35f*rage - .15f*fear;
                 if (leader != self && leader != null) drive += .12f * Mathf.Min(1f, groupFactor);
                 // Target turning tail: everyone gets braver, bold ones chase hard.
                 Vector3 away = enemy.GetVelocity(); away.y = 0f;
@@ -582,17 +582,17 @@ namespace WiresAI
                 brain.Decay(Time.time);
                 Individual p=physical.Individual;
                 // Dead ally can cause fear, hatred, opportunistic rage, or little response.
-                brain.Rage=Mathf.Clamp01(brain.Rage+.23f*p.LossRageBias*
+                brain.Rage=Mathf.Clamp01(brain.Rage+.32f*p.LossRageBias*
                     Mathf.Max(.10f, .75f+.45f*p.Retaliation));
-                brain.Fear=Mathf.Clamp01(brain.Fear+.18f*p.FearSensitivity*
+                brain.Fear=Mathf.Clamp01(brain.Fear+.08f*p.FearSensitivity*
                     Mathf.Max(.10f,.85f-.45f*p.Courage));
                 brain.NextDecisionAt=0f;
                 brain.DecisionReason="ally-killed";
                 if (brain.Leader == dead && GroupOf(c) == GroupOf(dead))
                 {
                     // Losing the pack leader hits pack species hardest.
-                    brain.Fear=Mathf.Clamp01(brain.Fear+.30f*Mathf.Clamp01(p.SpeciesGroupFactor-.4f));
-                    brain.Confidence*=.5f;
+                    brain.Fear=Mathf.Clamp01(brain.Fear+.15f*Mathf.Clamp01(p.SpeciesGroupFactor-.4f));
+                    brain.Confidence*=.75f;
                     brain.DecisionReason="leader-killed";
                 }
                 if (_verbose.Value)
