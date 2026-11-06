@@ -311,7 +311,10 @@ namespace WiresSmoothUI
                 return;
 
             RectTransform page = __instance.m_tabs[index].m_page;
-            if (page != null)
+            // Only real pages, not a button (a tab bar can point its page at one), and not the build
+            // menu's: its tabs swap lists inside one panel (the category list on the left grew a
+            // little every time its tab was opened), and the menu pops in as a whole already.
+            if (page != null && page.GetComponent<Selectable>() == null && __instance.GetComponentInParent<BuildUi>() == null)
                 PanelMotionSystem.Open(page, 0.98f);
         }
     }

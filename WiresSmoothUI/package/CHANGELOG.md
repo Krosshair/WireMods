@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.8
+
+* Fixed the build menu's category list and tab labels growing a little every time you switched build tabs.
+
 ## 0.6.7
 
 * Fixed the bow reticle not showing for a draw buffered during the previous shot's recovery.

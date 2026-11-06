@@ -118,6 +118,12 @@ namespace WiresSmoothUI
             if (state.ActiveIndex >= 0)
                 return;
 
+            // Hidden or detached (the build menu returns its category buttons to a pool, unparented,
+            // on every tab switch): nothing to animate, and its scale out there is in a different
+            // space (taking it as the rest size made the buttons grow by the canvas scale each switch).
+            if (state.Root == null || !state.Root.gameObject.activeInHierarchy)
+                return;
+
             CaptureBase(state);
             state.Scale = 1f;
             state.Sway = Vector2.zero;
@@ -158,6 +164,10 @@ namespace WiresSmoothUI
                 }
 
                 RestoreState(state);
+
+                // moved to another parent since its rest size was taken (pooled and reused): take it again
+                if (root.parent != state.Parent)
+                    CaptureBase(state);
 
                 bool mouse = state.Hovered && ZInput.instance != null && ZInput.IsMouseActive();
                 bool gamepad = state.Selected && ZInput.instance != null && ZInput.IsExclusiveGamepadActive();

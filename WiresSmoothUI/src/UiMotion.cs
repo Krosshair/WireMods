@@ -270,6 +270,12 @@ namespace WiresSmoothUI
             if (t == null || !t.gameObject.activeInHierarchy)
                 return null;
 
+            // A button already scaled by the hover animation (ButtonAnimationSystem) isn't animated
+            // here too: two owners scaling one transform each take the other's change as the new
+            // rest size, and it grows a little every time (seen on the build menu's tabs).
+            if (t.GetComponent<ButtonMotionHook>() != null)
+                return null;
+
             if (!Entries.TryGetValue(t, out Entry e))
             {
                 e = new Entry
