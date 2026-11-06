@@ -352,6 +352,19 @@
       "nexus_mod_id": null,
       "nexus_file_id": null,
       "publish": true
+    },
+    "WiresAcoustics": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "audio",
+        "client-side",
+        "mods"
+      ],
+      "hexium": true,
+      "nexus_mod_id": 4854,
+      "nexus_file_id": null,
+      "publish": true
     }
   }
 }
