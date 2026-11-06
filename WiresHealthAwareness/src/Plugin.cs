@@ -17,7 +17,7 @@ namespace WiresDamageVignette
     {
         public const string Guid = "wire.valheim.healthawareness";
         public const string Name = "Wire's Health Awareness";
-        public const string Version = "0.3.7";
+        public const string Version = "0.3.8";
 
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<float> StartHealthPercent;

@@ -49,6 +49,11 @@ namespace WiresDamageVignette
             _source.pitch = 1f;
             _source.spatialBlend = 0f;
             _source.dopplerLevel = 0f;
+            // It's inside your head, not in the world: no room reverb
+            // (reverb zones reach 2D sounds too) and no listener effects.
+            _source.bypassReverbZones = true;
+            _source.reverbZoneMix = 0f;
+            _source.bypassListenerEffects = true;
             _source.priority = 96;
             _source.volume = 0f;
             _source.ignoreListenerPause = false;

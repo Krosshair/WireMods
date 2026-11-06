@@ -1,7 +1,7 @@
 {
     "name": "WiresHealthAwareness",
     "description": "An overengineered health awareness mod.",
-    "version_number": "0.3.7",
+    "version_number": "0.3.8",
     "website_url": "",
     "dependencies": []
 }
