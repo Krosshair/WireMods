@@ -3,24 +3,26 @@ using UnityEngine;
 
 namespace WiresAcoustics
 {
-    // How many sounds get this mod's audio processing at once. Each processed sound runs a callback on
-    // Unity's audio thread, and while that thread is busy the game's own calls into the audio engine
-    // wait for it: too many at once means crackling sound and, worse, stutter and hitches in the game
-    // (a swamp in the rain plays a lot at once). So only the nearest playing sounds are processed,
-    // up to a count that follows how busy the audio thread actually is: the callbacks' time is
-    // measured, and the count drops quickly when they take more than a fifth of the real time and
-    // creeps back up when they take under a tenth. (Measured on a fast desktop in a swamp: about 50
-    // sounds took over a fifth of the real time, so a slower machine needs the count to come down.) Sounds past the count are left to Unity (its own panning,
-    // no muffling, no callback). Voices, the sea, the ambience loops and the menu are always processed.
+    // Levels of detail for the sound processing, like a game's model LODs. Every playing sound with
+    // something to do is processed (muffling, air, distance, direction); none is switched off for
+    // cost. The nearest get the full HRTF (the delay between the ears, the ear filters, the outer
+    // ear's cues), the rest a cheaper direction (the level difference between the ears only), which
+    // past that distance you can't tell apart anyway. How many get the full HRTF follows how busy
+    // Unity's audio thread actually is: the callbacks' time is measured, and the count drops quickly
+    // when they take more than a fifth of the real time and creeps back up under a tenth (a busy
+    // audio thread holds up the game's own calls into the audio engine: stutter and hitches on a
+    // slower machine). Voices, the sea, the ambience loops and the menu always get the full one.
     internal static class Budget
     {
-        internal const int Most = 32, Least = 8;
+        internal const int Most = 32, Least = 4;
         private const float Every = .25f, High = .2f, Low = .1f;
-        private static int s_count = 24;
+        private static int s_count = 16; // how many get the full HRTF
         private static readonly List<AcousticFilter> Playing = new List<AcousticFilter>(128);
         private static float s_cutoff = float.MaxValue, s_next, s_load, s_nextEchoDrop;
-        private static int s_on, s_calls;
+        private static int s_on, s_calls, s_hrtfCalls;
+        private static float s_echoShare;
         private static long s_stamp;
+        private static float s_perCall;
 
         private static readonly System.Comparison<AcousticFilter> Nearest = (a, b) =>
         {
@@ -28,21 +30,41 @@ namespace WiresAcoustics
             return a.LastDist.CompareTo(b.LastDist);
         };
 
-        // A sound playing (Occlusion, Recheck, Voices, Ocean): processed at once if it's within the
-        // count, so a new sound behind a wall starts muffled.
+        // A sound playing (Occlusion, Recheck, Voices, Ocean): processed at once, so a new sound
+        // behind a wall starts muffled; full HRTF if it's as near as the nearest few.
         internal static void Note(AcousticFilter f, float dist)
         {
             f.LastDist = dist;
-            bool fresh = !f.InBudget;
-            if (fresh)
+            if (!f.InBudget)
             {
                 f.InBudget = true;
                 Playing.Add(f);
             }
-            if (f.Cue) { if (f.enabled) f.enabled = false; return; }
-            bool want = f.AlwaysOn || s_on < s_count || dist <= s_cutoff;
-            if (want && !f.enabled) { f.enabled = true; s_on++; }
-            else if (!want && fresh && f.enabled) f.enabled = false; // a new sound past the count (one already counted waits for Step)
+            if (f.Cue) { f.Active = false; return; }
+            if (!f.enabled) Toggle(f, true); // only after the mod was switched off and on
+            if (!f.Active) { f.Active = true; s_on++; }
+            f.Full = f.AlwaysOn || dist <= s_cutoff;
+        }
+
+        // Switching a filter component on (Debug log: timed, it can wait for Unity's audio mixer; now rare).
+        private static int s_toggles;
+        private static long s_toggleTicks, s_toggleWorst;
+        private static void Toggle(AcousticFilter f, bool on)
+        {
+            if (!Plugin.DebugLog.Value) { f.enabled = on; return; }
+            long t = System.Diagnostics.Stopwatch.GetTimestamp();
+            f.enabled = on;
+            t = System.Diagnostics.Stopwatch.GetTimestamp() - t;
+            s_toggles++; s_toggleTicks += t;
+            if (t > s_toggleWorst) s_toggleWorst = t;
+        }
+
+        internal static string Toggles()
+        {
+            double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            string r = "filters switched " + s_toggles + " times (" + (s_toggleTicks * f).ToString("F3") + " ms total, worst " + (s_toggleWorst * f).ToString("F3") + " ms)";
+            s_toggles = 0; s_toggleTicks = 0L; s_toggleWorst = 0L;
+            return r;
         }
 
         // A few times a second, from Room's tick.
@@ -52,8 +74,10 @@ namespace WiresAcoustics
             s_next = now + Every;
 
             long stamp = System.Diagnostics.Stopwatch.GetTimestamp();
-            long ticks = AcousticFilter.TakeTicks(out s_calls);
+            long ticks = AcousticFilter.TakeTicks(out s_calls, out long echoTicks, out s_hrtfCalls);
             if (s_stamp != 0L && stamp > s_stamp) s_load = (float)ticks / (stamp - s_stamp);
+            s_echoShare = ticks > 0 ? (float)echoTicks / ticks : 0f;
+            s_perCall = s_calls > 0 ? (float)(ticks * 1e6 / System.Diagnostics.Stopwatch.Frequency / s_calls) : 0f;
             s_stamp = stamp;
             if (s_load > High) s_count = Mathf.Max(Least, s_count * 3 / 4);
             else if (s_load < Low) s_count = Mathf.Min(Most, s_count + 2);
@@ -66,7 +90,7 @@ namespace WiresAcoustics
                 if (!ReferenceEquals(f, null))
                 {
                     f.InBudget = false;
-                    if (f != null && f.enabled && f.Kind != AcousticFilter.Kinds.Ambient) f.enabled = false;
+                    if (f != null && f.Kind != AcousticFilter.Kinds.Ambient) f.Active = false;
                 }
                 Playing[i] = Playing[Playing.Count - 1];
                 Playing.RemoveAt(Playing.Count - 1);
@@ -78,15 +102,22 @@ namespace WiresAcoustics
             s_cutoff = float.MaxValue;
             foreach (AcousticFilter f in Playing)
             {
-                bool want = !f.Cue && (f.AlwaysOn || placed < s_count);
+                // processed if there's anything to do (nothing in the way, no HRTF, near: off, free)
+                bool want = !f.Cue && f.NeedsWork;
+                f.Active = want;
+                if (!want) continue;
+                s_on++;
+                // the nearest get the full HRTF, the rest the cheaper direction
+                // a little give at the edge, so a sound near the limit doesn't flip back and forth
+                bool full = f.AlwaysOn || placed < s_count || (f.Full && placed < s_count + 2);
                 if (!f.AlwaysOn)
                 {
                     if (placed == s_count - 1) s_cutoff = f.LastDist;
                     placed++;
                 }
-                if (f.enabled != want) f.enabled = want;
-                if (want) s_on++;
+                f.Full = full;
             }
+            if (placed < s_count) s_cutoff = float.MaxValue;
 
             if (now >= s_nextEchoDrop)
             {
@@ -103,7 +134,29 @@ namespace WiresAcoustics
             s_cutoff = float.MaxValue;
         }
 
+        // Debug: how much the processing changes loudness, overall and for the sounds it changes most.
+        private static readonly List<KeyValuePair<float, string>> Levels = new List<KeyValuePair<float, string>>();
+        internal static string Loudness()
+        {
+            AcousticFilter.Meter = Plugin.DebugLog.Value;
+            double inSum = 0d, outSum = 0d;
+            Levels.Clear();
+            foreach (AcousticFilter f in Playing)
+            {
+                if (f == null || f.MeterIn <= 1e-9) { if (f != null) { f.MeterIn = 0d; f.MeterOut = 0d; } continue; }
+                inSum += f.MeterIn; outSum += f.MeterOut;
+                float db = (float)(10d * System.Math.Log10(System.Math.Max(1e-12, f.MeterOut) / f.MeterIn));
+                Levels.Add(new KeyValuePair<float, string>(db, f.name + " " + db.ToString("+0.0;-0.0") + " dB at " + f.LastDist.ToString("F0") + " m" + (f.Full ? "" : " (light)") + " [" + f.Explain() + "]"));
+                f.MeterIn = 0d; f.MeterOut = 0d;
+            }
+            if (inSum <= 1e-9) return "level: nothing measured";
+            Levels.Sort((a, b) => a.Key.CompareTo(b.Key));
+            var sb = new System.Text.StringBuilder("level after processing " + (10d * System.Math.Log10(outSum / inSum)).ToString("+0.0;-0.0") + " dB overall; most changed:");
+            for (int i = 0; i < Levels.Count && i < 6; i++) sb.Append(" " + Levels[i].Value + ";");
+            return sb.ToString();
+        }
+
         internal static string Summary() =>
-            "processing " + s_on + " of " + Playing.Count + " playing (up to " + s_count + "), audio thread " + (s_load * 100f).ToString("F1") + "% in " + s_calls + " callbacks";
+            "processing " + s_on + " of " + Playing.Count + " playing (full HRTF for the nearest " + s_count + "), audio thread " + (s_load * 100f).ToString("F1") + "% in " + s_calls + " callbacks (" + s_hrtfCalls + " with the HRTF), " + s_perCall.ToString("F1") + " us each, echo " + (s_echoShare * 100f).ToString("F0") + "% of it";
     }
 }

@@ -33,11 +33,12 @@ namespace WiresAcoustics
             AcousticFilter f = __instance.GetComponent<AcousticFilter>();
             if (f != null && f.Cue) return; // a game cue: as the game made it
             if (Stackify.Active) Stackify.Restore(src); // a chest's sound from Wire's Stackify: a world sound at the chest
+            if (Plugin.DebugLog.Value) Describe(__instance, src, f);
             if (src.spatialBlend < .5f)
             {
                 // Positionless ambience (birds, biome loops): muffled by how closed in you are.
                 if (Ambience.IsAmbient(src)) { Ambience.Apply(__instance.gameObject, !src.isPlaying); return; }
-                // A player's own unplaced sounds are placed at the player; anything else stays as it is.
+                // a player's own unplaced sounds are placed at the player; anything else stays as it is
                 if (!PlayerSounds.Place(__instance, src)) return;
             }
             AudioListener listener = AudioMan.instance != null ? AudioMan.instance.GetActiveAudioListener() : null;
@@ -48,7 +49,7 @@ namespace WiresAcoustics
             float dist = d.magnitude;
             Mist.Undo(__instance, src, dist); // no pitch drop in the mist
 
-            // Reverb send. Vanilla raises it with distance only (/64 m). In a room what tells you how far
+            // Reverb send, ours everywhere (vanilla raises it with distance only, /64 m). What tells you how far
             // a sound is, is how much of it is direct and how much is the room: near sounds are mostly
             // direct, past the room's critical distance mostly reverb. That distance grows with how
             // much the room swallows (furniture).
@@ -56,7 +57,7 @@ namespace WiresAcoustics
             if (reverb)
             {
                 float critical = 2f + 10f * Room.Absorption;
-                src.reverbZoneMix = Mathf.Lerp(src.reverbZoneMix, dist / (dist + critical), Room.Enclosure);
+                src.reverbZoneMix = dist / (dist + critical);
             }
 
             bool hrtf = Plugin.Hrtf.Value;
@@ -67,13 +68,25 @@ namespace WiresAcoustics
             // corners) go to the worker threads (Batch) and it glides open if one is better. A playing
             // loop is checked there entirely and glides to its value.
             float first = float.MaxValue;
+            if (f != null)
+            {
+                Area.Measure(f, __instance.transform);
+                f.Stereo = src.clip != null && src.clip.channels > 1;
+            }
+            Own = f != null && f.ShapeRoot != null ? f.ShapeRoot.root : null;
             float occ = starting && Plugin.Occlusion.Value ? Blocking(from, to, out first) : 0f;
+            Own = null;
             s_checked++;
             if (occ > .05f) s_muffled++;
             if (occ <= .05f && !under && f == null && !hrtf && !AcousticFilter.GlobalActive && starting) return;
             if (f == null) { f = __instance.gameObject.AddComponent<AcousticFilter>(); s_added++; }
             f.Kind = AcousticFilter.Kinds.Sfx;
             f.Placed = true;
+            // The game's random ambience (a bird, a gust, an insect somewhere round you) is placed at a
+            // made-up spot 1 to 40 m off with its own gentle fall-off: it stands for the world around
+            // you, not one creature, so it keeps that (on a real distance curve it was 15 to 20 dB quieter at 10 to 20 m).
+            bool ambience = AudioMan.instance != null && __instance.transform.parent == AudioMan.instance.transform;
+            f.Physical(Plugin.RealDistance.Value && !f.Voice && !ambience);
             Budget.Note(f, dist); // processed now if it's among the nearest playing sounds
             if (Bounces.EchoGain > .003f) f.EnsureEcho();
             float gain = 1f, cutoff = 22000f;
@@ -88,11 +101,10 @@ namespace WiresAcoustics
                 if (under) { gain *= Underwater.Gain; cutoff = Mathf.Min(cutoff, Underwater.Cutoff); } // the sound is under water
                 f.DistanceGain = f.FadeAt(dist);
                 f.AirCutoff = AcousticFilter.AirAt(dist);
-                if (Plugin.DebugLog.Value) Far(__instance, src, f, dist);
                 f.Set(gain, cutoff, true);
-                if (occ >= .3f && f.enabled) Batch.Enqueue(f, to, under, reverb);
+                if (occ >= .3f && f.Active) Batch.Enqueue(f, to, under, reverb);
             }
-            else if (f.enabled) Batch.Enqueue(f, to, under, reverb);
+            else if (f.Active) Batch.Enqueue(f, to, under, reverb);
             // Direction is ours (AcousticFilter): Unity's panning is flattened to "both ears equally".
             if (hrtf)
             {
@@ -135,12 +147,14 @@ namespace WiresAcoustics
             return occ;
         }
 
-        // How much one hit collider counts between you and a sound at "to". Not at all if it is what
-        // makes the sound: furniture, stations, props whose box (+30 cm) holds it, or anything the sound
-        // is actually inside. A wall, floor or roof right next to a sound (a wall torch, a sconce)
-        // still counts: from the other side of that wall it's behind it.
+        // How much one hit collider counts between you and a sound at "to". Not at all if it's part
+        // of what makes the sound (Own: its shape, Area), or furniture, stations, props whose box
+        // (+30 cm) holds it, or anything the sound is actually inside. A wall, floor or roof right
+        // next to a sound (a wall torch, a sconce) still counts: from the other side it's behind it.
+        internal static Transform Own;
         internal static float Counts(Collider c, Vector3 to)
         {
+            if (Own != null && c.transform.root == Own) return 0f;
             Bounds b = c.bounds;
             b.Expand(.3f);
             if (!b.Contains(to)) return Weight(c);
@@ -171,6 +185,21 @@ namespace WiresAcoustics
         }
 
         // Walls in between as gain and low-pass cutoff (strength applied), between the table's steps.
+        // Debug: each sound once by name, as the game made it and how it's handled here.
+        private static readonly System.Collections.Generic.HashSet<string> Described = new System.Collections.Generic.HashSet<string>();
+        private static void Describe(ZSFX z, AudioSource src, AcousticFilter f)
+        {
+            string n = z.name.Replace("(Clone)", "");
+            if (Described.Count > 2000 || !Described.Add(n)) return;
+            if (f != null) Area.Measure(f, z.transform);
+            string how = src.spatialBlend < .5f ? (Ambience.IsAmbient(src) ? "ambience (muffled by how enclosed you are)" : "unplaced, left as the game plays it") : "placed";
+            string shape = f != null && f.AreaRadius > 0f ? ", shape " + (2f * f.AreaRadius).ToString("F1") + " m wide" : "";
+            Plugin.Log.LogInfo("[acoustics] sound " + n + ": " + how + "; blend " + src.spatialBlend.ToString("F2") + ", " +
+                (src.outputAudioMixerGroup != null ? src.outputAudioMixerGroup.name : "no mixer group") + ", " + src.rolloffMode + " " +
+                src.minDistance.ToString("F0") + "-" + src.maxDistance.ToString("F0") + " m, spread " +
+                src.spread.ToString("F0") + ", volume " + src.volume.ToString("F2") + shape);
+        }
+
         internal static void Muffle(float occ, out float gain, out float cutoff)
         {
             float s = Plugin.Occlusion.Value ? Mathf.Clamp(Plugin.OcclusionStrength.Value, 0f, 1.5f) : 0f;
@@ -229,25 +258,17 @@ namespace WiresAcoustics
                 AudioSource src = f.Source;
                 if (!src.isPlaying || src.spatialBlend < .5f) continue;
                 if (f.Kind == AcousticFilter.Kinds.Other && hrtf && !f.Hrtf) { f.TakePanning(src.spread); f.Hrtf = true; }
+                Area.Measure(f, f.transform);
                 f.Placed = true;
+                f.Physical(Plugin.RealDistance.Value);
                 Budget.Note(f, (f.transform.position - listener).magnitude);
-                if (!f.enabled) continue; // past the count: left to Unity until it's among the nearest
+                if (!f.Active) continue; // past the count: left to Unity until it's among the nearest
                 if (Bounces.EchoGain > .003f) f.EnsureEcho();
                 if (!occlusion) continue;
                 if (f.Kind == AcousticFilter.Kinds.Sfx && (src.loop || now - f.StartedAt < .4f)) continue;
                 Vector3 at = f.transform.position;
                 Batch.Enqueue(f, at, Underwater.Muffles(at, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
             }
-        }
-
-        // Debug: each sound heard far out, once by name: how the game made it fade with distance.
-        private static readonly System.Collections.Generic.HashSet<string> FarLogged = new System.Collections.Generic.HashSet<string>();
-        private static void Far(ZSFX z, AudioSource src, AcousticFilter f, float dist)
-        {
-            float max = f.Fades ? f.MaxDistance : src.maxDistance;
-            if (dist < .6f * max || FarLogged.Count > 500 || !FarLogged.Add(z.name)) return;
-            Plugin.Log.LogInfo("[acoustics] far sound " + z.name + " at " + dist.ToString("F0") + " m: " + src.rolloffMode + " rolloff, " +
-                src.minDistance.ToString("F0") + "-" + max.ToString("F0") + " m" + (f.Fades ? " (reaches " + src.maxDistance.ToString("F0") + " m here)" : ""));
         }
 
         internal static string Summary()

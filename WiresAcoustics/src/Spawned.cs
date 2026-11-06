@@ -19,7 +19,7 @@ namespace WiresAcoustics
             {
                 if (src == null || src.GetComponent<AcousticFilter>() != null) continue;
                 if (man != null && man.m_guiMixer != null && src.outputAudioMixerGroup == man.m_guiMixer) continue;
-                src.gameObject.AddComponent<AcousticFilter>().enabled = false; // switched on by Budget while it matters
+                src.gameObject.AddComponent<AcousticFilter>().Active = false; // switched on by Budget while it matters
                 s_sources++;
             }
             foreach (AudioReverbZone z in root.GetComponentsInChildren<AudioReverbZone>(true))

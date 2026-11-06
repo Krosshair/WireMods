@@ -20,7 +20,7 @@ namespace WiresAcoustics
 
         // A sound at p, heard from the listener: muffled only when the whole source is under water.
         // Creature sounds play at their feet or middle, so a swimming greydwarf's would count as under
-        // water: for a creature (the sound's own, or the one it plays at) its head has to be under.
+        // water: for a creature (the sound's own, or the one it plays at) its top has to be under.
         // Anything else: 30 cm under, so splashes at the surface stay clear.
         internal static bool Muffles(Vector3 p, Transform source)
         {
@@ -28,8 +28,11 @@ namespace WiresAcoustics
             Character c = source != null ? source.GetComponentInParent<Character>() : null;
             if (c == null) c = CharacterAt(p);
             if (c == null) return true;
-            Vector3 head = c.GetHeadPoint();
-            return Floating.GetLiquidLevel(head) > head.y + .05f;
+            // the top of its body capsule, else a metre above its feet
+            CapsuleCollider body = c.GetComponent<CapsuleCollider>();
+            Vector3 top = c.transform.position + Vector3.up;
+            if (body != null) { Bounds b = body.bounds; top = new Vector3(b.center.x, b.max.y, b.center.z); }
+            return Floating.GetLiquidLevel(top) > top.y + .05f;
         }
 
         // The creature a sound plays at (effects are spawned at it, not under it). Only asked for

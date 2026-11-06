@@ -8,18 +8,21 @@ namespace WiresAcoustics
     // The sea, heard from the sea. Vanilla plays the ocean loop at the average centre of the ocean
     // zones (64 m squares) around you, 75% placed and spread wide, so it's mostly "everywhere". Here,
     // once a second, rays straight down at 96 points around the listener (16 directions, 10 to 110 m,
-    // on worker threads, read on the next update) find deep water (ground 6 m or more under sea
-    // level); the loop moves to the nearest shoreline in that direction (each direction's first deep
-    // water point, weighted by 1 / distance squared). It then gets what every placed sound gets:
-    // muffling by walls, paths through openings (Batch) and the HRTF. Vanilla still decides its volume
-    // (wind, whether there's ocean nearby at all).
+    // on worker threads, read on the next update) find where the water starts (ground under sea
+    // level); the loop moves to the nearest shoreline, where the waves break (each direction's first
+    // water point, weighted by 1 / distance squared, a metre above the surface). It then gets what
+    // every placed sound gets: muffling by walls, paths through openings (Batch) and the HRTF; the
+    // beach itself, right at the water, doesn't hide it (Batch: Shore). Vanilla still decides its
+    // volume (wind, whether there's ocean nearby at all).
+    // (It was placed at the first water 6 m deep: measured in game, that put it 80 to 105 m out,
+    // past most of its range, with the beach in the way: 7.7 dB quieter and dull.)
     [HarmonyPatch(typeof(AudioMan), "UpdateOceanAmbiance")]
     internal static class Ocean
     {
         private static readonly AccessTools.FieldRef<AudioMan, AudioSource> Source = AccessTools.FieldRefAccess<AudioMan, AudioSource>("m_oceanAmbientSource");
         private static readonly float[] Radii = { 10f, 20f, 35f, 55f, 80f, 110f };
         private const int Dirs = 16, Height = 300;
-        private const float Interval = 1f, Deep = 6f, Follow = .05f;
+        private const float Interval = 1f, Wet = .3f, Surf = 1f, Follow = .05f;
         private static NativeArray<RaycastCommand> s_cmds;
         private static NativeArray<RaycastHit> s_hits;
         private static JobHandle s_job;
@@ -91,9 +94,9 @@ namespace WiresAcoustics
                 for (int k = 0; k < Radii.Length; k++)
                 {
                     RaycastHit h = s_hits[d * Radii.Length + k];
-                    if (h.collider == null || h.point.y > sea - Deep) continue;
+                    if (h.collider == null || h.point.y > sea - Wet) continue;
                     float w = 1f / (Radii[k] * Radii[k]);
-                    sum += new Vector3(h.point.x, sea, h.point.z) * w;
+                    sum += new Vector3(h.point.x, sea + Surf, h.point.z) * w;
                     weight += w;
                     break; // the first deep water point in this direction
                 }

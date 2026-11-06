@@ -2,13 +2,12 @@ using UnityEngine;
 
 namespace WiresAcoustics
 {
-    // The game plays many of a player's own sounds unplaced (2D): equipping, moving, drawing a bow,
-    // reloading a crossbow, staff casts. Unplaced sounds are heard "in the camera". Any unplaced sound
-    // on a player, or spawned right at one, is made placed instead (heard from the player, through the
-    // HRTF and walls like any sound) and follows that player (Follow). Its near distance is raised to
-    // a third-person camera's distance, so it isn't quieter than the game made it. Interface sounds,
-    // ambience and the game's cues that aren't sounds in the world (skill level-up, the adrenaline
-    // and perfect dodge cues) stay as they are.
+    // The game plays some of a player's own sounds unplaced (2D), "in the camera" (picking things up,
+    // some tool and item sounds). Any unplaced sound on a player, or spawned right at one, is made
+    // placed instead (heard from the player, through the HRTF and walls like any sound) and follows
+    // that player (Follow). Its near distance is raised to a third-person camera's distance, so it
+    // isn't quieter than the game made it. Interface sounds, ambience and the game's cues that aren't
+    // sounds in the world (skill level-up, the adrenaline and perfect dodge cues) stay as they are.
     internal static class PlayerSounds
     {
         private const float Near = 2.5f;
@@ -17,7 +16,7 @@ namespace WiresAcoustics
         // (Occlusion: sounds on the player's own objects): true if it's now placed.
         internal static bool Place(ZSFX z, AudioSource src)
         {
-            if (!Plugin.Enabled.Value || src == null || src.spatialBlend >= .5f) return false;
+            if (!Plugin.Enabled.Value || z == null || src == null || src.spatialBlend >= .5f) return false;
             AcousticFilter cue = z.GetComponent<AcousticFilter>();
             if (cue != null && cue.Cue) return false;
             AudioMan man = AudioMan.instance;
@@ -32,6 +31,35 @@ namespace WiresAcoustics
             AcousticFilter f = z.GetComponent<AcousticFilter>();
             if (f != null) f.Player = p.transform;
             return true;
+        }
+
+        // The player a sound starts right at (within 2.5 m of the body's middle), if any.
+        internal static Transform At(Vector3 at)
+        {
+            global::Player best = null;
+            float bestSq = Near * Near;
+            foreach (global::Player q in global::Player.GetAllPlayers())
+            {
+                if (q == null) continue;
+                float d = (q.transform.position + Vector3.up - at).sqrMagnitude;
+                if (d < bestSq) { bestSq = d; best = q; }
+            }
+            return best != null ? best.transform : null;
+        }
+
+        private static global::Player Of(Transform t)
+        {
+            global::Player p = t.GetComponentInParent<global::Player>();
+            if (p != null) return p;
+            Vector3 at = t.position;
+            float best = Near * Near;
+            foreach (global::Player q in global::Player.GetAllPlayers())
+            {
+                if (q == null) continue;
+                float d = (q.transform.position + Vector3.up - at).sqrMagnitude;
+                if (d < best) { best = d; p = q; }
+            }
+            return p;
         }
 
         internal static bool IsCue(EffectList e)
@@ -52,24 +80,10 @@ namespace WiresAcoustics
                     AcousticFilter f = z.GetComponent<AcousticFilter>();
                     if (f == null) f = z.gameObject.AddComponent<AcousticFilter>();
                     f.Cue = true;
-                    f.enabled = false;
+                    f.Active = false;
                 }
             }
         }
 
-        private static global::Player Of(Transform t)
-        {
-            global::Player p = t.GetComponentInParent<global::Player>();
-            if (p != null) return p;
-            Vector3 at = t.position;
-            float best = Near * Near;
-            foreach (global::Player q in global::Player.GetAllPlayers())
-            {
-                if (q == null) continue;
-                float d = (q.transform.position + Vector3.up - at).sqrMagnitude;
-                if (d < best) { best = d; p = q; }
-            }
-            return p;
-        }
     }
 }

@@ -53,18 +53,49 @@ namespace WiresAcoustics
                 s_job.Complete();
                 s_pending = false;
                 Vector3 lp = listener.position;
-                Quaternion inv = Quaternion.Inverse(listener.rotation);
+                Quaternion rot = listener.rotation, inv = Quaternion.Inverse(rot);
+                // Wind carries sound: downwind of a sound it reaches further, upwind less (the wind
+                // bends it down toward you or up over you). Grows with distance: nothing up close.
+                Doppler.Frame(lp);
+                bool echo = Bounces.EchoGain > .003f;
+                Vector3 wall = lp + Bounces.EchoDir * Bounces.EchoDist; // where the echo comes from
+                float dt = Time.deltaTime;
+                Vector3 wind = Vector3.zero;
+                if (EnvMan.instance != null) wind = EnvMan.instance.GetWindDir() * EnvMan.instance.GetWindIntensity();
                 for (int i = 0; i < List.Count; i++)
                 {
                     AcousticFilter f = List[i];
                     if (f == null) continue;
                     Vector4 r = s_dirs[i];
                     f.LastDist = r.w;
-                    if (f.Fades) f.DistanceGain = f.FadeAt(r.w);
+                    if (f.Placed) Doppler.Update(f, r.w, dt);
+                    if (echo && f.Placed)
+                    {
+                        Vector3 at = lp + rot * new Vector3(r.x, r.y, r.z) * r.w;
+                        float path = (at - wall).magnitude + Bounces.EchoDist;
+                        f.EchoDelay = Mathf.Max(0f, path - r.w) / Travel.Speed;
+                        f.EchoShare = Mathf.Clamp(r.w / Mathf.Max(.1f, path), 0f, .5f);
+                    }
+                    Vector3 local = new Vector3(r.x, r.y, r.z);
+                    if (f.Placed)
+                    {
+                        Vector3 toListener = -(rot * local); // from the sound toward you
+                        float carry = 1f + .35f * Vector3.Dot(wind, toListener) * Mathf.Clamp01((r.w - 15f) / 60f);
+                        f.DistanceGain = f.FadeAt(r.w) * Mathf.Clamp(carry, .65f, 1.3f);
+                        // an area (a hearth, lava) sounds as wide as it looks from here
+                        if (f.AreaRadius > 0f) f.Width = Mathf.Max(f.BaseWidth, Area.WidthAt(f.AreaRadius, r.w));
+                        // a creature's sound comes out of its front: duller from behind it
+                        Transform facing = f.Facing;
+                        if (facing != null)
+                        {
+                            float c = Vector3.Dot(facing.forward, toListener);
+                            f.FacingCutoff = c >= 0f ? 22000f : Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(5000f), -c));
+                        }
+                    }
                     if (f.Placed) f.AirCutoff = AcousticFilter.AirAt(r.w);
                     // heard through an opening, round a corner or by a bounce: from there
                     if (f.Hrtf && f.Kind != AcousticFilter.Kinds.Ambient)
-                        f.SetDirection(f.Routed ? inv * (f.RoutePoint - lp).normalized : new Vector3(r.x, r.y, r.z));
+                        f.SetDirection(f.Routed ? inv * (f.RoutePoint - lp).normalized : local);
                 }
             }
             Apply();

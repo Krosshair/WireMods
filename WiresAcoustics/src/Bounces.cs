@@ -19,10 +19,11 @@ namespace WiresAcoustics
     // finds the way the openings and corner points can't. Heard from the first bounce.
     //
     // Echo: out in the open, a big surface facing you 15 to 50 m away (a cliff, a hillside, a wall)
-    // sends sounds back from its side, 2 x distance / 343 m/s later. The strongest is picked from the
-    // room rays (facing you, hard, near, several rays on it) and every placed sound gets a delayed,
-    // duller copy from that direction (AcousticFilter). Fades in the more enclosed you are, where the
-    // room's reverb is what you hear.
+    // sends sounds back from its side. The strongest is picked from the room rays (facing you, hard,
+    // near, several rays on it). Each one-off sound gets a duller copy from that direction, as late
+    // as its own way there and back is longer than its way to you, and as much quieter (Directions,
+    // AcousticFilter); a loop doesn't (a steady sound's echo is just the same sound). Fades out the
+    // more enclosed you are, where the room's reverb is what you hear.
     internal static class Bounces
     {
         internal const int Count = 64, Tries = 3;
@@ -46,7 +47,7 @@ namespace WiresAcoustics
         internal static float EchoGain, EchoDist = 20f, EchoAbsorb = .1f;
 
         // From Room.Measure, with its hits: the first bounces, and the second bounce rays scheduled.
-        internal static void Schedule(Vector3[] dirs, NativeArray<RaycastHit> hits, float enclosure)
+        internal static void Schedule(Vector3[] dirs, float enclosure)
         {
             if (s_pending) { s_job.Complete(); s_pending = false; } // not read in time: replaced
             if (!s_cmds.IsCreated)
@@ -61,24 +62,25 @@ namespace WiresAcoustics
             Vector3 bestDir = Vector3.forward;
             for (int i = 0; i < Count && i < dirs.Length; i++)
             {
-                RaycastHit h = hits[i];
-                s_has1[i] = h.collider != null;
+                s_has1[i] = Room.Hit[i];
                 if (!s_has1[i]) continue;
-                float a = Room.AbsorptionOf(h.collider);
-                s_p1[i] = h.point + h.normal * .1f;
-                s_r1[i] = Vector3.Reflect(dirs[i], h.normal);
+                float a = Room.Alpha[i];
+                Vector3 normal = Room.Normal[i];
+                s_p1[i] = Room.Point[i] + normal * .1f;
+                s_r1[i] = Vector3.Reflect(dirs[i], normal);
                 s_a1[i] = a;
                 s_cmds[n] = new RaycastCommand(s_p1[i], s_r1[i], q, MaxDistance);
                 Label[n] = i;
                 n++;
 
-                // echo: hard, facing you, far enough to hear apart, not the ground under you
-                float cos = Vector3.Dot(-dirs[i], h.normal);
-                if (h.distance >= 15f && cos > .7f && dirs[i].y > -.25f && !Room.IsTree(h.collider))
+                // echo: facing you, far enough to hear apart, not the ground under you, not trunks;
+                // a bare rock face sends back nearly all, a snow slope little (its absorption)
+                float cos = Vector3.Dot(-dirs[i], normal), dist = Room.Dist[i];
+                if (dist >= 15f && cos > .7f && dirs[i].y > -.25f && !Room.Tree[i])
                 {
                     facing++;
-                    float score = cos * (1f - a) / h.distance;
-                    if (score > bestScore) { bestScore = score; bestDist = h.distance; bestAbs = a; bestDir = dirs[i]; }
+                    float score = cos * (1f - a) / dist;
+                    if (score > bestScore) { bestScore = score; bestDist = dist; bestAbs = a; bestDir = dirs[i]; }
                 }
             }
             s_cast = n;
@@ -93,7 +95,8 @@ namespace WiresAcoustics
             if (bestScore > 0f)
             {
                 float size = Mathf.Clamp01((facing - 1) / 3f); // one stray ray isn't a cliff
-                target = size * (1f - bestAbs) * Mathf.Clamp(6f / (2f * bestDist), 0f, .3f) * Mathf.Clamp01(1.4f - 2f * enclosure);
+                // how much of a sound comes back from it (each sound's own share by its path: Directions)
+                target = size * (1f - bestAbs) * Mathf.Clamp01(1.4f - 2f * enclosure);
                 if (target > .005f)
                 {
                     EchoDir = Vector3.Slerp(EchoGain > .005f ? EchoDir : bestDir, bestDir, .5f).normalized;
@@ -118,12 +121,11 @@ namespace WiresAcoustics
             }
             for (int k = 0; k < s_cast; k++)
             {
-                RaycastHit h = s_hits[k];
-                if (h.collider == null) continue;
                 int i = Label[k];
-                P2[i] = h.point + h.normal * .1f;
-                R2[i] = Vector3.Reflect(R1[i], h.normal);
-                A2[i] = Room.AbsorptionOf(h.collider);
+                if (!Room.Surface(P1[i], R1[i], s_hits[k], MaxDistance, out Vector3 point, out Vector3 normal, out _, out float a, out _)) continue;
+                P2[i] = point + normal * .1f;
+                R2[i] = Vector3.Reflect(R1[i], normal);
+                A2[i] = a;
                 Has2[i] = true;
             }
         }

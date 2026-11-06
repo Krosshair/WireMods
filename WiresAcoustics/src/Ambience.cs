@@ -27,10 +27,15 @@ namespace WiresAcoustics
         {
             bool leaning = Plugin.Occlusion.Value && s_open > 0f && Room.Enclosure >= .35f && s_openDir.sqrMagnitude > 0f;
             float amount = leaning ? Mathf.Clamp01(Room.Enclosure * 1.5f - .4f) : 0f;
-            float target = leaning ? Mathf.Clamp(Vector3.Dot(listener.right, s_openDir) * .8f, -.8f, .8f) * amount : 0f;
+            // The outside comes in both ways at once: muffled through the walls (from all around) and
+            // clear through the openings (from their direction). How much leans toward the openings
+            // is the openings' share of what you hear.
+            float wall = Mathf.Lerp(1f, .3f, Room.Enclosure * Room.Enclosure);
+            float share = s_open * s_open / Mathf.Max(1e-4f, s_open * s_open + wall * wall);
+            float target = leaning ? Mathf.Clamp(Vector3.Dot(listener.right, s_openDir) * .8f, -.8f, .8f) * amount * share : 0f;
             s_pan = Mathf.MoveTowards(s_pan, target, 2f * dt);
             bool hrtf = Plugin.Hrtf.Value;
-            float lean = hrtf ? Mathf.MoveTowards(s_lean, amount * .8f, dt) : 0f;
+            float lean = hrtf ? Mathf.MoveTowards(s_lean, amount * .8f * share, dt) : 0f;
             if (lean > 0f || s_lean > 0f)
             {
                 s_lean = lean;
@@ -123,7 +128,8 @@ namespace WiresAcoustics
         private static void Need(AcousticFilter f)
         {
             bool want = f.Hrtf || s_gain < .999f || s_cutoff < 20000f || AcousticFilter.GlobalActive;
-            if (f.enabled != want) f.enabled = want;
+            if (!f.enabled) f.enabled = true;
+            f.Active = want;
         }
 
         internal static void Reset()

@@ -2,8 +2,8 @@ using HarmonyLib;
 
 namespace WiresAcoustics
 {
-    // Equipping: the sound is spawned at the hand with no owner given; it's placed like the player's
-    // other sounds (PlayerSounds) and follows the character equipping (Follow).
+    // Equipping: the game places the sound at the hand with no owner given, so it stays there while
+    // you move (heard trailing behind). It follows the character equipping instead (Follow).
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
     internal static class Equip
     {
