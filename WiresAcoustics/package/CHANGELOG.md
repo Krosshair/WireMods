@@ -1,3 +1,7 @@
+## 0.2.1
+- Fixed: the mod reported its version as 0.1.2.
+- README rewritten.
+
 ## 0.2.0
 - Added: sound takes time to travel (343 m/s). A sound far away starts and stops as late as its distance makes it.
 - Added: Doppler. Moving sounds shift in pitch as they come and go; our own, so the camera bumping about doesn't make sounds warble.
