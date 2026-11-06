@@ -11,6 +11,7 @@ Coming later (not recorded yet).
 ## Features
 
 - **Room reverb, measured.** 64 rays from the camera measure the space five times a second: how enclosed it is, how big, and what it's made of. Sabine's room formula turns that into the reverb, so a stone hall rings, a log cabin is warmer, and a cave sounds like a cave.
+- **Forests aren't rooms.** Trees scatter sound instead of reflecting it: a dense swamp doesn't sound like a cave, trunks muffle little and never echo.
 - **Clutter counts.** Furniture breaks up and swallows reflections, and soft things (beds, rugs, banners) swallow the most. A decorated room sounds lived in; an empty one echoes.
 - **Muffling through walls.** One ray from you to each sound counts what's in between: walls, floors, hills and rocks count fully, furniture and trees partly, and the object making the sound doesn't count. More layers make the sound quieter and duller.
 - **Sound finds its way round.** A blocked sound also tries paths through the openings you're near (windows, doors, holes in the roof), round the corners of what's in the way, and by bouncing off up to two surfaces. The best path wins and the sound is heard from where it comes through: a deer outside is heard at the window, not through the wall.
@@ -46,7 +47,7 @@ Measured with a main-thread profiler in a lived-in base: **about 0.1 ms per fram
 | 60 fps (16.7 ms) | 59.6 fps |
 | 144 fps (6.9 ms) | 142 fps |
 
-Work on the audio thread doesn't hold up frames; if it ever overloaded you'd hear crackling, not lose fps.
+Audio-thread work is budgeted. Only the nearest playing sounds (up to 32) get the processing, fewer if the audio thread gets busy (it's measured), so a crowded swamp in the rain can't overload it; the rest keep the game's own panning.
 
 ## The numbers
 

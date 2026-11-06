@@ -74,6 +74,7 @@ namespace WiresAcoustics
             if (f == null) { f = __instance.gameObject.AddComponent<AcousticFilter>(); s_added++; }
             f.Kind = AcousticFilter.Kinds.Sfx;
             f.Placed = true;
+            Budget.Note(f, dist); // processed now if it's among the nearest playing sounds
             if (Bounces.EchoGain > .003f) f.EnsureEcho();
             float gain = 1f, cutoff = 22000f;
             if (starting)
@@ -89,9 +90,9 @@ namespace WiresAcoustics
                 f.AirCutoff = AcousticFilter.AirAt(dist);
                 if (Plugin.DebugLog.Value) Far(__instance, src, f, dist);
                 f.Set(gain, cutoff, true);
-                if (occ >= .3f) Batch.Enqueue(f, to, under, reverb);
+                if (occ >= .3f && f.enabled) Batch.Enqueue(f, to, under, reverb);
             }
-            else Batch.Enqueue(f, to, under, reverb);
+            else if (f.enabled) Batch.Enqueue(f, to, under, reverb);
             // Direction is ours (AcousticFilter): Unity's panning is flattened to "both ears equally".
             if (hrtf)
             {
@@ -162,6 +163,7 @@ namespace WiresAcoustics
             if (Weights.TryGetValue(id, out float w)) return w;
             if (Weights.Count > 8192) Weights.Clear();
             if (c.GetComponentInParent<WearNTear>() != null) w = Room.Structural(c) ? 1f : .25f;
+            else if (Room.IsTree(c)) w = .1f; // a trunk shadows a sound a little, it doesn't hide it
             else if (c.GetComponentInParent<Heightmap>() != null || c.gameObject.layer == LayerMask.NameToLayer("static_solid")) w = 1f;
             else w = .3f;
             Weights[id] = w;
@@ -198,6 +200,7 @@ namespace WiresAcoustics
                     else if (f.BaseSpread >= 0f) f.Source.spread = f.BaseSpread;
                 }
                 f.Placed = placed;
+                Budget.Note(f, (f.transform.position - listener).magnitude);
                 if (!placed) { f.Set(1f, 22000f, false); f.AirCutoff = 22000f; continue; }
                 if (Bounces.EchoGain > .003f) f.EnsureEcho();
                 Batch.Enqueue(f, f.transform.position, Underwater.Muffles(f.transform.position, f.transform), false);
@@ -227,6 +230,8 @@ namespace WiresAcoustics
                 if (!src.isPlaying || src.spatialBlend < .5f) continue;
                 if (f.Kind == AcousticFilter.Kinds.Other && hrtf && !f.Hrtf) { f.TakePanning(src.spread); f.Hrtf = true; }
                 f.Placed = true;
+                Budget.Note(f, (f.transform.position - listener).magnitude);
+                if (!f.enabled) continue; // past the count: left to Unity until it's among the nearest
                 if (Bounces.EchoGain > .003f) f.EnsureEcho();
                 if (!occlusion) continue;
                 if (f.Kind == AcousticFilter.Kinds.Sfx && (src.loop || now - f.StartedAt < .4f)) continue;

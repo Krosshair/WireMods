@@ -64,6 +64,7 @@ namespace WiresAcoustics
             f.Width = 1f - s_lean;
             f.SetDirection(local);
             f.Hrtf = s_lean > .01f;
+            Need(f);
         }
 
         internal static AudioSource Ocean(AudioMan man) => OceanLoop(man);
@@ -95,6 +96,7 @@ namespace WiresAcoustics
             }
             f.Kind = AcousticFilter.Kinds.Ambient;
             f.Set(s_gain, s_cutoff, false);
+            Need(f);
         }
 
         internal static void Apply(GameObject go, bool starting)
@@ -114,6 +116,14 @@ namespace WiresAcoustics
                 f = go.AddComponent<AcousticFilter>();
             }
             f.Set(s_gain, s_cutoff, starting);
+            Need(f);
+        }
+
+        // The filter's callback only while there's something to do (muffled, leaning, under water).
+        private static void Need(AcousticFilter f)
+        {
+            bool want = f.Hrtf || s_gain < .999f || s_cutoff < 20000f || AcousticFilter.GlobalActive;
+            if (f.enabled != want) f.enabled = want;
         }
 
         internal static void Reset()

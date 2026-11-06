@@ -74,7 +74,7 @@ namespace WiresAcoustics
 
                 // echo: hard, facing you, far enough to hear apart, not the ground under you
                 float cos = Vector3.Dot(-dirs[i], h.normal);
-                if (h.distance >= 15f && cos > .7f && dirs[i].y > -.25f)
+                if (h.distance >= 15f && cos > .7f && dirs[i].y > -.25f && !Room.IsTree(h.collider))
                 {
                     facing++;
                     float score = cos * (1f - a) / h.distance;

@@ -23,7 +23,7 @@ namespace WiresAcoustics
             {
                 if (sfx == null || sfx.gameObject.scene.IsValid()) continue; // prefabs only, not live sounds
                 if (sfx.GetComponent<AudioSource>() == null || sfx.GetComponent<AcousticFilter>() != null) continue;
-                sfx.gameObject.AddComponent<AcousticFilter>();
+                sfx.gameObject.AddComponent<AcousticFilter>().enabled = false; // switched on by Budget while it matters
                 n++;
             }
             int others = 0;
@@ -33,7 +33,7 @@ namespace WiresAcoustics
                 if (src == null || src.gameObject.scene.IsValid() || src.spatialBlend < .5f) continue;
                 if (man != null && man.m_guiMixer != null && src.outputAudioMixerGroup == man.m_guiMixer) continue;
                 if (src.GetComponent<ZSFX>() != null || src.GetComponent<AcousticFilter>() != null) continue;
-                src.gameObject.AddComponent<AcousticFilter>();
+                src.gameObject.AddComponent<AcousticFilter>().enabled = false;
                 others++;
             }
             Plugin.Log.LogInfo("[acoustics] filter added to " + n + " sound prefabs and " + others + " other placed sources in " +

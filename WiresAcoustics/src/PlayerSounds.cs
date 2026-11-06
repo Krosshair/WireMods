@@ -52,6 +52,7 @@ namespace WiresAcoustics
                     AcousticFilter f = z.GetComponent<AcousticFilter>();
                     if (f == null) f = z.gameObject.AddComponent<AcousticFilter>();
                     f.Cue = true;
+                    f.enabled = false;
                 }
             }
         }

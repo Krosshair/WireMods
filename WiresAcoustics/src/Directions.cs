@@ -59,6 +59,7 @@ namespace WiresAcoustics
                     AcousticFilter f = List[i];
                     if (f == null) continue;
                     Vector4 r = s_dirs[i];
+                    f.LastDist = r.w;
                     if (f.Fades) f.DistanceGain = f.FadeAt(r.w);
                     if (f.Placed) f.AirCutoff = AcousticFilter.AirAt(r.w);
                     // heard through an opening, round a corner or by a bounce: from there

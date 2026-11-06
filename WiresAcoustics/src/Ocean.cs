@@ -48,6 +48,7 @@ namespace WiresAcoustics
                     bool hrtf = Plugin.Hrtf.Value;
                     if (hrtf) f.TakePanning(src.spread);
                     f.Hrtf = hrtf;
+                    Budget.Note(f, (src.transform.position - l.transform.position).magnitude);
                     Batch.Enqueue(f, src.transform.position, false, false); // walls and openings, next frame
                 }
             }

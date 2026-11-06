@@ -131,6 +131,7 @@ namespace WiresAcoustics
                     float t = Time.time;
                     if (t >= s_nextVoice) { s_nextVoice = t + Interval; Occlusion.Voices(lt.position); }
                     if (t >= s_nextRecheck) { s_nextRecheck = t + .5f; Occlusion.Recheck(lt.position); }
+                    Budget.Step(t);
                     Batch.Step(lt.position);
                     if (t >= s_nextScan)
                     {
@@ -261,14 +262,17 @@ namespace WiresAcoustics
 
         private static void Measure()
         {
-            int level = 0, levelHits = 0, hits = 0;
+            int level = 0, hits = 0;
+            float levelHits = 0f;
             float pathSum = 0f, alphaSum = 0f, escaped = 0f;
             float near0 = MaxDistance, near1 = MaxDistance, near2 = MaxDistance;
             for (int i = 0; i < Rays; i++)
             {
                 RaycastHit h = s_hits[i];
                 bool hit = h.collider != null;
-                if (Dirs[i].y > -.05f) { level++; if (hit) levelHits++; }
+                // a tree trunk isn't a wall: a forest only half encloses you (TreeWeight), a swamp
+                // full of trunks isn't a cave
+                if (Dirs[i].y > -.05f) { level++; if (hit) levelHits += IsTree(h.collider) ? TreeWeight : 1f; }
                 if (!hit) { escaped++; continue; }
                 hits++;
                 pathSum += h.distance;
@@ -278,7 +282,7 @@ namespace WiresAcoustics
                 else if (d < near1) { near2 = near1; near1 = d; }
                 else if (d < near2) near2 = d;
             }
-            float enclosure = level > 0 ? (float)levelHits / level : 0f;
+            float enclosure = level > 0 ? levelHits / level : 0f;
             float path = hits > 0 ? pathSum / hits : MaxDistance;
             float alpha = hits > 0 ? alphaSum / hits : 1f;
             float alphaEff = Mathf.Max(.01f, (alphaSum + escaped) / Rays); // open directions let the sound out
@@ -329,7 +333,7 @@ namespace WiresAcoustics
                 s_nextLog = Time.time + 3f;
                 Plugin.Log.LogInfo("[acoustics] space: enclosed " + enclosure.ToString("P0") + ", size " + path.ToString("F1") + " m (nearest " +
                     nearest.ToString("F1") + " m), absorption " + alpha.ToString("F2") + " (open " + (escaped / Rays).ToString("P0") + "), RT60 " +
-                    decay.ToString("F2") + " s -> " + s_current + "; " + Portals.Summary() + "; " + Bounces.Summary() + "; " + Ocean.Summary() + "; " + Ambience.Summary() + "; " + Spawned.Summary() + ", following their owner " + Follow.Count + "; " + Underwater.Summary() + "; " + Occlusion.Summary() + "; " + Cost.Report());
+                    decay.ToString("F2") + " s -> " + s_current + "; " + Portals.Summary() + "; " + Bounces.Summary() + "; " + Ocean.Summary() + "; " + Ambience.Summary() + "; " + Spawned.Summary() + ", following their owner " + Follow.Count + "; " + Underwater.Summary() + "; " + Occlusion.Summary() + "; " + Budget.Summary() + "; " + Cost.Report());
             }
         }
 
@@ -349,6 +353,31 @@ namespace WiresAcoustics
             else s = false;
             StructuralCache[id] = s;
             return s;
+        }
+
+        // Trees (and big uncuttable plants): cached per collider. They scatter sound more than they
+        // reflect it, so they count little toward enclosure, absorb most of what reaches them (for
+        // the reverb and bounce paths), never echo, and muffle little.
+        internal const float TreeWeight = .15f;
+        private static readonly Dictionary<int, bool> TreeCache = new Dictionary<int, bool>();
+        internal static bool IsTree(Collider c)
+        {
+            int id = c.GetInstanceID();
+            if (TreeCache.TryGetValue(id, out bool t)) return t;
+            if (TreeCache.Count > 8192) TreeCache.Clear();
+            t = false;
+            if (c.GetComponentInParent<WearNTear>() == null && c.GetComponentInParent<Heightmap>() == null)
+            {
+                if (c.GetComponentInParent<TreeBase>() != null || c.GetComponentInParent<TreeLog>() != null) t = true;
+                else
+                {
+                    string n = c.transform.root.name.ToLowerInvariant();
+                    t = n.Contains("tree") || n.Contains("beech") || n.Contains("birch") || n.Contains("oak") || n.Contains("pine") ||
+                        n.Contains("fir") || n.Contains("shoot") || n.Contains("stub") || n.Contains("stump") || n.Contains("bush") || n.Contains("root");
+                }
+            }
+            TreeCache[id] = t;
+            return t;
         }
 
         // Absorption coefficient (share of sound energy a surface swallows, mid frequencies) by what the
@@ -387,8 +416,9 @@ namespace WiresAcoustics
                 }
             }
             else if (c.GetComponent<Heightmap>() != null || c.GetComponentInParent<Heightmap>() != null) a = .35f; // soil, grass
+            else if (IsTree(c)) a = .8f;                                                                           // trees: sound mostly passes and scatters
             else if (c.gameObject.layer == LayerMask.NameToLayer("static_solid")) a = .04f;                       // rock
-            else a = .15f;                                                                                        // trees, props
+            else a = .15f;                                                                                        // props
             Absorb[id] = a;
             return a;
         }
