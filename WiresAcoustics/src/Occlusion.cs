@@ -34,6 +34,17 @@ namespace WiresAcoustics
             if (f != null && f.Cue) return; // a game cue: as the game made it
             if (Stackify.Active) Stackify.Restore(src); // a chest's sound from Wire's Stackify: a world sound at the chest
             if (Plugin.DebugLog.Value) Describe(__instance, src, f);
+            // The game's random ambience (a bird, a gust, an insect) is put at a made-up spot 1 to 40 m
+            // round you at your own height: indoors that's often inside your own room, a bird singing
+            // next to you with nothing in the way. It's the world outside, so indoors it's heard the way
+            // the rain and wind are: through the walls, clearer toward the openings (Ambience).
+            if (AudioMan.instance != null && __instance.transform.parent == AudioMan.instance.transform &&
+                (src.spatialBlend < .5f || Room.Enclosure >= .35f))
+            {
+                if (src.spatialBlend >= .5f) src.spatialBlend = 0f;
+                Ambience.Apply(__instance.gameObject, !src.isPlaying);
+                return;
+            }
             if (src.spatialBlend < .5f)
             {
                 // Positionless ambience (birds, biome loops): muffled by how closed in you are.

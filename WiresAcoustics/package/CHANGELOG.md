@@ -1,3 +1,7 @@
+## 0.2.2
+- Fixed: birds and other random ambience could play inside your house, loud and unmuffled (the game places them at a random spot around you, often in your own room). Indoors they're heard through the walls and from the windows, like rain and wind.
+- Fixed: rocky valleys and ravines barely echoed: their sides counted as being indoors. Echoes now fade only under a roof.
+
 ## 0.2.1
 - Fixed: the mod reported its version as 0.1.2.
 - README rewritten.

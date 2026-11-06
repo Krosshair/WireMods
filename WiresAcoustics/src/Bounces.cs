@@ -47,7 +47,7 @@ namespace WiresAcoustics
         internal static float EchoGain, EchoDist = 20f, EchoAbsorb = .1f;
 
         // From Room.Measure, with its hits: the first bounces, and the second bounce rays scheduled.
-        internal static void Schedule(Vector3[] dirs, float enclosure)
+        internal static void Schedule(Vector3[] dirs, float covered)
         {
             if (s_pending) { s_job.Complete(); s_pending = false; } // not read in time: replaced
             if (!s_cmds.IsCreated)
@@ -96,7 +96,9 @@ namespace WiresAcoustics
             {
                 float size = Mathf.Clamp01((facing - 1) / 3f); // one stray ray isn't a cliff
                 // how much of a sound comes back from it (each sound's own share by its path: Directions)
-                target = size * (1f - bestAbs) * Mathf.Clamp01(1.4f - 2f * enclosure);
+                // fades out under a roof, where the room's reverb is what you hear; a valley or a ravine
+                // is open above, however closed in its sides make it
+                target = size * (1f - bestAbs) * Mathf.Clamp01(1.4f - 2f * covered);
                 if (target > .005f)
                 {
                     EchoDir = Vector3.Slerp(EchoGain > .005f ? EchoDir : bestDir, bestDir, .5f).normalized;

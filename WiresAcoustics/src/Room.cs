@@ -273,7 +273,8 @@ namespace WiresAcoustics
 
         private static void Measure()
         {
-            int level = 0, hits = 0, treeLevel = 0;
+            int level = 0, hits = 0, treeLevel = 0, up = 0;
+            float upHits = 0f;
             float levelHits = 0f, treePath = 0f;
             float pathSum = 0f, alphaSum = 0f, escaped = 0f;
             float near0 = MaxDistance, near1 = MaxDistance, near2 = MaxDistance;
@@ -283,6 +284,7 @@ namespace WiresAcoustics
                 Hit[i] = hit;
                 // a tree trunk isn't a wall: a forest only half encloses you (TreeWeight), a swamp
                 // full of trunks isn't a cave
+                if (Dirs[i].y > .3f) { up++; if (hit) upHits += Tree[i] ? TreeWeight : 1f; }
                 if (Dirs[i].y > -.05f)
                 {
                     level++;
@@ -361,7 +363,8 @@ namespace WiresAcoustics
                 s_haveApplied = true;
             }
             Portals.Find(s_from, Dirs, s_hits, enclosure, path);
-            Bounces.Schedule(Dirs, enclosure);
+            // how much of the sky is covered: a roof, not a valley's sides (echoes need the open sky)
+            Bounces.Schedule(Dirs, up > 0 ? upHits / up : 0f);
             if (AudioMan.instance != null) Ambience.Update(AudioMan.instance, Enclosure);
 
             if (Plugin.DebugLog.Value && Time.time >= s_nextLog)
