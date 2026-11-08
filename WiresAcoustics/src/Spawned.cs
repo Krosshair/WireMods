@@ -24,6 +24,7 @@ namespace WiresAcoustics
             }
             foreach (AudioReverbZone z in root.GetComponentsInChildren<AudioReverbZone>(true))
                 if (Room.RemoveZone(z)) s_zones++;
+            Room.Invalidate();
         }
 
         [HarmonyPatch(typeof(Location), "Awake")]
@@ -32,16 +33,22 @@ namespace WiresAcoustics
             private static void Postfix(Location __instance) => Take(__instance.gameObject);
         }
 
-        [HarmonyPatch(typeof(DungeonGenerator), "Spawn")]
-        private static class AtDungeon
+        // Valheim AVX replaces DungeonGenerator.Spawn and Generate, displacing
+        // postfixes on those methods. Hook its per-room placement instead:
+        // this runs AFTER a room prefab is instantiated and is shared by
+        // ordinary procedural generation and loading saved dungeons.
+        [HarmonyPatch]
+        private static class AtDungeonRoom
         {
-            private static void Postfix(DungeonGenerator __instance) => Take(__instance.gameObject);
-        }
-
-        [HarmonyPatch(typeof(DungeonGenerator), nameof(DungeonGenerator.Generate), typeof(int), typeof(ZoneSystem.SpawnMode))]
-        private static class AtDungeonGenerated
-        {
-            private static void Postfix(DungeonGenerator __instance) => Take(__instance.gameObject);
+            private static System.Reflection.MethodBase TargetMethod() =>
+                AccessTools.Method(typeof(DungeonGenerator), "PlaceRoom",
+                    new[] { typeof(DungeonDB.RoomData), typeof(Vector3),
+                            typeof(Quaternion), typeof(RoomConnection),
+                            typeof(ZoneSystem.SpawnMode) });
+            private static void Postfix(global::Room __result)
+            {
+                if (__result != null) Take(__result.gameObject);
+            }
         }
 
         internal static string Summary()

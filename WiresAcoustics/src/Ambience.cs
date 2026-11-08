@@ -12,6 +12,45 @@ namespace WiresAcoustics
     // centre, its stereo width kept, more of it the more closed in you are); without it, stereo pan.
     internal static class Ambience
     {
+        internal static void PlaceAsAmbient(AudioSource src)
+        {
+            if (src == null || src.spatialBlend < .5f) return;
+            AcousticFilter f = src.GetComponent<AcousticFilter>() ??
+                               src.gameObject.AddComponent<AcousticFilter>();
+            if (!f.ConvertedAmbient)
+            {
+                f.ConvertedAmbient = true;
+                f.OldAmbientBlend = src.spatialBlend;
+            }
+            src.spatialBlend = 0f;
+        }
+        private static void RememberPan(AudioSource src)
+        {
+            if (src == null) return;
+            AcousticFilter f = src.GetComponent<AcousticFilter>() ??
+                               src.gameObject.AddComponent<AcousticFilter>();
+            if (!f.SavedAmbientPan)
+            {
+                f.SavedAmbientPan = true;
+                f.OriginalAmbientPan = src.panStereo;
+            }
+        }
+
+        internal static void RestorePlaced()
+        {
+            foreach (AcousticFilter f in AcousticFilter.Live)
+            {
+                if (f == null) continue;
+                AudioSource src = f.Source;
+                if (src != null)
+                {
+                    if (f.ConvertedAmbient) src.spatialBlend = f.OldAmbientBlend;
+                    if (f.SavedAmbientPan) src.panStereo = f.OriginalAmbientPan;
+                }
+                f.ConvertedAmbient = false;
+                f.SavedAmbientPan = false;
+            }
+        }
         private static readonly AccessTools.FieldRef<AudioMan, AudioSource> AmbientLoop = AccessTools.FieldRefAccess<AudioMan, AudioSource>("m_ambientLoopSource");
         private static readonly AccessTools.FieldRef<AudioMan, AudioSource> WindLoop = AccessTools.FieldRefAccess<AudioMan, AudioSource>("m_windLoopSource");
         private static readonly AccessTools.FieldRef<AudioMan, AudioSource> OceanLoop = AccessTools.FieldRefAccess<AudioMan, AudioSource>("m_oceanAmbientSource");
@@ -45,8 +84,16 @@ namespace WiresAcoustics
             }
             // the loops' stereo pan: the lean without the HRTF, untouched (centre) with it
             float loopPan = hrtf ? 0f : s_pan;
-            if (AmbientLoop(man) is AudioSource a && a != null && a.panStereo != loopPan) a.panStereo = loopPan;
-            if (WindLoop(man) is AudioSource w && w != null && w.panStereo != loopPan) w.panStereo = loopPan;
+            if (AmbientLoop(man) is AudioSource a && a != null && a.panStereo != loopPan)
+            {
+                RememberPan(a);
+                a.panStereo = loopPan;
+            }
+            if (WindLoop(man) is AudioSource w && w != null && w.panStereo != loopPan)
+            {
+                RememberPan(w);
+                w.panStereo = loopPan;
+            }
         }
 
         // The HRTF on an unplaced loop, as strong as the lean (Width is how little direction it gets).
@@ -112,6 +159,7 @@ namespace WiresAcoustics
             if (starting && s_pan != 0f && go.GetComponent<AudioSource>() is AudioSource src && src != null)
             {
                 float own = src.panStereo;
+                RememberPan(src);
                 src.panStereo = Mathf.Clamp(own + s_pan * (1f - Mathf.Abs(own)), -1f, 1f);
             }
             AcousticFilter f = go.GetComponent<AcousticFilter>();
@@ -134,11 +182,12 @@ namespace WiresAcoustics
 
         internal static void Reset()
         {
+            RestorePlaced();
             s_gain = 1f; s_cutoff = 22000f; s_open = 0f; s_lean = 0f;
             if (AudioMan.instance == null) return;
             s_pan = 0f;
-            if (AmbientLoop(AudioMan.instance) is AudioSource a && a != null) a.panStereo = 0f;
-            if (WindLoop(AudioMan.instance) is AudioSource w && w != null) w.panStereo = 0f;
+            // Original stereo pans were restored by RestorePlaced above.
+            // Never overwrite a different vanilla/modded default with zero.
             foreach (AudioSource src in new[] { AmbientLoop(AudioMan.instance), WindLoop(AudioMan.instance), OceanLoop(AudioMan.instance) })
                 if (src != null && src.GetComponent<AcousticFilter>() is AcousticFilter f)
                 {

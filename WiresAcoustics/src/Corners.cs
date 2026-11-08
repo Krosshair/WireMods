@@ -12,7 +12,8 @@ namespace WiresAcoustics
     {
         internal const int Count = 5;
 
-        internal static void Around(Vector3 listener, Vector3 sound, float firstHit, Vector3[] into)
+        internal static void Around(Vector3 listener, Vector3 sound, float firstHit,
+                                    Collider blocker, Vector3[] into)
         {
             Vector3 d = sound - listener;
             float dist = d.magnitude;
@@ -20,11 +21,25 @@ namespace WiresAcoustics
             Vector3 side = Vector3.Cross(Vector3.up, dir);
             side = side.sqrMagnitude > 1e-4f ? side.normalized : Vector3.right;
             Vector3 pivot = listener + dir * Mathf.Clamp(firstHit, .5f, Mathf.Max(.5f, dist - .5f));
-            into[0] = pivot + side * 2.5f;
-            into[1] = pivot - side * 2.5f;
-            into[2] = pivot + side * 5f;
-            into[3] = pivot - side * 5f;
-            into[4] = pivot + Vector3.up * 3f;
+            float right = 2.5f, left = 2.5f, over = 3f;
+            if (blocker != null && blocker.enabled)
+            {
+                Bounds b = blocker.bounds;
+                Vector3 e = b.extents;
+                float half = Mathf.Abs(side.x) * e.x + Mathf.Abs(side.y) * e.y +
+                             Mathf.Abs(side.z) * e.z;
+                float offset = Vector3.Dot(b.center - pivot, side);
+                // Just beyond the collider's actual projected side edges.
+                // Clamp when a dungeon collider spans a huge structure.
+                right = Mathf.Clamp(offset + half + .4f, 1f, 5.5f);
+                left = Mathf.Clamp(half - offset + .4f, 1f, 5.5f);
+                over = Mathf.Clamp(b.max.y - pivot.y + .4f, 1f, 5.5f);
+            }
+            into[0] = pivot + side * right;
+            into[1] = pivot - side * left;
+            into[2] = pivot + side * Mathf.Min(7f, right + 1.5f);
+            into[3] = pivot - side * Mathf.Min(7f, left + 1.5f);
+            into[4] = pivot + Vector3.up * over;
         }
 
         internal static float Bend(Vector3 listener, Vector3 p, Vector3 sound) =>

@@ -57,6 +57,24 @@ namespace WiresAcoustics
         // Split into the muffling and HRTF part and the echo part, with how many callbacks ran the HRTF.
         private static long s_ticks, s_ticksEcho;
         private static int s_calls, s_hrtfCalls;
+        // Detailed tier counters are collected only while Debug log is on.
+        internal static volatile bool Diagnostics;
+        private static long s_ticksFull, s_ticksLight, s_ticksPlain;
+        private static int s_callsFull, s_callsLight, s_callsPlain, s_callsSilent;
+        internal static string DiagnosticsSummary()
+        {
+            long full = System.Threading.Interlocked.Exchange(ref s_ticksFull, 0L);
+            long light = System.Threading.Interlocked.Exchange(ref s_ticksLight, 0L);
+            long plain = System.Threading.Interlocked.Exchange(ref s_ticksPlain, 0L);
+            int a = System.Threading.Interlocked.Exchange(ref s_callsFull, 0);
+            int b = System.Threading.Interlocked.Exchange(ref s_callsLight, 0);
+            int c = System.Threading.Interlocked.Exchange(ref s_callsPlain, 0);
+            int silent = System.Threading.Interlocked.Exchange(ref s_callsSilent, 0);
+            double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            return "DSP full " + a + "/" + (full * ms).ToString("F1") + "ms, light " + b + "/" +
+                (light * ms).ToString("F1") + "ms, plain " + c + "/" + (plain * ms).ToString("F1") +
+                "ms, silent bypasses " + silent;
+        }
         internal static long TakeTicks(out int calls, out long echoTicks, out int hrtfCalls)
         {
             calls = System.Threading.Interlocked.Exchange(ref s_calls, 0);
@@ -89,6 +107,7 @@ namespace WiresAcoustics
         internal enum Kinds : byte { Sfx, Voice, Ocean, Other, Menu, Ambient }
         internal Kinds Kind;
         internal float StartedAt, LastOcc, LastBlockDist;
+        internal Collider LastBlocker; // prior confirmed obstruction, for bounded real-edge diffraction
         internal float PrevDist = -1f, RadialSpeed; // Doppler
         // Echo, per sound: how much later than the sound itself its echo arrives (its own path: from it
         // to the surface and back to you, against straight to you), and how strong (direct distance /
@@ -107,6 +126,9 @@ namespace WiresAcoustics
         internal float BaseWidth;                  // from the source's own spread; Width adds the area's size
         internal volatile bool Stereo = true;      // the clip has two channels (a mono one has no side to keep)
         internal Transform Player;                 // a player's own 2D sound, made placed (PlayerSounds)
+        // Reversible conversion snapshots live only as long as this filter.
+        internal bool ConvertedPlayer, ConvertedAmbient, OldPlayerBypass, SavedAmbientPan;
+        internal float OldPlayerBlend, OldPlayerMin, OldPlayerMax, OldAmbientBlend, OriginalAmbientPan;
         internal Transform Facing;                 // the creature it comes out of (Follow): duller from behind it
         internal volatile float FacingCutoff = 22000f;
         internal bool Cue;                         // a game cue, not a sound in the world (a skill level-up): left unplaced
@@ -126,6 +148,21 @@ namespace WiresAcoustics
 
         // Always processed, whatever Budget's count: voices, the sea, the ambience loops, the menu.
         internal bool AlwaysOn => Voice || Kind == Kinds.Ocean || Kind == Kinds.Ambient || Kind == Kinds.Menu;
+        // Used only by the existing quarter-second Budget sort (main thread).
+        // A distant nearly-silent sound does not deserve more HRTF cycles
+        // than a clearly audible creature nearby.
+        internal float Audibility
+        {
+            get
+            {
+                if (Source == null) return 0f;
+                float near = Mathf.Max(.5f, Source.minDistance);
+                float distance = Mathf.Max(1f, LastDist / near);
+                return Mathf.Max(0f, Source.volume) *
+                    Mathf.Clamp01(m_targetGain) * Mathf.Clamp01(DistanceGain) *
+                    Mathf.Clamp01(s_globalGain) / distance;
+            }
+        }
 
         internal static float AirAt(float dist) =>
             Mathf.Max(2500f, 22000f * Mathf.Exp(-Mathf.Max(0f, dist - 5f) / 60f));
@@ -400,17 +437,59 @@ namespace WiresAcoustics
         {
             if (!m_active) { m_primed = false; m_wasFullKnown = false; return; }
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-            bool meter = Meter;
+            bool meter = Meter, diagnostic = Diagnostics;
             if (meter) MeterIn += Energy(data);
-            Process(data, channels);
-            long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
-            Echo(data, channels);
+            // A source already below -80 dB and still targeting silence
+            // cannot be heard; zero its existing buffer, rather than running
+            // ~2,000 samples of HRTF/low-pass code. The echo can still have
+            // audible delayed samples, so it MUST be empty/inactive first.
+            float target = m_targetGain * s_globalGain * DistanceGain;
+            bool echoSilent = m_echo == null ||
+                (m_echoLevel < 1e-5f && s_echoGain * EchoShare < 1e-5f);
+            bool silent = m_gain < 1e-4f && target < 1e-4f && echoSilent;
+            long t1;
+            if (silent)
+            {
+                System.Array.Clear(data, 0, data.Length);
+                m_gain = target;
+                // Avoid stale low-pass feedback when a silent sound resumes.
+                System.Array.Clear(m_state, 0, m_state.Length);
+                m_primed = false;
+                m_wasFullKnown = false;
+                t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+            }
+            else
+            {
+                Process(data, channels);
+                t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+                Echo(data, channels);
+            }
             if (meter) MeterOut += Energy(data);
             long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
             System.Threading.Interlocked.Add(ref s_ticks, t2 - t0);
             System.Threading.Interlocked.Add(ref s_ticksEcho, t2 - t1);
             System.Threading.Interlocked.Increment(ref s_calls);
-            if (m_hrtf && channels >= 2) System.Threading.Interlocked.Increment(ref s_hrtfCalls);
+            bool hrtf = m_hrtf && channels >= 2;
+            if (hrtf && !silent) System.Threading.Interlocked.Increment(ref s_hrtfCalls);
+            if (diagnostic)
+            {
+                if (silent) System.Threading.Interlocked.Increment(ref s_callsSilent);
+                else if (hrtf && Full)
+                {
+                    System.Threading.Interlocked.Add(ref s_ticksFull, t1 - t0);
+                    System.Threading.Interlocked.Increment(ref s_callsFull);
+                }
+                else if (hrtf)
+                {
+                    System.Threading.Interlocked.Add(ref s_ticksLight, t1 - t0);
+                    System.Threading.Interlocked.Increment(ref s_callsLight);
+                }
+                else
+                {
+                    System.Threading.Interlocked.Add(ref s_ticksPlain, t1 - t0);
+                    System.Threading.Interlocked.Increment(ref s_callsPlain);
+                }
+            }
         }
 
         private void Echo(float[] data, int ch)

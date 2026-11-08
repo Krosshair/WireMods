@@ -41,7 +41,7 @@ namespace WiresAcoustics
             if (AudioMan.instance != null && __instance.transform.parent == AudioMan.instance.transform &&
                 (src.spatialBlend < .5f || Room.Enclosure >= .35f))
             {
-                if (src.spatialBlend >= .5f) src.spatialBlend = 0f;
+                if (src.spatialBlend >= .5f) Ambience.PlaceAsAmbient(src);
                 Ambience.Apply(__instance.gameObject, !src.isPlaying);
                 return;
             }
@@ -79,13 +79,15 @@ namespace WiresAcoustics
             // corners) go to the worker threads (Batch) and it glides open if one is better. A playing
             // loop is checked there entirely and glides to its value.
             float first = float.MaxValue;
+            Collider firstCollider = null;
             if (f != null)
             {
                 Area.Measure(f, __instance.transform);
                 f.Stereo = src.clip != null && src.clip.channels > 1;
             }
             Own = f != null && f.ShapeRoot != null ? f.ShapeRoot.root : null;
-            float occ = starting && Plugin.Occlusion.Value ? Blocking(from, to, out first) : 0f;
+            float occ = starting && Plugin.Occlusion.Value ? Blocking(from, to, out first, out firstCollider) : 0f;
+            if (occ >= .3f) Bounces.Wake();
             Own = null;
             s_checked++;
             if (occ > .05f) s_muffled++;
@@ -106,6 +108,7 @@ namespace WiresAcoustics
                 f.StartedAt = Time.time;
                 f.LastOcc = occ;
                 f.LastBlockDist = first < float.MaxValue ? first : dist * .5f;
+                f.LastBlocker = firstCollider;
                 Muffle(occ, out gain, out cutoff);
                 f.Routed = false;
                 f.RoutePoint = to;
@@ -139,9 +142,9 @@ namespace WiresAcoustics
         // rock counts 1, furniture and props 0.25 (sound bends around them), trees 0.3. The thing the
         // sound comes from doesn't count (a chest, a workbench, a hearth: anything whose box holds
         // the sound's position), nor anything in the last 0.5 m.
-        internal static float Blocking(Vector3 from, Vector3 to, out float first)
+        internal static float Blocking(Vector3 from, Vector3 to, out float first, out Collider firstCollider)
         {
-            first = float.MaxValue;
+            first = float.MaxValue; firstCollider = null;
             Vector3 d = to - from;
             float dist = d.magnitude;
             if (dist <= SourceClearance + .1f) return 0f;
@@ -153,7 +156,11 @@ namespace WiresAcoustics
                 float w = Counts(Hits[i].collider, to);
                 if (w <= 0f) continue;
                 occ += w;
-                if (Hits[i].distance < first) first = Hits[i].distance;
+                if (Hits[i].distance < first)
+                {
+                    first = Hits[i].distance;
+                    firstCollider = Hits[i].collider;
+                }
             }
             return occ;
         }
@@ -187,7 +194,26 @@ namespace WiresAcoustics
             int id = c.GetInstanceID();
             if (Weights.TryGetValue(id, out float w)) return w;
             if (Weights.Count > 8192) Weights.Clear();
-            if (c.GetComponentInParent<WearNTear>() != null) w = Room.Structural(c) ? 1f : .25f;
+            WearNTear part = c.GetComponentInParent<WearNTear>();
+            if (part != null && Room.Structural(c))
+            {
+                // Approximate MATERIAL TRANSMISSION, not reflection
+                // absorption. A light wooden partition attenuates less
+                // than stone or marble. No additional physics rays.
+                switch (part.m_materialType)
+                {
+                    case WearNTear.MaterialType.Marble: w = 1.40f; break;
+                    case WearNTear.MaterialType.Stone:
+                    case WearNTear.MaterialType.Ashstone: w = 1.25f; break;
+                    case WearNTear.MaterialType.Iron: w = 1.35f; break;
+                    case WearNTear.MaterialType.Ancient: w = 1.10f; break;
+                    case WearNTear.MaterialType.Ice: w = .85f; break;
+                    case WearNTear.MaterialType.HardWood:
+                    case WearNTear.MaterialType.Timberwood: w = .85f; break;
+                    default: w = .68f; break;
+                }
+            }
+            else if (part != null) w = .25f;
             else if (Room.IsTree(c)) w = .1f; // a trunk shadows a sound a little, it doesn't hide it
             else if (c.GetComponentInParent<Heightmap>() != null || c.gameObject.layer == LayerMask.NameToLayer("static_solid")) w = 1f;
             else w = .3f;

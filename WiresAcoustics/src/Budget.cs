@@ -18,16 +18,17 @@ namespace WiresAcoustics
         private const float Every = .25f, High = .2f, Low = .1f;
         private static int s_count = 16; // how many get the full HRTF
         private static readonly List<AcousticFilter> Playing = new List<AcousticFilter>(128);
-        private static float s_cutoff = float.MaxValue, s_next, s_load, s_nextEchoDrop;
+        private static float s_priorityCutoff, s_next, s_load, s_nextEchoDrop;
         private static int s_on, s_calls, s_hrtfCalls;
         private static float s_echoShare;
         private static long s_stamp;
         private static float s_perCall;
 
-        private static readonly System.Comparison<AcousticFilter> Nearest = (a, b) =>
+        private static readonly System.Comparison<AcousticFilter> Audibility = (a, b) =>
         {
             if (a.AlwaysOn != b.AlwaysOn) return a.AlwaysOn ? -1 : 1;
-            return a.LastDist.CompareTo(b.LastDist);
+            int score = b.Audibility.CompareTo(a.Audibility);
+            return score != 0 ? score : a.LastDist.CompareTo(b.LastDist);
         };
 
         // A sound playing (Occlusion, Recheck, Voices, Ocean): processed at once, so a new sound
@@ -43,7 +44,7 @@ namespace WiresAcoustics
             if (f.Cue) { f.Active = false; return; }
             if (!f.enabled) Toggle(f, true); // only after the mod was switched off and on
             if (!f.Active) { f.Active = true; s_on++; }
-            f.Full = f.AlwaysOn || dist <= s_cutoff;
+            f.Full = f.AlwaysOn || f.Audibility >= s_priorityCutoff;
         }
 
         // Switching a filter component on (Debug log: timed, it can wait for Unity's audio mixer; now rare).
@@ -73,6 +74,7 @@ namespace WiresAcoustics
             if (now < s_next) return;
             s_next = now + Every;
 
+            AcousticFilter.Diagnostics = Plugin.DebugLog.Value;
             long stamp = System.Diagnostics.Stopwatch.GetTimestamp();
             long ticks = AcousticFilter.TakeTicks(out s_calls, out long echoTicks, out s_hrtfCalls);
             if (s_stamp != 0L && stamp > s_stamp) s_load = (float)ticks / (stamp - s_stamp);
@@ -96,10 +98,10 @@ namespace WiresAcoustics
                 Playing.RemoveAt(Playing.Count - 1);
             }
 
-            Playing.Sort(Nearest);
+            Playing.Sort(Audibility);
             int placed = 0;
             s_on = 0;
-            s_cutoff = float.MaxValue;
+            s_priorityCutoff = 0f;
             foreach (AcousticFilter f in Playing)
             {
                 // processed if there's anything to do (nothing in the way, no HRTF, near: off, free)
@@ -112,12 +114,12 @@ namespace WiresAcoustics
                 bool full = f.AlwaysOn || placed < s_count || (f.Full && placed < s_count + 2);
                 if (!f.AlwaysOn)
                 {
-                    if (placed == s_count - 1) s_cutoff = f.LastDist;
+                    if (placed == s_count - 1) s_priorityCutoff = f.Audibility;
                     placed++;
                 }
                 f.Full = full;
             }
-            if (placed < s_count) s_cutoff = float.MaxValue;
+            if (placed < s_count) s_priorityCutoff = 0f;
 
             if (now >= s_nextEchoDrop)
             {
@@ -131,7 +133,7 @@ namespace WiresAcoustics
             foreach (AcousticFilter f in Playing) if (!ReferenceEquals(f, null)) f.InBudget = false;
             Playing.Clear();
             s_on = 0;
-            s_cutoff = float.MaxValue;
+            s_priorityCutoff = 0f;
         }
 
         // Debug: how much the processing changes loudness, overall and for the sounds it changes most.
@@ -157,6 +159,6 @@ namespace WiresAcoustics
         }
 
         internal static string Summary() =>
-            "processing " + s_on + " of " + Playing.Count + " playing (full HRTF for the nearest " + s_count + "), audio thread " + (s_load * 100f).ToString("F1") + "% in " + s_calls + " callbacks (" + s_hrtfCalls + " with the HRTF), " + s_perCall.ToString("F1") + " us each, echo " + (s_echoShare * 100f).ToString("F0") + "% of it";
+            "processing " + s_on + " of " + Playing.Count + " playing (full HRTF for the most audible " + s_count + "), audio thread " + (s_load * 100f).ToString("F1") + "% in " + s_calls + " callbacks (" + s_hrtfCalls + " with the HRTF), " + s_perCall.ToString("F1") + " us each, echo " + (s_echoShare * 100f).ToString("F0") + "% of it";
     }
 }

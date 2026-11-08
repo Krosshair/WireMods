@@ -27,7 +27,10 @@ namespace WiresAcoustics
         private static NativeArray<RaycastHit> s_hits;
         private static JobHandle s_job;
         private static bool s_pending, s_have;
-        private static float s_next;
+        private static float s_next, s_lastCast;
+        private static Vector3 s_lastCastPosition;
+        private static bool s_everCast;
+        private static int s_skippedStationary;
         private static Vector3 s_from, s_point;
         private static int s_mask;
 
@@ -42,8 +45,17 @@ namespace WiresAcoustics
             if (now >= s_next)
             {
                 s_next = now + Interval;
-                Cast(l.transform.position);
-                if (s_have && src.isPlaying && src.volume > .001f)
+                bool audible = src.isPlaying && src.volume > .001f;
+                bool moved = !s_everCast ||
+                    (l.transform.position - s_lastCastPosition).sqrMagnitude > 1.5f * 1.5f;
+                if (audible && (moved || now - s_lastCast >= 4f))
+                {
+                    Cast(l.transform.position);
+                    s_lastCast = now; s_lastCastPosition = l.transform.position;
+                    s_everCast = true;
+                }
+                else s_skippedStationary++;
+                if (s_have && audible)
                 {
                     AcousticFilter f = src.GetComponent<AcousticFilter>() ?? src.gameObject.AddComponent<AcousticFilter>();
                     f.Kind = AcousticFilter.Kinds.Ocean;
@@ -107,7 +119,7 @@ namespace WiresAcoustics
         internal static void Shutdown()
         {
             if (s_pending) { s_job.Complete(); s_pending = false; }
-            s_have = false;
+            s_have = false; s_everCast = false; s_next = 0f;
         }
 
         internal static void Dispose()
@@ -116,6 +128,12 @@ namespace WiresAcoustics
             if (s_cmds.IsCreated) { s_cmds.Dispose(); s_hits.Dispose(); }
         }
 
-        internal static string Summary() => s_have ? "sea heard from " + (s_point - s_from).magnitude.ToString("F0") + " m" : "no sea near";
+        internal static string Summary()
+        {
+            string status = s_have ? "sea heard from " + (s_point - s_from).magnitude.ToString("F0") + " m" : "no sea near";
+            if (Plugin.DebugLog.Value) status += " (shore scans skipped " + s_skippedStationary + ")";
+            s_skippedStationary = 0;
+            return status;
+        }
     }
 }

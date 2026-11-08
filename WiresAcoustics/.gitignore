@@ -1,0 +1,9 @@
+# Local development scratch files and task notes (not part of public mod)
+WORK_*.js
+WORK_PLAN_*.md
+INTEGRATED_PASS_*.md
+
+# Local snapshots of this development and release-prep session.
+# Already-tracked historical _removed files remain tracked.
+_removed/integrated_optimization_baseline_20261108/
+_removed/prepare_release_0.2.3_20261108/

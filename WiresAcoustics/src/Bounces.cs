@@ -41,6 +41,19 @@ namespace WiresAcoustics
         private static bool s_pending;
         private static int s_cast;
         private const float MaxDistance = 50f;
+        private static float s_secondNeededUntil;
+        private static int s_secondUsed, s_secondSkipped;
+        // A blocked, actively playing sound needs routes. Clear rooms and
+        // ambient-only environments don't need 64 secondary bounce rays.
+        internal static void Wake()
+        {
+            bool newlyNeeded = Time.time >= s_secondNeededUntil;
+            s_secondNeededUntil = Mathf.Max(s_secondNeededUntil, Time.time + 1.5f);
+            // Make the first SECOND-bounce geometry available quickly for
+            // a newly obstructed one-shot, even when the listener stands
+            // still and the 1-second room sampling throttle is active.
+            if (newlyNeeded) Room.Invalidate();
+        }
 
         // Echo, world direction and smoothed values (Echo.Step turns them into the filters' globals).
         internal static Vector3 EchoDir = Vector3.forward;
@@ -50,7 +63,8 @@ namespace WiresAcoustics
         internal static void Schedule(Vector3[] dirs, float covered)
         {
             if (s_pending) { s_job.Complete(); s_pending = false; } // not read in time: replaced
-            if (!s_cmds.IsCreated)
+            bool second = Plugin.Occlusion.Value && Time.time < s_secondNeededUntil;
+            if (second && !s_cmds.IsCreated)
             {
                 s_cmds = new NativeArray<RaycastCommand>(Count, Allocator.Persistent);
                 s_hits = new NativeArray<RaycastHit>(Count, Allocator.Persistent);
@@ -69,9 +83,12 @@ namespace WiresAcoustics
                 s_p1[i] = Room.Point[i] + normal * .1f;
                 s_r1[i] = Vector3.Reflect(dirs[i], normal);
                 s_a1[i] = a;
-                s_cmds[n] = new RaycastCommand(s_p1[i], s_r1[i], q, MaxDistance);
-                Label[n] = i;
-                n++;
+                if (second)
+                {
+                    s_cmds[n] = new RaycastCommand(s_p1[i], s_r1[i], q, MaxDistance);
+                    Label[n] = i;
+                    n++;
+                }
 
                 // echo: facing you, far enough to hear apart, not the ground under you, not trunks;
                 // a bare rock face sends back nearly all, a snow slope little (its absorption)
@@ -84,6 +101,18 @@ namespace WiresAcoustics
                 }
             }
             s_cast = n;
+            if (!second)
+            {
+                // First reflection still exists and can be chosen even when
+                // no second cast is needed. Keep both layers synchronized.
+                for (int i = 0; i < Count; i++)
+                {
+                    Has1[i] = s_has1[i]; P1[i] = s_p1[i];
+                    R1[i] = s_r1[i]; A1[i] = s_a1[i]; Has2[i] = false;
+                }
+                s_secondSkipped++;
+            }
+            else s_secondUsed++;
             if (n > 0)
             {
                 s_job = RaycastCommand.ScheduleBatch(s_cmds.GetSubArray(0, n), s_hits.GetSubArray(0, n), 16, 1);
@@ -140,7 +169,7 @@ namespace WiresAcoustics
             EchoGain = 0f;
         }
 
-        internal struct Try { internal Vector3 Heard, End, Mirror; internal float Cost, Length; }
+        internal struct Try { internal Vector3 Heard, End, Mirror; internal float Cost, Length, Score; }
 
         // The best few bounce paths to a sound by length: up to Tries written, how many returned.
         internal static int Pick(Vector3 listener, Vector3 sound, Try[] into)
@@ -159,18 +188,25 @@ namespace WiresAcoustics
 
         private static void Consider(Try[] into, ref int got, Try t, Vector3 sound)
         {
-            float total = t.Length + (sound - t.End).magnitude;
+            Vector3 leg = sound - t.End;
+            float total = t.Length + leg.magnitude;
+            float direction = leg.sqrMagnitude > .001f ? Vector3.Dot(t.Mirror, leg.normalized) : 1f;
+            float turn = .5f * (1f - direction);
+            // Reflections are strongest on hard surfaces and near specular
+            // direction. A shorter path across an absorbing rug should not
+            // outrank a slightly longer path off stone.
+            t.Score = 1f / (Mathf.Max(1f, total) * (1f + t.Cost + turn));
             int slot = -1;
             if (got < Tries) slot = got++;
             else
             {
-                float worst = 0f;
+                float weakest = float.MaxValue;
                 for (int k = 0; k < Tries; k++)
                 {
-                    float w = into[k].Length + (sound - into[k].End).magnitude;
-                    if (w > worst) { worst = w; slot = k; }
+                    float score = into[k].Score;
+                    if (score < weakest) { weakest = score; slot = k; }
                 }
-                if (total >= worst) return;
+                if (t.Score <= weakest) return;
             }
             into[slot] = t;
         }
@@ -191,7 +227,11 @@ namespace WiresAcoustics
         {
             int a = 0, b = 0;
             for (int i = 0; i < Count; i++) { if (Has1[i]) a++; if (Has2[i]) b++; }
-            return "bounces " + a + "+" + b + ", echo " + (EchoGain > .003f ? EchoGain.ToString("F2") + " from " + EchoDist.ToString("F0") + " m" : "none");
+            string report = "bounces " + a + "+" + b +
+                " (second rays enabled " + s_secondUsed + " room checks, skipped " + s_secondSkipped + ")" +
+                ", echo " + (EchoGain > .003f ? EchoGain.ToString("F2") + " from " + EchoDist.ToString("F0") + " m" : "none");
+            s_secondUsed = s_secondSkipped = 0;
+            return report;
         }
 
         internal static void Shutdown()

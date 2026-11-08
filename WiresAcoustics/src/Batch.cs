@@ -38,9 +38,51 @@ namespace WiresAcoustics
         private static NativeArray<RaycastHit> s_hits;
         private static JobHandle s_job;
         private static bool s_pending;
+        // Main-thread diagnostic counters, emitted in the existing room log.
+        private static int s_direct, s_openings, s_cornerRays, s_reflectionRays;
+        private static int s_clear, s_blocked, s_portalWins, s_cornerWins, s_bounceWins, s_secondBounceWins, s_noPath, s_silentRaysSkipped;
+        internal static string Summary()
+        {
+            string s = "paths rays direct " + s_direct + ", openings " + s_openings +
+                ", corners " + s_cornerRays + ", bounces " + s_reflectionRays +
+                "; checks clear " + s_clear + ", blocked " + s_blocked +
+                ", chosen opening " + s_portalWins + ", corner " + s_cornerWins +
+                ", reflection " + s_bounceWins + " (second " + s_secondBounceWins + ")" +
+                ", through walls " + s_noPath + ", inaudible sound checks skipped " + s_silentRaysSkipped;
+            s_direct = s_openings = s_cornerRays = s_reflectionRays = 0;
+            s_clear = s_blocked = s_portalWins = s_cornerWins = s_bounceWins = s_secondBounceWins = s_noPath = s_silentRaysSkipped = 0;
+            return s;
+        }
 
-        internal static void Enqueue(AcousticFilter f, Vector3 to, bool under, bool reverb) =>
-            Queue.Add(new Req { F = f, To = to, Under = under, Reverb = reverb, Corners = f.LastOcc >= .3f });
+        internal static void Enqueue(AcousticFilter f, Vector3 to, bool under, bool reverb)
+        {
+            if (f == null) return;
+            // A completely faded placed SFX/other source cannot be heard,
+            // independent of how blocked it is. Continue updating the
+            // direction/fade; raycast when it approaches audibility again.
+            // Preserve last blockage and effect state to avoid a transition.
+            if ((f.Kind == AcousticFilter.Kinds.Sfx ||
+                 f.Kind == AcousticFilter.Kinds.Other) &&
+                f.Placed && f.DistanceGain < 1e-4f &&
+                !AcousticFilter.GlobalActive)
+            {
+                s_silentRaysSkipped++;
+                return;
+            }
+            // No wall processing requested: don't submit ANY geometry rays.
+            // Underwater's attenuation still applies when necessary.
+            if (!Plugin.Occlusion.Value)
+            {
+                f.Set(under ? Underwater.Gain : 1f,
+                      under ? Underwater.Cutoff : 22000f, false);
+                f.LastOcc = 0f;
+                f.LastBlocker = null;
+                f.Routed = false;
+                return;
+            }
+            Queue.Add(new Req { F = f, To = to, Under = under, Reverb = reverb,
+                                Corners = f.LastOcc >= .3f });
+        }
 
         // Every frame, from the game's audio update.
         internal static void Step(Vector3 listener)
@@ -50,7 +92,7 @@ namespace WiresAcoustics
             if (n == 0) return;
             int routes = Mathf.Min(Portals.Routes, Portals.List.Count);
             int cmds = 0;
-            foreach (Req r in Queue) cmds += 1 + routes + (r.Corners ? 2 * Corners.Count + Bounces.Tries : 0) + (r.F != null && r.F.AreaRadius > 0f ? 4 : 0);
+            foreach (Req r in Queue) cmds += 1 + (r.Corners ? routes + 2 * Corners.Count + Bounces.Tries : 0) + (r.F != null && r.F.AreaRadius > 0f ? 4 : 0);
             if (!s_cmds.IsCreated || s_cmds.Length < cmds || s_flight.Length < n)
             {
                 if (s_cmds.IsCreated) { s_cmds.Dispose(); s_hits.Dispose(); }
@@ -66,19 +108,22 @@ namespace WiresAcoustics
                 Req r = Queue[i];
                 r.Listener = listener;
                 r.First = c;
-                r.Routes = routes;
-                if (routes > 0) r.P0 = Portals.List[0];
-                if (routes > 1) r.P1 = Portals.List[1];
+                r.Routes = r.Corners ? routes : 0;
+                if (r.Routes > 0) r.P0 = Portals.List[0];
+                if (r.Routes > 1) r.P1 = Portals.List[1];
                 s_cmds[c++] = Cast(listener, r.To, q);
                 // a sound with a shape: its middle, sides and top too; the least hidden part is heard
                 r.An = r.F != null ? Area.Points(r.F, listener, APts) : 0;
                 if (r.An > 0) { r.A0 = APts[0]; r.A1 = APts[1]; r.A2 = APts[2]; r.A3 = APts[3]; }
                 for (int k = 0; k < r.An; k++) s_cmds[c++] = Cast(listener, APts[k], q);
-                if (routes > 0) s_cmds[c++] = Cast(r.P0.Point, r.To, q);
-                if (routes > 1) s_cmds[c++] = Cast(r.P1.Point, r.To, q);
+                if (r.Routes > 0) s_cmds[c++] = Cast(r.P0.Point, r.To, q);
+                if (r.Routes > 1) s_cmds[c++] = Cast(r.P1.Point, r.To, q);
+                s_direct += 1 + r.An;
+                s_openings += r.Routes;
                 if (r.Corners)
                 {
-                    Corners.Around(listener, r.To, r.F != null ? r.F.LastBlockDist : (r.To - listener).magnitude * .5f, Pts);
+                    Corners.Around(listener, r.To, r.F != null ? r.F.LastBlockDist : (r.To - listener).magnitude * .5f,
+                                   r.F != null ? r.F.LastBlocker : null, Pts);
                     r.C0 = Pts[0]; r.C1 = Pts[1]; r.C2 = Pts[2]; r.C3 = Pts[3]; r.C4 = Pts[4];
                     foreach (Vector3 p in Pts) { s_cmds[c++] = Cast(listener, p, q); s_cmds[c++] = Cast(p, r.To, q); }
                     r.Bn = Bounces.Pick(listener, r.To, Tried);
@@ -86,6 +131,8 @@ namespace WiresAcoustics
                     if (r.Bn > 1) r.B1 = Tried[1];
                     if (r.Bn > 2) r.B2 = Tried[2];
                     for (int k = 0; k < r.Bn; k++) s_cmds[c++] = Cast(Tried[k].End, r.To, q);
+                    s_cornerRays += 2 * Corners.Count;
+                    s_reflectionRays += r.Bn;
                 }
                 s_flight[i] = r;
             }
@@ -108,10 +155,15 @@ namespace WiresAcoustics
         // The sea (Ocean): the beach and the seabed within 15 m of where the waves break don't hide them.
         private static bool s_shore;
 
-        private static float Walls(int cmd, Vector3 to, out float first)
+        private static float Walls(int cmd, Vector3 to, out float first) =>
+            Walls(cmd, to, out first, out _);
+
+        private static float Walls(int cmd, Vector3 to, out float first,
+                                   out Collider blocker)
         {
             float occ = 0f;
             first = float.MaxValue;
+            blocker = null;
             for (int h = 0; h < MaxHits; h++)
             {
                 RaycastHit hit = s_hits[cmd * MaxHits + h];
@@ -120,21 +172,26 @@ namespace WiresAcoustics
                 float w = Occlusion.Counts(hit.collider, to);
                 if (w <= 0f) continue;
                 occ += w;
-                if (hit.distance < first) first = hit.distance;
+                if (hit.distance < first)
+                {
+                    first = hit.distance;
+                    blocker = hit.collider;
+                }
             }
             return occ;
         }
 
         // A way round: kept if it arrives louder than the best so far.
-        private static void Consider(float occ, float lengthGain, Vector3 at, ref float bestGain, ref float bestCutoff, ref float bestOcc, ref Vector3 bestAt)
+        private static bool Consider(float occ, float lengthGain, Vector3 at, ref float bestGain, ref float bestCutoff, ref float bestOcc, ref Vector3 bestAt)
         {
             Occlusion.Muffle(occ, out float g, out float cut);
             g *= lengthGain;
-            if (g <= bestGain) return;
+            if (g <= bestGain) return false;
             bestGain = g;
             bestCutoff = cut;
             bestOcc = occ;
             bestAt = at;
+            return true;
         }
 
         private static void Apply()
@@ -149,24 +206,34 @@ namespace WiresAcoustics
                 float occ = 0f, first = 0f;
                 Occlusion.Own = f.ShapeRoot != null ? f.ShapeRoot.root : null;
                 s_shore = f.Kind == AcousticFilter.Kinds.Ocean;
-                if (on) occ = Walls(r.First, r.To, out first);
-                f.LastOcc = occ;
+                Collider firstBlocker = null;
+                if (on) occ = Walls(r.First, r.To, out first, out firstBlocker);
                 f.LastBlockDist = first < float.MaxValue ? first : (r.To - r.Listener).magnitude * .5f;
                 // The direct sound (through the walls) and the best way round (an opening, a corner, a
                 // bounce) are both heard: neither stops the other. The way round is picked by how loud
                 // it arrives, and the two add up by energy.
                 float pathGain = 0f, pathCutoff = 22000f, pathOcc = 0f;
                 Vector3 pathAt = r.To;
+                int bestKind = 0; // 1 opening, 2 corner, 3 reflection
+                bool bestIsSecondBounce = false;
                 int c = r.First + 1;
                 for (int k = 0; k < r.An; k++, c++)
                     if (on && occ > .05f)
                         occ = Mathf.Min(occ, Walls(c, k == 0 ? r.A0 : k == 1 ? r.A1 : k == 2 ? r.A2 : r.A3, out _));
+                // The LEAST blocked spot on an extended source controls
+                // audibility. Use that result for next-step routing decisions
+                // and whether second-bounce jobs are worth scheduling.
+                f.LastOcc = occ;
+                f.LastBlocker = occ >= .3f ? firstBlocker : null;
+                if (occ >= .3f) { s_blocked++; Bounces.Wake(); }
+                else s_clear++;
                 if (on && occ >= .3f)
                     for (int k = 0; k < r.Routes; k++, c++)
                     {
                         Portals.Portal p = k == 0 ? r.P0 : r.P1;
                         float total = Walls(c, r.To, out _) + Portals.Bend(p, r.To);
-                        Consider(total, Portals.LengthGain(r.Listener, p, r.To), p.Point, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt);
+                        if (Consider(total, Portals.LengthGain(r.Listener, p, r.To), p.Point, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
+                            bestKind = 1;
                     }
                 else c += r.Routes;
                 if (r.Corners)
@@ -175,7 +242,8 @@ namespace WiresAcoustics
                         if (!on || f.LastOcc < .3f) continue;
                         Vector3 p = k == 0 ? r.C0 : k == 1 ? r.C1 : k == 2 ? r.C2 : k == 3 ? r.C3 : r.C4;
                         float total = Walls(c, p, out _) + Walls(c + 1, r.To, out _) + Corners.Bend(r.Listener, p, r.To);
-                        Consider(total, Corners.LengthGain(r.Listener, p, r.To), p, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt);
+                        if (Consider(total, Corners.LengthGain(r.Listener, p, r.To), p, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
+                            bestKind = 2;
                     }
                 if (r.Corners)
                     for (int k = 0; k < r.Bn; k++, c++)
@@ -183,7 +251,11 @@ namespace WiresAcoustics
                         if (!on || f.LastOcc < .3f) continue;
                         Bounces.Try t = k == 0 ? r.B0 : k == 1 ? r.B1 : r.B2;
                         float total = Walls(c, r.To, out _) + Bounces.Cost(t, r.To);
-                        Consider(total, Bounces.LengthGain(r.Listener, t, r.To), t.Heard, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt);
+                        if (Consider(total, Bounces.LengthGain(r.Listener, t, r.To), t.Heard, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
+                        {
+                            bestKind = 3;
+                            bestIsSecondBounce = (t.End - t.Heard).sqrMagnitude > .04f;
+                        }
                     }
                 Occlusion.Muffle(occ, out float gain, out float cutoff);
                 bool routed = false;
@@ -198,6 +270,17 @@ namespace WiresAcoustics
                     heard = Vector3.Lerp(r.To, pathAt, share);
                     routed = share > .05f;
                 }
+                if (routed)
+                {
+                    if (bestKind == 1) s_portalWins++;
+                    else if (bestKind == 2) s_cornerWins++;
+                    else if (bestKind == 3)
+                    {
+                        s_bounceWins++;
+                        if (bestIsSecondBounce) s_secondBounceWins++;
+                    }
+                }
+                else if (occ >= .3f) s_noPath++;
                 Occlusion.Own = null;
                 s_shore = false;
                 if (r.Under) { gain *= Underwater.Gain; cutoff = Mathf.Min(cutoff, Underwater.Cutoff); }

@@ -34,6 +34,16 @@ namespace WiresAcoustics
         private static Params s_current, s_applied;
         private static bool s_haveApplied;
         private static readonly Dictionary<int, float> Absorb = new Dictionary<int, float>();
+        // Save original Unity reverb zones rather than destroying them.
+        // Required for toggling acoustics OFF without reloading the area.
+        private struct VanillaZone { internal AudioReverbZone Zone; internal bool Enabled; }
+        private static readonly List<VanillaZone> VanillaZones = new List<VanillaZone>(48);
+        private static bool s_roomDirty = true, s_haveCast, s_restoreComplete;
+        private static Vector3 s_lastCastPosition;
+        private static float s_lastCastTime;
+        private const float StationaryResample = 1f;
+        internal static void Invalidate() { s_roomDirty = true; RoomStats.Invalidated++; }
+
 
         // Measured, smoothed (read by Occlusion for the per-sound reverb send).
         internal static float Enclosure, Absorption = .3f;
@@ -98,7 +108,7 @@ namespace WiresAcoustics
         [HarmonyPatch(typeof(AudioMan), "Update")]
         private static class Tick
         {
-            private static bool s_wasOn, s_wasHrtf;
+            private static bool s_wasOn, s_wasHrtf, s_wasRoomReverb;
 
             private static void Postfix(AudioMan __instance)
             {
@@ -106,8 +116,14 @@ namespace WiresAcoustics
                 int gc0 = t0 != 0L ? System.GC.CollectionCount(0) : 0;
                 // Switched off while playing: hand every live sound back to the game, finish pending work.
                 bool on = Plugin.Enabled.Value, hrtf = on && Plugin.Hrtf.Value;
+                bool roomReverb = on && Plugin.RoomReverb.Value;
+                // Re-enabling the mod or room reverb must immediately
+                // suppress the newly restored native zones. Otherwise
+                // vanilla + custom reverb could overlap for 30 seconds.
+                if (roomReverb && !s_wasRoomReverb) { s_nextScan = 0f; Room.Invalidate(); }
+                s_wasRoomReverb = roomReverb;
                 if (s_wasHrtf && !hrtf) { Directions.Flush(); AcousticFilter.ReleaseHrtf(); }
-                if (s_wasOn && !on) { PortalLoop.Clear(); Travel.Clear(); Batch.Flush(); AcousticFilter.ReleaseAll(); Underwater.Reset(); Follow.Clear(); AcousticFilter.SetEcho(0f, Vector3.forward); }
+                if (s_wasOn && !on) { PortalLoop.Clear(); Travel.Clear(); Batch.Flush(); AcousticFilter.ReleaseAll(); PlayerSounds.RestoreAll(); Ambience.RestorePlaced(); Underwater.Reset(); Follow.Clear(); AcousticFilter.SetEcho(0f, Vector3.forward); }
                 s_wasOn = on; s_wasHrtf = hrtf;
                 if (!on) { Underwater.Reset(); Directions.Idle(); }
                 if (Plugin.Enabled.Value && __instance.GetActiveAudioListener() is AudioListener l)
@@ -115,7 +131,7 @@ namespace WiresAcoustics
                     Transform lt = l.transform;
                     // a new listener (the menu's, then the game camera's after loading in) comes with the
                     // game's own reverb zone: removed at once, not at the next safety check
-                    if (lt != s_listener) { s_listener = lt; s_nextScan = 0f; }
+                    if (lt != s_listener) { s_listener = lt; s_nextScan = 0f; s_roomDirty = true; s_haveCast = false; }
                     // everything not timed on its own adds up as "the rest"
                     long r = Cost.Start(), rest = 0L;
                     Underwater.Update(lt.position, Time.deltaTime);
@@ -165,7 +181,15 @@ namespace WiresAcoustics
             private static void Run(AudioMan __instance)
             {
                 // The rays measure the space for the reverb and for muffling ambience: on if either is.
-                if (!Plugin.Enabled.Value || (!Plugin.RoomReverb.Value && !Plugin.Occlusion.Value)) { Restore(); return; }
+                if (!Plugin.Enabled.Value || (!Plugin.RoomReverb.Value && !Plugin.Occlusion.Value))
+                {
+                    // Restore exactly ONCE. Repeating it on every audio
+                    // update was querying 3 AudioSources and allocating a
+                    // tiny array every frame even while disabled.
+                    if (!s_restoreComplete) Restore();
+                    return;
+                }
+                s_restoreComplete = false;
                 float now = Time.time;
                 if (now < s_next) return;
                 s_next = now + Interval;
@@ -183,6 +207,19 @@ namespace WiresAcoustics
                 if (!Plugin.RoomReverb.Value) { RestoreZones(); EnsureArrays(); }
                 else Setup(listener.transform);
                 Vector3 from = listener.transform.position;
+                // The listener standing still sees almost identical space.
+                // Do one full safety measurement per second, but immediately
+                // refresh after movement or placement/door events.
+                if (s_haveCast && !s_roomDirty &&
+                    (from - s_lastCastPosition).sqrMagnitude < .18f * .18f &&
+                    now - s_lastCastTime < StationaryResample)
+                {
+                    RoomStats.Skipped++;
+                    return;
+                }
+                s_lastCastPosition = from; s_lastCastTime = now;
+                s_haveCast = true; s_roomDirty = false;
+                RoomStats.Scheduled++;
                 s_from = from;
                 var q = new QueryParameters(Mask, false, QueryTriggerInteraction.Ignore, false);
                 for (int i = 0; i < Rays; i++) s_cmds[i] = new RaycastCommand(from, Dirs[i], q, MaxDistance);
@@ -224,34 +261,50 @@ namespace WiresAcoustics
             if (!s_zone.enabled) s_zone.enabled = true;
         }
 
-        // The game's own zones are removed while the mod is on, for good: they'd add their fixed,
-        // distance-only reverb on top of the measured one (a dungeon's on top of the measured room).
+        // Preserve the original components and enabled flags. Destroying the
+        // game's zones made turning the mod off impossible to restore properly.
         internal static bool RemoveZone(AudioReverbZone z)
         {
-            if (z == null || z == s_zone) return false;
-            if (Plugin.DebugLog.Value) Plugin.Log.LogInfo("[acoustics] removed the game's reverb zone " + z.name + " (" + z.reverbPreset + ") at " + z.transform.position.ToString("F0"));
-            Object.Destroy(z);
+            if (z == null || z == s_zone || !Plugin.Enabled.Value ||
+                !Plugin.RoomReverb.Value || !z.enabled) return false;
+            for (int i = 0; i < VanillaZones.Count; i++)
+                if (VanillaZones[i].Zone == z) { z.enabled = false; return false; }
+            if (VanillaZones.Count > 128)
+                for (int i = VanillaZones.Count - 1; i >= 0; i--)
+                    if (VanillaZones[i].Zone == null) VanillaZones.RemoveAt(i);
+            VanillaZones.Add(new VanillaZone { Zone = z, Enabled = z.enabled });
+            if (Plugin.DebugLog.Value) Plugin.Log.LogInfo("[acoustics] suspended vanilla reverb zone " + z.name);
+            z.enabled = false;
             return true;
         }
 
         private static void RemoveVanilla()
         {
+            if (!Plugin.RoomReverb.Value) { RestoreZones(); return; }
             foreach (AudioReverbZone z in Object.FindObjectsByType<AudioReverbZone>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
                 RemoveZone(z);
         }
 
-        // Our reverb off (the game's zones stay removed).
         private static void RestoreZones()
         {
             if (s_zone != null && s_zone.enabled) s_zone.enabled = false;
+            for (int i = 0; i < VanillaZones.Count; i++)
+            {
+                VanillaZone v = VanillaZones[i];
+                if (v.Zone != null) v.Zone.enabled = v.Enabled;
+            }
+            VanillaZones.Clear();
             s_haveApplied = false;
         }
 
         private static void Restore()
         {
+            s_restoreComplete = true;
             RestoreZones();
             if (s_pending) { s_job.Complete(); s_pending = false; }
-            if (Enclosure > 0f) Ambience.Reset();
+            Ambience.Reset();
+            s_roomDirty = true;
+            s_haveCast = false;
             Enclosure = 0f;
             Portals.List.Clear();
             Bounces.Clear();
@@ -372,7 +425,8 @@ namespace WiresAcoustics
                 s_nextLog = Time.time + 3f;
                 Plugin.Log.LogInfo("[acoustics] space: enclosed " + enclosure.ToString("P0") + ", size " + path.ToString("F1") + " m (nearest " +
                     nearest.ToString("F1") + " m), absorption " + alpha.ToString("F2") + " (open " + (escaped / Rays).ToString("P0") + "), RT60 " +
-                    decay.ToString("F2") + " s -> " + s_current + "; " + Portals.Summary() + "; " + Bounces.Summary() + "; " + Ocean.Summary() + "; " + Ambience.Summary() + "; " + Spawned.Summary() + ", following their owner " + Follow.Count + "; " + Underwater.Summary() + "; " + Occlusion.Summary() + ", " + Travel.Summary() + "; " + Budget.Summary() + "; " + Budget.Loudness() + "; " + Cost.Report() + "; " + Budget.Toggles());
+                    decay.ToString("F2") + " s -> " + s_current + "; " + Portals.Summary() + "; " + Bounces.Summary() + "; " + Ocean.Summary() + "; " + Ambience.Summary() + "; " + Spawned.Summary() + ", following their owner " + Follow.Count + "; " + Underwater.Summary() + "; " + Occlusion.Summary() + ", " + Travel.Summary() + "; " + Budget.Summary() + "; " + Budget.Loudness() + "; " + AcousticFilter.DiagnosticsSummary() + "; " +
+                    Batch.Summary() + "; " + RoomStats.Summary() + "; " + Cost.Report() + "; " + Budget.Toggles());
             }
         }
 

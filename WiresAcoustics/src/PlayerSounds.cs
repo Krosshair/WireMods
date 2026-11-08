@@ -11,6 +11,26 @@ namespace WiresAcoustics
     internal static class PlayerSounds
     {
         private const float Near = 2.5f;
+        // The backup lives on the filter, and is destroyed with its sound.
+        // A global dictionary retained thousands of dead short-lived
+        // AudioSource wrappers until the mod was switched off.
+        internal static void RestoreAll()
+        {
+            foreach (AcousticFilter f in AcousticFilter.Live)
+            {
+                if (f == null || !f.ConvertedPlayer) continue;
+                AudioSource src = f.Source;
+                if (src != null)
+                {
+                    src.spatialBlend = f.OldPlayerBlend;
+                    src.bypassReverbZones = f.OldPlayerBypass;
+                    src.minDistance = f.OldPlayerMin;
+                    src.maxDistance = f.OldPlayerMax;
+                }
+                f.ConvertedPlayer = false;
+                f.Player = null;
+            }
+        }
 
         // For each effect sound spawned (Follow, before it starts) and each unplaced sound starting
         // (Occlusion: sounds on the player's own objects): true if it's now placed.
@@ -24,12 +44,20 @@ namespace WiresAcoustics
                 (src.outputAudioMixerGroup == man.m_guiMixer || src.outputAudioMixerGroup == man.m_ambientMixer)) return false;
             global::Player p = Of(z.transform);
             if (p == null) return false;
+            AcousticFilter f = cue ?? z.gameObject.AddComponent<AcousticFilter>();
+            if (!f.ConvertedPlayer)
+            {
+                f.ConvertedPlayer = true;
+                f.OldPlayerBlend = src.spatialBlend;
+                f.OldPlayerMin = src.minDistance;
+                f.OldPlayerMax = src.maxDistance;
+                f.OldPlayerBypass = src.bypassReverbZones;
+            }
             src.spatialBlend = 1f;
             src.bypassReverbZones = false; // the game skips the reverb for unplaced sounds
             src.minDistance = Mathf.Max(src.minDistance, 5f);
             src.maxDistance = Mathf.Max(src.maxDistance, 40f);
-            AcousticFilter f = z.GetComponent<AcousticFilter>();
-            if (f != null) f.Player = p.transform;
+            f.Player = p.transform;
             return true;
         }
 

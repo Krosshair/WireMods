@@ -18,10 +18,10 @@ The mod traces rays through the world, the way light is traced in a renderer, bu
 The reverb is worked out from what the rays hit, so a stone hall rings, a log cabin sounds warm, a cave sounds like a cave, and a furnished room sounds lived in while an empty one echoes. Outdoors is measured the same way: open ground is dry, and a forest has its own soft tail from the trunks around you. The game's fixed static reverb is replaced everywhere.
 
 ### Muffling through walls
-Walls, floors, hills and rocks between you and a sound make it quieter and duller, more so through several layers. Furniture and trees muffle a little.
+Walls, floors, hills and rocks between you and a sound make it quieter and duller, more so through several layers. Furniture and trees muffle a little. The transmission now depends on the material too: thin timber muffles less than thick stone and metal, without needing any more raycasts.
 
 ### Sound finds its way round
-A sound behind a wall also reaches you through the openings: a window, a door, a hole in the roof, round a corner, or bouncing off a surface. You hear it from where it comes through, so a deer outside is heard at the window much more clearly than through the wall.
+A sound behind a wall also reaches you through the openings: a window, a door, a hole in the roof, round a corner, or bouncing off a surface. You hear it from where it comes through, so a deer outside is heard at the window much more clearly than through the wall. Corner candidates now use the blocking object's real bounding box when available. Reflections are prioritized by both path length and how much the surface absorbs, not distance alone.
 
 ### Echo
 Out in the open, a cliff or a wall facing you sends sounds back from its side, a moment later. Bare rock echoes clearly; a snowy slope barely does. It's barely noticeable, as most situations in Valheim won't have you facing huge walls. I haven't tested it there, but I'd guess it's pretty noticeable next to a fortress in the Ashlands. Just speculating, though.
@@ -39,7 +39,7 @@ Moving sounds rise in pitch as they come toward you and drop as they go away.
 Sounds fade with distance the way real sound does, instead of cutting out after a few metres. Quiet sounds fade sooner than loud ones, the air takes the highs off far sounds, and the wind carries sound downwind.
 
 ### HRTF (headphones)
-HRTF stands for head-related transfer function: how your head and ears change a sound depending on where it comes from. A sound on your left reaches your right ear a tiny bit later and duller, sounds behind you lose some brightness, and your outer ear colours sounds from above and below. The mod models this itself, so you can tell front from back and up from down, not just left from right. Best with headphones. *I'd recommend turning HRTF off on speakers, as your real head already produces ACTUAL HRTF.*
+HRTF stands for head-related transfer function: how your head and ears change a sound depending on where it comes from. A sound on your left reaches your right ear a tiny bit later and duller, sounds behind you lose some brightness, and your outer ear colours sounds from above and below. The mod models this itself, so you can tell front from back and up from down, not just left from right. Best with headphones. *I'd recommend turning HRTF off on speakers, as your real head already produces ACTUAL HRTF.* For the mod's own HRTF to sound its best, turn off Windows Sonic or Dolby Atmos spatial processing on your output device while playing Valheim; running both spatializers together can reduce directional clarity.
 
 ### Sounds have a place and a shape
 Creature sounds follow the creature, a death wail follows the falling body, and a creature's calls are duller when it faces away. Big sources (a hearth, a cart, a troll) sound as wide as they look and are only hidden when all of it is. Your own sounds (steps, equipping, drawing a bow) come from your character, even the ones the game plays "in the camera". The point being: sounds don't all come from a single point, and they move with their source, unlike vanilla.
@@ -62,13 +62,14 @@ Going through a portal, its hum doesn't stop and restart: it carries through wit
 
 ## Performance
 
-The ray tracing runs on Unity's worker threads, the per-sound processing on the audio thread, and the main thread only does a small amount of bookkeeping: about 0.1 ms per frame. Sounds have varying LODs: the nearest get the full HRTF, the rest a lighter version you can't tell apart at that distance, and the count adjusts to how busy the audio thread actually is (This is to keep the game fully performant on low-end systems, but said systems might get a lesser version of the mod's audio.)
+The ray tracing runs on Unity's worker threads, and per-sound DSP runs on the audio thread. The game's audio update handles a small amount of main-thread bookkeeping. Sounds have varying LODs: the **most audible** get the full HRTF, the rest a lighter directional filter, and the count adjusts to actual audio-thread load. Sounds already faded below -80 dB take a cheap silent-audio path while their echoes are inactive. Opening/corner paths and second-bounce rays are scheduled primarily when a sound is blocked; unchanged rooms and a stationary shoreline are sampled less often, with periodic safety refreshes and build/door invalidation. Exact savings depend on the scene and need A/B profiling.
 
 ## Settings
 
 - **General:** Enabled, Room reverb, Muffling, HRTF (headphones), Realistic distance.
 - **Tuning:** Reverb strength, Muffling strength, HRTF strength.
-- **Debug:** Debug log.
+- **Debug:** Debug log. This also reports detailed full/light/plain DSP costs, silent-buffer bypasses, acoustic path winners, first versus second reflection contributions, and saved room/ocean raycasts.
+- Turning the mod off now restores the original in-world reverb zones and the original positioning of player/ambient sounds without requiring a reload (provided those objects are still loaded).
 - Note that the settings will be expanded upon eventually.
 
 Disclaimer: development is AI assisted. Not fully human or AI.

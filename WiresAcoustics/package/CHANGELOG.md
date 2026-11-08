@@ -1,3 +1,14 @@
+## 0.2.3
+- Optimized: HRTF priority follows estimated audibility rather than distance alone; callbacks for sounds already below -80 dB bypass expensive processing if no audible delayed echo remains. New debug counters break down full/light/plain DSP and silent buffers.
+- Optimized: alternative paths are scheduled only for previously blocked sounds; room second-reflection jobs run on demand. The debug log now counts actual opening, corner, first- and second-reflection winners to judge whether added complexity pays off.
+- Optimized: still rooms and coastlines reuse recent measurements with periodic refreshes; doors, pieces and new dungeon rooms invalidate the geometry measurements.
+- Corrected: extended sounds now base future blocked-path decisions on their least-obstructed sampled point, not always the central ray.
+- Added: timber, stone, marble and metal transmit different amounts of sound using the already known collider material; reflection candidates use absorption and angular plausibility in addition to path length. Corner candidates prefer physical blocker edges over fixed arbitrary offsets.
+- Fixed: switching the mod off restores vanilla reverb zones instead of losing destroyed components, and reverts modified player and random-ambience AudioSource positioning and stereo panning. Conversion backups live on per-source filters so short-lived sounds don't accumulate stale tracking entries.
+- Compatibility: dungeon audio setup uses the per-room placement method rather than the two DungeonGenerator methods whose postfixes Valheim AVX displaced.
+- All existing acoustic features remain; the diagnostics help identify which processing and reflection paths are actually useful. Performance improvements vary by scene.
+- Note: using Windows Sonic or Dolby Atmos spatial processing alongside the mod's own HRTF can reduce its positional clarity. For best results, disable Windows spatial processing while playing Valheim (manually; no system settings are changed by the mod).
+
 ## 0.2.2
 - Fixed: birds and other random ambience could play inside your house, loud and unmuffled (the game places them at a random spot around you, often in your own room). Indoors they're heard through the walls and from the windows, like rain and wind.
 - Fixed: rocky valleys and ravines barely echoed: their sides counted as being indoors. Echoes now fade only under a roof.
