@@ -1,3 +1,9 @@
+## 0.2.4
+- Improved: entering and leaving caves, crypts and other enclosed spaces updates room reverb much faster, without lingering wet acoustics outside.
+- Improved: exterior ambience switches promptly at room boundaries instead of waiting through Valheim's long sequential ambient-loop fades. Normal weather and biome fades keep their original timing.
+- Fixed: distant sounds whose fade has already reached silence now stop immediately rather than repeatedly scheduling delayed stops; pending stop requests for the same source no longer accumulate.
+- Known issues: occasional clicks on constructed wood/stone footsteps and abrupt endings of some swamp random ambient effects are still under investigation. The experimental footstep attack fade and ambient-clip pitch-timing workaround were removed because they did not resolve the reported problems.
+
 ## 0.2.3
 - Optimized: HRTF priority follows estimated audibility rather than distance alone; callbacks for sounds already below -80 dB bypass expensive processing if no audible delayed echo remains. New debug counters break down full/light/plain DSP and silent buffers.
 - Optimized: alternative paths are scheduled only for previously blocked sounds; room second-reflection jobs run on demand. The debug log now counts actual opening, corner, first- and second-reflection winners to judge whether added complexity pays off.

@@ -15,7 +15,7 @@ namespace WiresAcoustics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.acoustics";
-        public const string Version = "0.2.3";
+        public const string Version = "0.2.4";
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled, RoomReverb, Occlusion, Hrtf, RealDistance, DebugLog;
         internal static ConfigEntry<float> ReverbStrength, OcclusionStrength, HrtfStrength;

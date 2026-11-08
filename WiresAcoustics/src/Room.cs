@@ -48,6 +48,36 @@ namespace WiresAcoustics
         // Measured, smoothed (read by Occlusion for the per-sound reverb send).
         internal static float Enclosure, Absorption = .3f;
         private static float s_path, s_alpha, s_decay;
+        // Valheim's environment-loop mixer can take 10 seconds to fade the old
+        // track out, then another 10 to fade the new one in. Speed that handoff
+        // ONLY around measured indoor/outdoor acoustic transitions, then restore
+        // the original fade duration for ordinary weather/biome changes.
+        private static AudioMan s_fastAmbientMan;
+        private static float s_fastAmbientOriginal, s_fastAmbientUntil;
+        private const float BoundaryAmbientFade = .25f;
+
+        private static void SpeedAmbientAtBoundary()
+        {
+            AudioMan man = AudioMan.instance;
+            if (man == null) return;
+            if (s_fastAmbientMan != man)
+            {
+                RestoreAmbientFade();
+                s_fastAmbientMan = man;
+                s_fastAmbientOriginal = man.m_ambientFadeTime;
+            }
+            s_fastAmbientUntil = Time.time + 3f;
+            man.m_ambientFadeTime = Mathf.Min(s_fastAmbientOriginal, BoundaryAmbientFade);
+        }
+
+        private static void RestoreAmbientFade()
+        {
+            if (s_fastAmbientMan != null &&
+                Mathf.Abs(s_fastAmbientMan.m_ambientFadeTime - Mathf.Min(s_fastAmbientOriginal, BoundaryAmbientFade)) < .001f)
+                s_fastAmbientMan.m_ambientFadeTime = s_fastAmbientOriginal;
+            s_fastAmbientMan = null;
+            s_fastAmbientUntil = 0f;
+        }
 
         internal static int Mask
         {
@@ -193,6 +223,7 @@ namespace WiresAcoustics
                 float now = Time.time;
                 if (now < s_next) return;
                 s_next = now + Interval;
+                if (s_fastAmbientUntil > 0f && now >= s_fastAmbientUntil) RestoreAmbientFade();
                 AudioListener listener = __instance.GetActiveAudioListener();
                 if (listener == null) return;
                 Bounces.Complete();
@@ -300,6 +331,7 @@ namespace WiresAcoustics
         private static void Restore()
         {
             s_restoreComplete = true;
+            RestoreAmbientFade();
             RestoreZones();
             if (s_pending) { s_job.Complete(); s_pending = false; }
             Ambience.Reset();
@@ -403,10 +435,22 @@ namespace WiresAcoustics
             target.Reverb += gain;
             target.Reflections += gain;
 
-            s_current = s_haveCurrent ? Params.Lerp(s_current, target, Smooth) : target;
+            // Doorways/dungeon exits should not keep the previous room's wet settings
+            // for several measurement ticks.  Keep the normal stable-room smoothing,
+            // but respond quickly when the enclosure itself changes substantially.
+            // The actual reverb tail is left to Unity's DSP; new outdoor sounds get
+            // the new (dry) zone settings promptly.
+            float change = enclosure - Enclosure;
+            // Detect a real change from an enclosed room to open air (or back),
+            // not an ordinary outdoor weather/biome change. The 3-second window
+            // allows EnvMan's environment selection to catch up with geometry.
+            if (s_haveCurrent && Mathf.Abs(change) > .12f &&
+                (enclosure >= .35f || Enclosure >= .35f)) SpeedAmbientAtBoundary();
+            float response = Mathf.Abs(change) > .12f ? (change < 0f ? .88f : .70f) : Smooth;
+            s_current = s_haveCurrent ? Params.Lerp(s_current, target, response) : target;
             s_haveCurrent = true;
-            Enclosure = Mathf.Lerp(Enclosure, enclosure, Smooth);
-            Absorption = Mathf.Lerp(Absorption, alpha, Smooth);
+            Enclosure = Mathf.Lerp(Enclosure, enclosure, response);
+            Absorption = Mathf.Lerp(Absorption, alpha, response);
             s_path = path; s_alpha = alpha; s_decay = decay;
             // Only when it changed audibly (setting the zone's values is main-thread work).
             if (s_zone != null && Plugin.RoomReverb.Value && (!s_haveApplied || s_current.Differs(s_applied)))

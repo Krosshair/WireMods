@@ -61,6 +61,33 @@ namespace WiresAcoustics
         private static bool Hold(ZSFX z, AudioSource src, bool fade)
         {
             if (s_running || src == null || !src.isPlaying) return true;
+            // ZSFX has already set its volume to zero when a timed fade completes.
+            // Deferring that Stop leaves isPlaying true, so ZSFX.CustomUpdate calls
+            // Stop again every frame until the queued stop finally runs.
+            // Once silent, the physical propagation delay is no longer audible.
+            if (!fade && src.volume <= .0001f)
+            {
+                // Cancel any deferred event for this now-finished sound so a
+                // pooled/reused source cannot inherit an obsolete stop later.
+                for (int i = Stops.Count - 1; i >= 0; i--)
+                    if (Stops[i].Sfx == z) Stops.RemoveAt(i);
+                return true;
+            }
+            // A delayed FadeOut/Stop must be queued only once for a given source.
+            // Repeated calls cannot extend or duplicate the event.
+            for (int i = 0; i < Stops.Count; i++)
+                if (Stops[i].Sfx == z)
+                {
+                    // An explicit Stop supersedes an already queued FadeOut, but
+                    // retains the earliest scheduled propagation time.
+                    if (!fade && Stops[i].Fade)
+                    {
+                        Pending pending = Stops[i];
+                        pending.Fade = false;
+                        Stops[i] = pending;
+                    }
+                    return false;
+                }
             float d = DelayOf(z, src);
             if (d < .01f) return true;
             Stops.Add(new Pending { Sfx = z, At = Time.time + d, Fade = fade });
