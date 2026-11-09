@@ -13,7 +13,7 @@ namespace WiresMeisterhau
     {
         public const string ModGuid = "wire.meisterhau";
         public const string ModName = "Wire's Meisterhau";
-        public const string ModVersion = "0.2.4";
+        public const string ModVersion = "0.2.5";
         internal const float VanillaPerfectParryWindow = 0.25f;
         internal const string RangedWindupRpc = "wire.meisterhau.rangedwindup";
 
@@ -38,7 +38,6 @@ namespace WiresMeisterhau
         internal static readonly Dictionary<ZDOID, RangedWindupState> NetworkRangedWindups = new Dictionary<ZDOID, RangedWindupState>();
         internal static readonly List<PendingXp> PendingXpAwards = new List<PendingXp>();
         internal static readonly List<int> PruneKeys = new List<int>();
-        internal static float NextPruneTime;
         internal static AttackSourceContext CurrentSource;
         internal static bool InOffensiveBlock;
         internal static bool GrantingBonusXp;
@@ -60,6 +59,7 @@ namespace WiresMeisterhau
         private static readonly MethodInfo ModifyDamageMethod = AccessTools.Method(typeof(Attack), "ModifyDamage", new[] { typeof(HitData), typeof(float) });
 
         private Harmony _harmony;
+        private bool _xpInvokePending, _hitPruneInvokePending;
 
         private void Awake()
         {
@@ -97,21 +97,66 @@ namespace WiresMeisterhau
 
         private void OnDestroy()
         {
+            // Unity's Invoke callbacks belong to this component. Cancel both
+            // scheduled one-shots before unloading, never leave XP awards or
+            // hit records held by a stale plugin instance across reloads.
+            CancelInvoke();
+            _xpInvokePending = _hitPruneInvokePending = false;
+            PendingXpAwards.Clear();
+            RecentHits.Clear();
+            PruneKeys.Clear();
             _harmony?.UnpatchSelf();
             if (Instance == this) Instance = null;
         }
-        private void Update()
+
+        // No Update/LateUpdate/FixedUpdate. Schedule work ONLY when an actual
+        // successful counter or hit leaves data to resolve. Unity Invoke uses
+        // scaled game time, matching the original Time.time deadlines.
+        private void ResolvePendingXpDue()
         {
+            _xpInvokePending = false;
             ResolvePendingXp();
+            SchedulePendingXp();
+        }
+
+        private static void SchedulePendingXp()
+        {
+            WiresMeisterhauPlugin plugin = Instance;
+            if (plugin == null || PendingXpAwards.Count == 0 ||
+                plugin._xpInvokePending) return;
+            float earliest = float.PositiveInfinity;
+            foreach (PendingXp pending in PendingXpAwards)
+                if (pending.ResolveAt < earliest) earliest = pending.ResolveAt;
+            plugin._xpInvokePending = true;
+            plugin.Invoke(nameof(ResolvePendingXpDue),
+                Mathf.Max(0.001f, earliest - Time.time));
+        }
+
+        private void PruneHitsDue()
+        {
+            _hitPruneInvokePending = false;
             PruneOldHits();
+            ScheduleHitPrune();
+        }
+
+        private static void ScheduleHitPrune()
+        {
+            WiresMeisterhauPlugin plugin = Instance;
+            if (plugin == null || RecentHits.Count == 0 ||
+                plugin._hitPruneInvokePending) return;
+            float earliest = float.PositiveInfinity;
+            foreach (HitRecord hit in RecentHits.Values)
+                if (hit == null || hit.Consumed) { earliest = Time.time; break; }
+                else if (hit.Time + 0.751f < earliest)
+                    earliest = hit.Time + 0.751f;
+            plugin._hitPruneInvokePending = true;
+            plugin.Invoke(nameof(PruneHitsDue),
+                Mathf.Max(0.001f, earliest - Time.time));
         }
 
         internal static void PruneOldHits()
         {
-            if (Time.time < NextPruneTime) return;
-            NextPruneTime = Time.time + 0.5f;
             if (RecentHits.Count == 0) return;
-
             float cutoff = Time.time - 0.75f;
             PruneKeys.Clear();
             foreach (var pair in RecentHits)
@@ -495,6 +540,7 @@ namespace WiresMeisterhau
                 Record = record,
                 ResolveAt = Time.time + 0.05f
             });
+            SchedulePendingXp();
 
             Instance?.Logger.LogDebug($"Meisterhau: {record.Weapon?.m_shared?.m_name ?? "weapon"} -> {record.Target?.GetHoverName() ?? "enemy"}");
         }
@@ -572,6 +618,7 @@ namespace WiresMeisterhau
             };
 
             RecentHits[target.GetInstanceID()] = record;
+            ScheduleHitPrune();
             source.Records.Add(record);
 
             TryRangedWindupInterrupt(target, record);
