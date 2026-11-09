@@ -102,7 +102,6 @@ namespace WiresBalancedCraftFromNearbyChests
             "forge_ext6"
         };
 
-        internal const float ContextPollSeconds = 0.08f;
         private const float LazyGraphDelay = 0.12f;
         private const float MovingGraphRefreshSeconds = 0.25f;
         private const int BeamCreatesPerFrame = 1;
@@ -121,25 +120,27 @@ namespace WiresBalancedCraftFromNearbyChests
         private static float _rebuildNotBefore;
         private static float _nextMovingGraphRefresh;
 
-        // A few times a second (not every frame): what you're looking at,
-        // and whether storage that moves needs its beams redrawn. Looking
-        // at the same thing as last time costs nothing.
+        // Vanilla Player.UpdateHover has already done the hover raycast.
+        // The postfix only compares references; context discovery runs when
+        // an actual target/build-menu/tool transition occurs.
         private static GameObject _lastHover;
         private static bool _lastInBuildUi;
         private static ItemDrop.ItemData _lastTool;
         private static bool _contextActive;
+        private static bool _contextCacheInvalid;
 
-        internal static void Poll()
+        internal static void HoverUpdated(Player player)
         {
-            ContainerRegistry.TickReconcile();
-
-            Player player = Player.m_localPlayer;
-            if (!VisualsEnabled() || player == null)
+            if (player == null || player != Player.m_localPlayer) return;
+            if (!VisualsEnabled())
             {
                 if (_contextActive)
                 {
                     _contextActive = false;
                     _lastHover = null;
+                    _lastTool = null;
+                    _lastInBuildUi = false;
+                    _contextCacheInvalid = true;
                     CleanupActive();
                     ResetContext();
                     _dirty = false;
@@ -153,9 +154,10 @@ namespace WiresBalancedCraftFromNearbyChests
             ItemDrop.ItemData tool = player.RightItem;
             // Plain reference checks: a destroyed object still counts as
             // something different from nothing.
-            if (!ReferenceEquals(hover, _lastHover) || inBuildUi != _lastInBuildUi ||
-                !ReferenceEquals(tool, _lastTool))
+            if (_contextCacheInvalid || !ReferenceEquals(hover, _lastHover) ||
+                inBuildUi != _lastInBuildUi || !ReferenceEquals(tool, _lastTool))
             {
+                _contextCacheInvalid = false;
                 _lastHover = hover;
                 _lastInBuildUi = inBuildUi;
                 _lastTool = tool;
@@ -488,7 +490,7 @@ namespace WiresBalancedCraftFromNearbyChests
                 ContainerRegistry.GetMatching(context);
 
             GameObject prefab =
-                FindConnectionPrefab(station);
+                FindGenericConnectionPrefab();
 
             for (int i = 0; i < matching.Count; i++)
                 WantBeam(
@@ -574,7 +576,7 @@ namespace WiresBalancedCraftFromNearbyChests
                     chest,
                     station,
                     false,
-                    FindConnectionPrefab(station));
+                    FindGenericConnectionPrefab());
             }
         }
 
@@ -1096,36 +1098,6 @@ namespace WiresBalancedCraftFromNearbyChests
                    Vector3.up * 0.5f;
         }
 
-        private static GameObject FindConnectionPrefab(
-            CraftingStation station)
-        {
-            if (station != null)
-            {
-                List<StationExtension> extensions =
-                    GetLoadedExtensions();
-
-                if (extensions != null)
-                {
-                    for (int i = 0; i < extensions.Count; i++)
-                    {
-                        StationExtension extension =
-                            extensions[i];
-
-                        if (extension == null ||
-                            extension.m_connectionPrefab == null ||
-                            extension.m_craftingStation == null)
-                            continue;
-
-                        if (extension.m_craftingStation.m_name ==
-                            station.m_name)
-                            return extension.m_connectionPrefab;
-                    }
-                }
-            }
-
-            return FindGenericConnectionPrefab();
-        }
-
         private static List<StationExtension> GetLoadedExtensions()
         {
             return AllExtensionsField != null
@@ -1138,6 +1110,22 @@ namespace WiresBalancedCraftFromNearbyChests
         {
             if (_genericConnectionPrefab != null)
                 return _genericConnectionPrefab;
+
+            // Every chest link this mod draws uses the standard vanilla
+            // extension effect, station links included (a galdr table's
+            // chest links too), so they never look like the game's own
+            // upgrade connections, which keep their own effects. Chosen by
+            // name: the first loaded extension can be a magical station.
+            ZNetScene normalScene = ZNetScene.instance;
+            if (normalScene != null)
+            {
+                GameObject normalPrefab = normalScene.GetPrefab("vfx_ExtensionConnection");
+                if (normalPrefab != null)
+                {
+                    _genericConnectionPrefab = normalPrefab;
+                    return normalPrefab;
+                }
+            }
 
             List<StationExtension> loaded =
                 GetLoadedExtensions();
@@ -1186,10 +1174,18 @@ namespace WiresBalancedCraftFromNearbyChests
 
             return null;
         }
+        // Local player swaps and world loads need a fresh context even if
+        // hover/tool happen to have the same null/reference values as before.
+        internal static void ForceNextContextRefresh()
+        {
+            _contextCacheInvalid = true;
+        }
+
         internal static void NotifyGraphChanged()
         {
-            // A rename can change where what you're looking at goes.
-            _lastHover = null;
+            // A rename can change where what you're looking at goes,
+            // including when no hover object exists (build-tool context).
+            _contextCacheInvalid = true;
             if (!_contextActive)
                 return;
             _dirty = true;
@@ -1323,6 +1319,7 @@ namespace WiresBalancedCraftFromNearbyChests
             ResetContext();
             _lastHover = null;
             _lastTool = null;
+            _contextCacheInvalid = false;
             _contextActive = false;
             Colliders.Clear();
         }

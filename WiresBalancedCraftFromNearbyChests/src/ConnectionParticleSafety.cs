@@ -25,6 +25,10 @@ namespace WiresBalancedCraftFromNearbyChests
                 if (particle == null)
                     continue;
 
+                // Colors are left exactly as the borrowed prefab made them:
+                // a station's own extension effect for its links, the
+                // standard vfx_ExtensionConnection for generic chest links.
+
                 ParticleSystem.VelocityOverLifetimeModule module =
                     particle.velocityOverLifetime;
                 if (!module.enabled)

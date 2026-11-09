@@ -11,7 +11,7 @@ namespace WiresBalancedCraftFromNearbyChests
     {
         public const string Guid = "wire.valheim.balancedcraftfromnearbychests";
         public const string Name = "Wire's Balanced Craft From Nearby Chests";
-        public const string Version = "0.1.11";
+        public const string Version = "0.1.12";
 
         internal static Plugin Instance;
         internal static ManualLogSource Log;
@@ -38,24 +38,18 @@ namespace WiresBalancedCraftFromNearbyChests
             Logger.LogInfo(Name + " " + Version + " loaded.");
         }
 
-        // Nothing runs every frame unless something is happening (beams
-        // being drawn or fading, a chest being indexed, a Multi User Chest
-        // request in flight). What you look at is checked a few times a
-        // second instead.
+        // Hover/context events come from vanilla Player.UpdateHover, with
+        // no independent 80ms hover polling. One known chest is reconciled
+        // every 0.25s for remote-player title changes that have no local event.
         private void Start()
         {
-            InvokeRepeating(nameof(Poll), 0.5f, ConnectionVisuals.ContextPollSeconds);
+            InvokeRepeating(nameof(ReconcileRemoteChestNames), 0.25f, 0.25f);
         }
 
-        private void Poll()
+        private void ReconcileRemoteChestNames()
         {
             Prof.Begin(Prof.Poll);
-            try
-            {
-                ConnectionVisuals.Poll();
-                if (Busy)
-                    enabled = true;
-            }
+            try { ContainerRegistry.TickReconcile(); }
             finally { Prof.End(Prof.Poll); }
         }
 
