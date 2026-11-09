@@ -1,7 +1,7 @@
 {
     "name": "WiresAcoustics",
     "description": "Ray traced sound for Valheim.",
-    "version_number": "0.2.5",
+    "version_number": "0.2.6",
     "website_url": "",
     "dependencies": []
 }
