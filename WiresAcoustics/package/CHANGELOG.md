@@ -1,3 +1,15 @@
+## 0.2.5
+- Fixed: birds, seagulls and other outside sounds came through wooden walls too clearly. A wooden wall muffles as much as it did before 0.2.3 again; stone, marble and iron still muffle more than wood.
+- Fixed: random biome sounds (birds, insects) and lava noises use the same game object, so lava could be treated as background ambience. They're now told apart where the game plays them: lava stays a real sound in the world, muffled by walls.
+- Fixed: looping sounds the game itself doesn't keep updating were never rechecked for walls after they started. They're now rechecked like other sounds.
+- Fixed: short random ambient sounds (an insect, a splash) could be cut off by the game's fade timer before their sound ended; they now play to their natural end.
+- Fixed: a sound starting while the same source still played could restart or cut the old one, and a distance-delayed sound was started and then restarted. Delayed sounds now start once, and stale delayed stops are dropped.
+- Fixed: possible crackle when a sound switched between full and light HRTF, and a rare case where an echo's memory was reused while still being played.
+- Fixed: a sound made right next to you (opening a gate or door, chopping, mining) was attached to your character and turned with it, so it stayed on the same side as you turned. It now stays where it was made; only your own item sounds (equipping, eating, picking up, dropping) move with you.
+- Fixed: random ambience indoors (a bird, an insect) kept the left/right it started with as you turned; it now stays in place.
+- Debug log: more detail on wildlife sounds, footstep clips and audio-thread cost.
+- Known issue: occasional clicks on wood and stone footsteps are still being investigated.
+
 ## 0.2.4
 - Improved: entering and leaving caves, crypts and other enclosed spaces updates room reverb much faster, without lingering wet acoustics outside.
 - Improved: exterior ambience switches promptly at room boundaries instead of waiting through Valheim's long sequential ambient-loop fades. Normal weather and biome fades keep their original timing.

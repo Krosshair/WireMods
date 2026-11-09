@@ -15,7 +15,7 @@ namespace WiresAcoustics
         private static readonly float[] Gain = { 1f, .6f, .4f, .28f };
         private static readonly float[] Cutoff = { 22000f, 1500f, 800f, 500f };
         internal const float SourceClearance = .5f; // the thing making the sound (a hearth, a door) doesn't hide it
-        private static int s_checked, s_muffled, s_added;
+        private static int s_checked, s_muffled, s_added, s_missingNativeLoopRechecks;
         private static float s_worstOcc;
         private static string s_worst;
 
@@ -36,12 +36,12 @@ namespace WiresAcoustics
             if (Plugin.DebugLog.Value) Describe(__instance, src, f);
             // The game's random ambience (a bird, a gust, an insect) is put at a made-up spot 1 to 40 m
             // round you at your own height: indoors that's often inside your own room, a bird singing
-            // next to you with nothing in the way. It's the world outside, so indoors it's heard the way
-            // the rain and wind are: through the walls, clearer toward the openings (Ambience).
-            if (AudioMan.instance != null && __instance.transform.parent == AudioMan.instance.transform &&
+            // next to you with nothing in the way. It's the world outside, so indoors it's muffled the
+            // way the rain and wind are (Ambience). It keeps its spot in the world, so it stays where it
+            // is as you turn (made positionless, its left/right was fixed when it started).
+            if (f != null && f.WorldRandomAmbient &&
                 (src.spatialBlend < .5f || Room.Enclosure >= .35f))
             {
-                if (src.spatialBlend >= .5f) Ambience.PlaceAsAmbient(src);
                 Ambience.Apply(__instance.gameObject, !src.isPlaying);
                 return;
             }
@@ -98,7 +98,10 @@ namespace WiresAcoustics
             // The game's random ambience (a bird, a gust, an insect somewhere round you) is placed at a
             // made-up spot 1 to 40 m off with its own gentle fall-off: it stands for the world around
             // you, not one creature, so it keeps that (on a real distance curve it was 15 to 20 dB quieter at 10 to 20 m).
-            bool ambience = AudioMan.instance != null && __instance.transform.parent == AudioMan.instance.transform;
+            // Authored provenance, not AudioMan parenting: positional lava
+            // uses exactly the same prefab and hierarchy as random birds.
+            bool ambience = f.WorldRandomAmbient;
+            f.NativeReverbLoop = __instance.m_distanceReverb;
             f.Physical(Plugin.RealDistance.Value && !f.Voice && !ambience);
             Budget.Note(f, dist); // processed now if it's among the nearest playing sounds
             if (Bounces.EchoGain > .003f) f.EnsureEcho();
@@ -198,8 +201,11 @@ namespace WiresAcoustics
             if (part != null && Room.Structural(c))
             {
                 // Approximate MATERIAL TRANSMISSION, not reflection
-                // absorption. A light wooden partition attenuates less
-                // than stone or marble. No additional physics rays.
+                // absorption: stone, marble and iron block more than wood.
+                // Wood is anchored at one full wall, as before materials
+                // were told apart (0.68 let outside sounds, birds and
+                // seagulls, through plank walls far too clearly; a real
+                // plank wall takes off well over the 4 dB of one wall here).
                 switch (part.m_materialType)
                 {
                     case WearNTear.MaterialType.Marble: w = 1.40f; break;
@@ -207,10 +213,10 @@ namespace WiresAcoustics
                     case WearNTear.MaterialType.Ashstone: w = 1.25f; break;
                     case WearNTear.MaterialType.Iron: w = 1.35f; break;
                     case WearNTear.MaterialType.Ancient: w = 1.10f; break;
-                    case WearNTear.MaterialType.Ice: w = .85f; break;
+                    case WearNTear.MaterialType.Ice: w = 1.00f; break;
                     case WearNTear.MaterialType.HardWood:
-                    case WearNTear.MaterialType.Timberwood: w = .85f; break;
-                    default: w = .68f; break;
+                    case WearNTear.MaterialType.Timberwood: w = 1.10f; break;
+                    default: w = 1.00f; break; // wood
                 }
             }
             else if (part != null) w = .25f;
@@ -297,12 +303,20 @@ namespace WiresAcoustics
                 if (f.Kind == AcousticFilter.Kinds.Other && hrtf && !f.Hrtf) { f.TakePanning(src.spread); f.Hrtf = true; }
                 Area.Measure(f, f.transform);
                 f.Placed = true;
-                f.Physical(Plugin.RealDistance.Value);
+                // Biome-random positional ambience keeps its authored
+                // rolloff; true lava/world SFX uses physical distance.
+                f.Physical(Plugin.RealDistance.Value && !f.WorldRandomAmbient);
                 Budget.Note(f, (f.transform.position - listener).magnitude);
                 if (!f.Active) continue; // past the count: left to Unity until it's among the nearest
                 if (Bounces.EchoGain > .003f) f.EnsureEcho();
                 if (!occlusion) continue;
-                if (f.Kind == AcousticFilter.Kinds.Sfx && (src.loop || now - f.StartedAt < .4f)) continue;
+                // Vanilla ZSFX.CustomUpdate refreshes loop reverb ONLY when
+                // m_distanceReverb is true. Loops that opt out must still
+                // receive our wall checks when their geometry/door changes.
+                if (f.Kind == AcousticFilter.Kinds.Sfx &&
+                    (now - f.StartedAt < .4f || (src.loop && f.NativeReverbLoop))) continue;
+                if (f.Kind == AcousticFilter.Kinds.Sfx && src.loop && !f.NativeReverbLoop)
+                    s_missingNativeLoopRechecks++;
                 Vector3 at = f.transform.position;
                 Batch.Enqueue(f, at, Underwater.Muffles(at, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
             }
@@ -311,8 +325,10 @@ namespace WiresAcoustics
         internal static string Summary()
         {
             string s = "sounds checked " + s_checked + ", muffled " + s_muffled + (s_worst != null ? " (most: " + s_worst + ")" : "") +
-                ", filters added late " + s_added + "; " + AcousticFilter.Format();
-            s_checked = s_muffled = s_added = 0;
+                ", filters added late " + s_added +
+                ", non-native-reverb loop rechecks " + s_missingNativeLoopRechecks +
+                "; " + AudioProvenance.Summary() + "; " + AcousticFilter.Format();
+            s_checked = s_muffled = s_added = s_missingNativeLoopRechecks = 0;
             s_worstOcc = 0f; s_worst = null;
             return s;
         }

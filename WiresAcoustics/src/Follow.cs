@@ -9,10 +9,12 @@ namespace WiresAcoustics
     // roar stays where it started while the troll walks on. Here a sound spawned for a creature (the
     // effect's parent, or the creature whose idle/alert sound it is) keeps its place relative to it
     // until it ends or its owner is gone; its voice (idle and alert calls) comes out of its front
-    // (Directions: duller from behind it). The same for a player's sounds the game leaves at a point
-    // (equipping at the hand, steps, swings, jumps, any action), which otherwise trail behind as
-    // they move, and for a death: the wail follows the falling body (the ragdoll the game spawns
-    // with it). Sounds the game already attaches or follows are left as they are.
+    // (Directions: duller from behind it). The same for a character's own item sounds (equipping,
+    // using, picking up, dropping: Equip says whose they are), and for a death: the wail follows the
+    // falling body (the ragdoll the game spawns with it). Sounds the game already attaches or follows
+    // are left as they are. Only sounds known to be the owner's follow it: a sound made by something
+    // else near you (a gate you open, a tree you chop) stays where it was made. (Picking the nearest
+    // player within 2.5 m glued those to you, turning with your character.)
     internal static class Follow
     {
         private struct Item { internal Transform Sound, Owner; internal Vector3 Offset; }
@@ -48,8 +50,6 @@ namespace WiresAcoustics
                     // a player's own unplaced sound is placed at the player and follows them
                     PlayerSounds.Place(go.GetComponent<ZSFX>(), go.GetComponent<AudioSource>());
                     Transform owner = body != null ? body : given != null ? given : go.GetComponent<AcousticFilter>()?.Player;
-                    // a player's sounds the game leaves at a point (steps, swings, jumps, actions): they follow too
-                    if (owner == null) owner = PlayerSounds.At(go.transform.position);
                     if (owner == null || !Moves(owner)) continue;
                     if (go.GetComponent<UnityEngine.Animations.ParentConstraint>() != null) continue; // the game's own follow
                     Items.Add(new Item { Sound = go.transform, Owner = owner, Offset = owner.InverseTransformPoint(go.transform.position) });

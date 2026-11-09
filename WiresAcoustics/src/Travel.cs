@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 
@@ -17,7 +19,24 @@ namespace WiresAcoustics
         private struct Pending { internal ZSFX Sfx; internal float At; internal bool Fade; }
         private static readonly List<Pending> Stops = new List<Pending>(16);
         private static bool s_running; // running a held-back stop: let it through
-        private static int s_delayed;
+        private static int s_delayed, s_acceptedStarts, s_cancelledOldStops;
+        private static int s_tracedFootsteps;
+        // Source-level event diagnostics, NOT a sound-processing alteration.
+        // Valheim picks the clip/pitch just before this accepted-play hook;
+        // logging their actual identities can isolate a bad original sample.
+        private static void TraceFootstep(AudioSource src, ZSFX z)
+        {
+            if (!Plugin.DebugLog.Value || s_tracedFootsteps >= 32 || src.clip == null) return;
+            string clip = src.clip.name;
+            if (clip.IndexOf("Footstep_Wood", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                clip.IndexOf("Footstep_Stone", System.StringComparison.OrdinalIgnoreCase) < 0) return;
+            s_tracedFootsteps++;
+            Plugin.Log.LogInfo("[footstep-clip] " + z.name + " / " + clip +
+                " pitch=" + src.pitch.ToString("F3") +
+                " duration=" + src.clip.length.ToString("F3") +
+                " volume=" + src.volume.ToString("F2") +
+                " at=" + Time.time.ToString("F2") + "s");
+        }
 
         private static float DelayOf(ZSFX z, AudioSource src)
         {
@@ -30,19 +49,70 @@ namespace WiresAcoustics
             return dist < .35f ? 0f : dist / Speed;
         }
 
+        // Vanilla ZSFX.Play invokes AudioSource.Play ONLY after its own
+        // concurrency gate and clip selection succeed. Replace that one
+        // accepted-play call, not the entire method or a broad postfix.
+        // This prevents rejected play requests from restarting an old sound.
         [HarmonyPatch(typeof(ZSFX), nameof(ZSFX.Play))]
         private static class Start
         {
-            private static void Postfix(ZSFX __instance, AudioSource ___m_audioSource)
+            private static readonly MethodInfo NativePlay = AccessTools.Method(
+                typeof(AudioSource), nameof(AudioSource.Play), System.Type.EmptyTypes);
+            private static readonly MethodInfo WrappedPlay = AccessTools.Method(
+                typeof(Travel), nameof(PlayWithTravel));
+
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> original)
             {
-                AudioSource src = ___m_audioSource;
-                if (src == null || !src.isPlaying) return;
-                float d = DelayOf(__instance, src);
-                if (d <= 0f) return;
-                src.Stop();
-                src.PlayDelayed(d);
+                var code = new List<CodeInstruction>(original);
+                int count = 0;
+                for (int i = 0; i < code.Count; i++)
+                    if (code[i].operand is MethodInfo method && method == NativePlay)
+                        count++;
+                if (count != 1)
+                {
+                    Plugin.Log.LogWarning("[travel] Expected exactly one accepted " +
+                        "AudioSource.Play in ZSFX.Play; found " + count +
+                        ". Leaving vanilla playback untouched.");
+                    return code;
+                }
+                for (int i = 0; i < code.Count; i++)
+                {
+                    CodeInstruction ins = code[i];
+                    if (!(ins.operand is MethodInfo method) || method != NativePlay)
+                        continue;
+                    var loadSelf = new CodeInstruction(OpCodes.Ldarg_0);
+                    loadSelf.labels.AddRange(ins.labels);
+                    loadSelf.blocks.AddRange(ins.blocks);
+                    ins.labels.Clear();
+                    ins.blocks.Clear();
+                    code.Insert(i, loadSelf);
+                    ins.opcode = OpCodes.Call;
+                    ins.operand = WrappedPlay;
+                    break;
+                }
+                return code;
+            }
+        }
+
+        private static void PlayWithTravel(AudioSource src, ZSFX z)
+        {
+            // A NEW accepted play supersedes any stop still in flight from
+            // a prior clip on this same component.
+            s_acceptedStarts++;
+            for (int i = Stops.Count - 1; i >= 0; i--)
+                if (Stops[i].Sfx == z)
+                {
+                    Stops.RemoveAt(i);
+                    s_cancelledOldStops++;
+                }
+            TraceFootstep(src, z);
+            float delay = DelayOf(z, src);
+            if (delay > .001f)
+            {
+                src.PlayDelayed(delay); // do not start, Stop, and restart
                 s_delayed++;
             }
+            else src.Play();
         }
 
         [HarmonyPatch(typeof(ZSFX), nameof(ZSFX.Stop))]
@@ -119,8 +189,11 @@ namespace WiresAcoustics
 
         internal static string Summary()
         {
-            string s = "delayed by distance " + s_delayed + " (stops waiting " + Stops.Count + ")";
-            s_delayed = 0;
+            string s = "accepted starts " + s_acceptedStarts +
+                ", delayed by distance " + s_delayed +
+                ", stale stops cancelled " + s_cancelledOldStops +
+                " (stops waiting " + Stops.Count + ")";
+            s_delayed = s_acceptedStarts = s_cancelledOldStops = 0;
             return s;
         }
     }

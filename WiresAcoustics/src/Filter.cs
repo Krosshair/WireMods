@@ -38,13 +38,20 @@ namespace WiresAcoustics
     public sealed class AcousticFilter : MonoBehaviour
     {
         internal static readonly List<AcousticFilter> Live = new List<AcousticFilter>(256);
-        private static int s_rate = 48000;
+        private static volatile int s_rate = 48000;
         private static volatile float s_globalGain = 1f, s_globalCutoff = 22000f;
         internal static volatile bool GlobalActive;
 
         // Applied to every filtered sound on top of its own values (under water).
         // How strong the direction cues are (setting "HRTF strength": 1 as modelled, up to 2).
         internal static volatile float Strength = 1f;
+
+        // Called by Budget's existing quarter-second main-thread pass.
+        internal static void RefreshOutputFormat()
+        {
+            int rate = AudioSettings.outputSampleRate;
+            if (rate > 0 && rate != s_rate) s_rate = rate;
+        }
 
         internal static void SetGlobal(float gain, float cutoff, bool active)
         {
@@ -57,6 +64,10 @@ namespace WiresAcoustics
         // Split into the muffling and HRTF part and the echo part, with how many callbacks ran the HRTF.
         private static long s_ticks, s_ticksEcho;
         private static int s_calls, s_hrtfCalls;
+        // Aggregated on the audio callback without formatting/logging and
+        // only when diagnostics were requested on the main thread.
+        private static long s_peakCallbackTicks;
+        private static int s_qualityTransitions, s_crossfadeUnprepared;
         // Detailed tier counters are collected only while Debug log is on.
         internal static volatile bool Diagnostics;
         private static long s_ticksFull, s_ticksLight, s_ticksPlain;
@@ -70,10 +81,15 @@ namespace WiresAcoustics
             int b = System.Threading.Interlocked.Exchange(ref s_callsLight, 0);
             int c = System.Threading.Interlocked.Exchange(ref s_callsPlain, 0);
             int silent = System.Threading.Interlocked.Exchange(ref s_callsSilent, 0);
+            int transitions = System.Threading.Interlocked.Exchange(ref s_qualityTransitions, 0);
+            int unprepared = System.Threading.Interlocked.Exchange(ref s_crossfadeUnprepared, 0);
+            long peak = System.Threading.Interlocked.Exchange(ref s_peakCallbackTicks, 0L);
             double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             return "DSP full " + a + "/" + (full * ms).ToString("F1") + "ms, light " + b + "/" +
                 (light * ms).ToString("F1") + "ms, plain " + c + "/" + (plain * ms).ToString("F1") +
-                "ms, silent bypasses " + silent;
+                "ms, silent bypasses " + silent + ", quality crossfades " + transitions +
+                ", unprepared-buffer switches " + unprepared +
+                ", worst single callback " + (peak * ms).ToString("F3") + "ms";
         }
         internal static long TakeTicks(out int calls, out long echoTicks, out int hrtfCalls)
         {
@@ -93,6 +109,7 @@ namespace WiresAcoustics
             set
             {
                 if (m_hrtf == value) return;
+                if (value) PrepareCrossfade(); // main thread, never audio callback
                 m_hrtf = value;
                 Directions.Want(this);
                 Pan();
@@ -106,6 +123,14 @@ namespace WiresAcoustics
         internal Vector3 RoutePoint;
         internal enum Kinds : byte { Sfx, Voice, Ocean, Other, Menu, Ambient }
         internal Kinds Kind;
+        // Assigned at the actual vanilla producer's ZSFX.Play callsite.
+        // Both sounds are parented to AudioMan and share the SAME prefab;
+        // transform parent/name alone cannot distinguish spatial lava from
+        // abstract biome ambience.
+        internal bool WorldRandomAmbient, WorldLavaAmbient;
+        // Vanilla ZSFX only refreshes looping reverb when this authored flag
+        // is set. Unflagged loops need our existing batched geometry tick.
+        internal bool NativeReverbLoop;
         internal float StartedAt, LastOcc, LastBlockDist;
         internal Collider LastBlocker; // prior confirmed obstruction, for bounded real-edge diffraction
         internal float PrevDist = -1f, RadialSpeed; // Doppler
@@ -204,14 +229,14 @@ namespace WiresAcoustics
             if (Source.spread != want) Source.spread = want;
         }
 
-        private float m_gain = 1f, m_cutoff = 22000f;
+        private volatile float m_gain = 1f, m_cutoff = 22000f;
         private readonly float[] m_state = new float[8];
 
         private const int Ring = 256;
         private const float HeadRadius = .0875f, Sound = 343f;
         private readonly float[] m_ring = new float[Ring];
         private int m_pos;
-        private bool m_primed;
+        private volatile bool m_primed;
         private float m_mono, m_side, m_delayL, m_delayR, m_headL, m_headR, m_backL, m_backR, m_gainL = 1f, m_gainR = 1f;
         private float m_x1L, m_x2L, m_y1L, m_y2L, m_x1R, m_x2R, m_y1R, m_y2R;
 
@@ -291,10 +316,22 @@ namespace WiresAcoustics
         // Delay lines are pooled and never freed (only the processed sounds hold one).
         private const int EchoRing = 16384;
         private static readonly Stack<float[]> EchoPool = new Stack<float[]>();
+        // Retire on MAIN thread. Recycle only after the audio callback that
+        // may have captured the old array finishes. No locks/allocations on
+        // the real-time audio thread; destroyed sources stay referenced until
+        // the last callback exits and their ring can safely return to pool.
+        private struct RetiredEcho
+        {
+            internal AcousticFilter Owner;
+            internal float[] Samples;
+        }
+        private static readonly List<RetiredEcho> RetiredEchoes = new List<RetiredEcho>();
+        private int m_echoReaders;
         private static volatile float s_echoGain, s_echoL = .707f, s_echoR = .707f, s_echoCut = 4000f;
-        private volatile float[] m_echo;
+        private float[] m_echo;
         private int m_echoPos;
-        private float m_echoLevel, m_echoLp, m_echoAt;
+        private volatile float m_echoLevel;
+        private float m_echoLp, m_echoAt;
 
         // Main thread, every frame: direction relative to your head (x right, z forward).
         internal static void SetEcho(float gain, Vector3 local)
@@ -311,28 +348,39 @@ namespace WiresAcoustics
         {
             // a far sound's echo is too faint to hear; a loop's echo is the loop again, just later (you
             // don't hear a steady sound echo, only its starts and stops)
-            if (m_echo != null || Cue || !enabled || !m_active || LastDist > 50f || (Source != null && Source.loop)) return;
+            if (System.Threading.Volatile.Read(ref m_echo) != null || Cue || !enabled || !m_active ||
+                LastDist > 50f || (Source != null && Source.loop) ||
+                System.Threading.Volatile.Read(ref m_echoReaders) != 0) return;
             float[] e = EchoPool.Count > 0 ? EchoPool.Pop() : new float[EchoRing];
             System.Array.Clear(e, 0, e.Length); // main thread, once per sound
             m_echoPos = 0;
             m_echoLevel = 0f;
             m_echoLp = 0f;
             m_echoAt = 0f;
-            m_echo = e;
+            System.Threading.Volatile.Write(ref m_echo, e);
         }
 
         private void ReleaseEcho()
         {
-            float[] e = m_echo;
+            float[] e = System.Threading.Interlocked.Exchange(ref m_echo, null);
             if (e == null) return;
-            m_echo = null;
-            if (EchoPool.Count < 128) EchoPool.Push(e);
+            RetiredEchoes.Add(new RetiredEcho { Owner = this, Samples = e });
         }
 
         // No echo around: the delay lines go back to the pool (Budget, a few times a second).
         internal static void DropEchoes()
         {
-            foreach (AcousticFilter f in Live) if (f != null && f.m_echo != null && f.m_echoLevel < 1e-4f && (s_echoGain < 1e-4f || !f.m_active)) f.ReleaseEcho();
+            foreach (AcousticFilter f in Live)
+                if (f != null && f.m_echo != null && f.m_echoLevel < 1e-4f &&
+                    (s_echoGain < 1e-4f || !f.m_active)) f.ReleaseEcho();
+            for (int i = RetiredEchoes.Count - 1; i >= 0; i--)
+            {
+                RetiredEcho retired = RetiredEchoes[i];
+                if (System.Threading.Volatile.Read(ref retired.Owner.m_echoReaders) != 0)
+                    continue;
+                if (EchoPool.Count < 128) EchoPool.Push(retired.Samples);
+                RetiredEchoes.RemoveAt(i);
+            }
         }
 
         internal void Set(float gain, float cutoff, bool snap)
@@ -372,6 +420,12 @@ namespace WiresAcoustics
             }
             Budget.Clear();
         }
+
+        // Debug-only read; target values alone can look correct even if the
+        // source was bypassed by Budget or the DSP had not yet reached them.
+        internal string CurrentProcessing() =>
+            "processed=" + m_active + ", actual gain=" + m_gain.ToString("F2") +
+            ", actual cutoff=" + m_cutoff.ToString("F0") + " Hz";
 
         // Debug: what this filter is doing to the sound right now.
         internal string Explain() =>
@@ -466,6 +520,18 @@ namespace WiresAcoustics
             }
             if (meter) MeterOut += Energy(data);
             long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (diagnostic)
+            {
+                long duration = t2 - t0;
+                long prior = System.Threading.Interlocked.Read(ref s_peakCallbackTicks);
+                while (duration > prior)
+                {
+                    long observed = System.Threading.Interlocked.CompareExchange(
+                        ref s_peakCallbackTicks, duration, prior);
+                    if (observed == prior) break;
+                    prior = observed;
+                }
+            }
             System.Threading.Interlocked.Add(ref s_ticks, t2 - t0);
             System.Threading.Interlocked.Add(ref s_ticksEcho, t2 - t1);
             System.Threading.Interlocked.Increment(ref s_calls);
@@ -494,7 +560,17 @@ namespace WiresAcoustics
 
         private void Echo(float[] data, int ch)
         {
-            float[] e = m_echo;
+            // Almost all sources have no echo allocated. This first check
+            // only tests null: it does not capture a usable buffer pointer.
+            // The protected second read below is the ONLY pointer we use.
+            if (System.Threading.Volatile.Read(ref m_echo) == null) return;
+            // Publish reader entry BEFORE acquiring the buffer reference.
+            // Main-thread ReleaseEcho atomically detaches its pointer and
+            // retires it until no callback could still reference it.
+            System.Threading.Interlocked.Increment(ref m_echoReaders);
+            try
+            {
+            float[] e = System.Threading.Volatile.Read(ref m_echo);
             float g = Full ? s_echoGain * EchoShare : 0f; // the nearest sounds only (it was over half the cost); fades out, not cut
             if (e == null || ch < 1) return;
             float g0 = m_echoLevel;
@@ -525,6 +601,8 @@ namespace WiresAcoustics
             }
             m_echoPos = pos;
             m_echoLp = lp;
+            }
+            finally { System.Threading.Interlocked.Decrement(ref m_echoReaders); }
         }
 
         private void Process(float[] data, int channels)
@@ -698,23 +776,103 @@ namespace WiresAcoustics
             m_x1L = x1L; m_x2L = x2L; m_y1L = y1L; m_y2L = y2L; m_x1R = x1R; m_x2R = x2R; m_y1R = y1R; m_y2R = y2R;
         }
 
+        // Keep two independent DSP histories for the duration of a quality
+        // transition: the OLD algorithm must not advance the history from
+        // which the NEW algorithm starts. These buffers allocate on the main
+        // thread when HRTF is first enabled, never inside the audio callback.
+        private float[] m_crossRing, m_crossState;
+        private struct DspSnapshot
+        {
+            internal float Gain, Cutoff, Mono, Side, DelayL, DelayR;
+            internal float HeadL, HeadR, BackL, BackR, GainL, GainR;
+            internal float X1L, X2L, Y1L, Y2L, X1R, X2R, Y1R, Y2R;
+            internal int Position;
+            internal bool Primed;
+        }
+        private DspSnapshot SnapshotDsp()
+        {
+            System.Array.Copy(m_ring, m_crossRing, Ring);
+            System.Array.Copy(m_state, m_crossState, m_state.Length);
+            return new DspSnapshot
+            {
+                Gain = m_gain, Cutoff = m_cutoff,
+                Mono = m_mono, Side = m_side,
+                DelayL = m_delayL, DelayR = m_delayR,
+                HeadL = m_headL, HeadR = m_headR,
+                BackL = m_backL, BackR = m_backR,
+                GainL = m_gainL, GainR = m_gainR,
+                X1L = m_x1L, X2L = m_x2L, Y1L = m_y1L, Y2L = m_y2L,
+                X1R = m_x1R, X2R = m_x2R, Y1R = m_y1R, Y2R = m_y2R,
+                Position = m_pos, Primed = m_primed
+            };
+        }
+        private void RestoreDsp(DspSnapshot s)
+        {
+            System.Array.Copy(m_crossRing, m_ring, Ring);
+            System.Array.Copy(m_crossState, m_state, m_state.Length);
+            m_gain = s.Gain; m_cutoff = s.Cutoff;
+            m_mono = s.Mono; m_side = s.Side;
+            m_delayL = s.DelayL; m_delayR = s.DelayR;
+            m_headL = s.HeadL; m_headR = s.HeadR;
+            m_backL = s.BackL; m_backR = s.BackR;
+            m_gainL = s.GainL; m_gainR = s.GainR;
+            m_x1L = s.X1L; m_x2L = s.X2L; m_y1L = s.Y1L; m_y2L = s.Y2L;
+            m_x1R = s.X1R; m_x2R = s.X2R; m_y1R = s.Y1R; m_y2R = s.Y2R;
+            m_pos = s.Position; m_primed = s.Primed;
+        }
+
         // One buffer through both the old and the new HRTF level, faded from one to the other.
         private bool m_wasFull, m_wasFullKnown;
-        private float[] m_cross;
+        private volatile float[] m_cross;
+        private volatile int m_crossNeeded;
+        // Called by the existing main-thread HRTF setter and Budget tick.
+        // An unexpected device buffer-size increase is handled without
+        // allocating in OnAudioFilterRead; the next Budget tick grows it.
+        internal void PrepareCrossfade()
+        {
+            if (m_crossRing == null) m_crossRing = new float[Ring];
+            if (m_crossState == null) m_crossState = new float[m_state.Length];
+            int needed = m_crossNeeded;
+            if (m_cross != null && m_cross.Length >= needed) return;
+            if (needed <= 0)
+            {
+                AudioSettings.GetDSPBufferSize(out int samples, out int buffers);
+                needed = Mathf.Max(2048, samples * 2);
+            }
+            m_cross = new float[Mathf.Max(needed, 2048)];
+        }
         private void Crossfade(float[] data, int ch, float tg, float tc, bool toFull)
         {
-            if (m_cross == null || m_cross.Length < data.Length) m_cross = new float[data.Length];
-            System.Array.Copy(data, m_cross, data.Length);
-            float gain = m_gain, cutoff = m_cutoff;
-            if (toFull) Pan2(m_cross, ch, tg, tc); else Spatialize(m_cross, ch, tg, tc); // the old
-            m_gain = gain; m_cutoff = cutoff;
+            float[] cross = m_cross;
+            if (cross == null || cross.Length < data.Length ||
+                m_crossRing == null || m_crossState == null)
+            {
+                if (Diagnostics)
+                    System.Threading.Interlocked.Increment(ref s_crossfadeUnprepared);
+                // Audio callbacks cannot allocate or resize a buffer. Use
+                // the requested new quality until main thread prepares a
+                // larger scratch; this avoids an RT allocation or underrun.
+                if (data.Length > m_crossNeeded) m_crossNeeded = data.Length;
+                if (toFull) Spatialize(data, ch, tg, tc);
+                else Pan2(data, ch, tg, tc);
+                return;
+            }
+            if (Diagnostics)
+                System.Threading.Interlocked.Increment(ref s_qualityTransitions);
+            System.Array.Copy(data, cross, data.Length);
+            DspSnapshot before = SnapshotDsp();
+            if (toFull) Pan2(cross, ch, tg, tc); else Spatialize(cross, ch, tg, tc); // the old
+            RestoreDsp(before); // both variants begin at the SAME sample history
             if (toFull) Spatialize(data, ch, tg, tc); else Pan2(data, ch, tg, tc);       // the new
             int frames = data.Length / ch;
-            float inv = 1f / frames;
+            // End on the exact new output sample, not one sample below a
+            // complete fade. The following buffer then continues the SAME
+            // new DSP history, avoiding a one-sample quality-transition step.
+            float inv = 1f / Mathf.Max(1, frames - 1);
             for (int i = 0, k = 0; i < frames; i++)
             {
-                float t = i * inv;
-                for (int c = 0; c < ch; c++, k++) data[k] = m_cross[k] + (data[k] - m_cross[k]) * t;
+                float t = frames > 1 ? i * inv : 1f;
+                for (int c = 0; c < ch; c++, k++) data[k] = cross[k] + (data[k] - cross[k]) * t;
             }
         }
 

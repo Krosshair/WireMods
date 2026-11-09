@@ -73,6 +73,7 @@ namespace WiresAcoustics
         {
             if (now < s_next) return;
             s_next = now + Every;
+            AcousticFilter.RefreshOutputFormat(); // device changes: sample-accurate delays
 
             AcousticFilter.Diagnostics = Plugin.DebugLog.Value;
             long stamp = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -118,6 +119,7 @@ namespace WiresAcoustics
                     placed++;
                 }
                 f.Full = full;
+                if (f.Hrtf) f.PrepareCrossfade(); // main thread only
             }
             if (placed < s_count) s_priorityCutoff = 0f;
 

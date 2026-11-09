@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 
@@ -58,6 +59,10 @@ namespace WiresAcoustics
         private static AudioSource s_leanSrc0, s_leanSrc1; // the two loops and their filters, found once
         private static AcousticFilter s_leanF0, s_leanF1;
         private static Vector3 s_openDir;
+        // World ambience one-shots are short lived, but can outlast a
+        // transition through a door. Unlike the two persistent environment
+        // loops they were previously muffled ONLY when their ZSFX started.
+        private static readonly List<AcousticFilter> RandomAmbients = new List<AcousticFilter>(12);
 
         // Every frame, from the game's audio update: lean the environment loop and wind toward the
         // openings (with the HRTF: their real direction; without: left/right as you face). The
@@ -134,6 +139,21 @@ namespace WiresAcoustics
             s_cutoff = Mathf.Clamp(Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(700f), m)), 200f, 22000f);
             Set(AmbientLoop(man));
             Set(WindLoop(man));
+            // Refresh active random outdoor calls (birds, insects, etc.) at
+            // the EXISTING enclosure-measurement cadence, not per frame.
+            // Preserve their original spatial pan and apply only global room
+            // filtering, like the continuous rain/bird environment loop.
+            for (int i = RandomAmbients.Count - 1; i >= 0; i--)
+            {
+                AcousticFilter f = RandomAmbients[i];
+                if (f == null || f.Source == null)
+                {
+                    RandomAmbients.RemoveAt(i);
+                    continue;
+                }
+                f.Set(s_gain, s_cutoff, false);
+                Need(f);
+            }
             // the ocean loop is placed at the real shore and handled like any placed sound (Ocean)
         }
 
@@ -168,6 +188,15 @@ namespace WiresAcoustics
                 if (s_gain >= .999f && !AcousticFilter.GlobalActive) return;
                 f = go.AddComponent<AcousticFilter>();
             }
+            // A random outdoor cue can first spawn spatially while outside,
+            // then be converted to room ambience once the listener enters.
+            // Drop its old point-source HRTF, Doppler/distance range and
+            // direction tracking rather than retaining effects from Sfx.
+            f.Hrtf = false;
+            f.Placed = false;
+            f.Physical(false);
+            f.Kind = AcousticFilter.Kinds.Ambient;
+            if (!RandomAmbients.Contains(f)) RandomAmbients.Add(f);
             f.Set(s_gain, s_cutoff, starting);
             Need(f);
         }
@@ -183,6 +212,7 @@ namespace WiresAcoustics
         internal static void Reset()
         {
             RestorePlaced();
+            RandomAmbients.Clear();
             s_gain = 1f; s_cutoff = 22000f; s_open = 0f; s_lean = 0f;
             if (AudioMan.instance == null) return;
             s_pan = 0f;
@@ -196,7 +226,53 @@ namespace WiresAcoustics
                 }
         }
 
+        // Debug-only, once per existing Room report (~3 seconds). Positionless
+        // ambient bird LOOP and real 3D seagull SFX are different systems.
+        // Report the CURRENT per-source filter state AFTER path processing,
+        // not only the initial wall-ray result from ZSFX.UpdateReverb.
+        internal static string WildlifeDiagnostics()
+        {
+            if (!Plugin.DebugLog.Value) return "";
+            var sb = new System.Text.StringBuilder("wildlife sources: ");
+            AudioMan man = AudioMan.instance;
+            if (man != null)
+            {
+                AudioSource ambient = AmbientLoop(man);
+                if (ambient != null && ambient.clip != null)
+                {
+                    AcousticFilter af = ambient.GetComponent<AcousticFilter>();
+                    sb.Append("environment=").Append(ambient.clip.name)
+                      .Append(" [").Append(af != null && af.Active ? "filtered" : "unfiltered")
+                      .Append("]; ");
+                }
+            }
+            int matches = 0;
+            foreach (AcousticFilter f in AcousticFilter.Live)
+            {
+                if (f == null || f.Source == null || !f.Source.isPlaying) continue;
+                string obj = f.name;
+                string clip = f.Source.clip != null ? f.Source.clip.name : "";
+                if (obj.IndexOf("seagull", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                    obj.IndexOf("bird", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                    clip.IndexOf("seagull", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                    clip.IndexOf("bird", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                matches++;
+                if (matches > 4) continue;
+                sb.Append(obj).Append('/').Append(clip)
+                  .Append(" active=").Append(f.Active)
+                  .Append(" kind=").Append(f.Kind)
+                  .Append(" distance=").Append(f.LastDist.ToString("F1"))
+                  .Append(" blocked=").Append(f.LastOcc.ToString("F2"))
+                  .Append(" routed=").Append(f.Routed)
+                  .Append(" [").Append(f.Explain())
+                  .Append(", ").Append(f.CurrentProcessing()).Append("]; ");
+            }
+            if (matches == 0) sb.Append("none captured");
+            else if (matches > 4) sb.Append("plus ").Append(matches - 4).Append(" more");
+            return sb.ToString();
+        }
+
         internal static string Summary() => "ambience gain " + s_gain.ToString("F2") + ", low-pass " + s_cutoff.ToString("F0") + " Hz, openness " +
-            s_open.ToString("F2") + ", pan " + s_pan.ToString("F2");
+            s_open.ToString("F2") + ", pan " + s_pan.ToString("F2") + ", random one-shots " + RandomAmbients.Count;
     }
 }
