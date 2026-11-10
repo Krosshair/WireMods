@@ -1127,53 +1127,73 @@ namespace WiresBalancedCraftFromNearbyChests
                 }
             }
 
+            // The effect isn't a scene prefab on every game version, so it's
+            // taken from a workbench or forge upgrade, which always use it.
+            // A magical station's upgrades use the green _mage effect: never
+            // settle for whichever extension happens to be loaded first.
+            if (normalScene != null)
+            {
+                for (int i = 0;
+                     i < KnownExtensionPrefabs.Length;
+                     i++)
+                {
+                    GameObject prefab =
+                        normalScene.GetPrefab(
+                            KnownExtensionPrefabs[i]);
+
+                    if (prefab == null)
+                        continue;
+
+                    StationExtension extension =
+                        prefab.GetComponentInChildren<StationExtension>(
+                            true);
+
+                    if (extension == null ||
+                        !IsStandardConnection(extension.m_connectionPrefab))
+                        continue;
+
+                    _genericConnectionPrefab =
+                        extension.m_connectionPrefab;
+                    return _genericConnectionPrefab;
+                }
+            }
+
             List<StationExtension> loaded =
                 GetLoadedExtensions();
 
+            GameObject other = null;
             if (loaded != null)
             {
                 for (int i = 0; i < loaded.Count; i++)
                 {
                     StationExtension extension = loaded[i];
-                    if (extension != null &&
-                        extension.m_connectionPrefab != null)
+                    if (extension == null ||
+                        extension.m_connectionPrefab == null)
+                        continue;
+
+                    if (IsStandardConnection(extension.m_connectionPrefab))
                     {
                         _genericConnectionPrefab =
                             extension.m_connectionPrefab;
                         return _genericConnectionPrefab;
                     }
+
+                    if (other == null)
+                        other = extension.m_connectionPrefab;
                 }
             }
-            ZNetScene scene = ZNetScene.instance;
-            if (scene == null)
-                return null;
 
-            for (int i = 0;
-                 i < KnownExtensionPrefabs.Length;
-                 i++)
-            {
-                GameObject prefab =
-                    scene.GetPrefab(
-                        KnownExtensionPrefabs[i]);
-
-                if (prefab == null)
-                    continue;
-
-                StationExtension extension =
-                    prefab.GetComponentInChildren<StationExtension>(
-                        true);
-
-                if (extension == null ||
-                    extension.m_connectionPrefab == null)
-                    continue;
-
-                _genericConnectionPrefab =
-                    extension.m_connectionPrefab;
-                return _genericConnectionPrefab;
-            }
-
-            return null;
+            // Nothing standard anywhere: better some link than none, but
+            // not remembered, so the standard one is used once it turns up.
+            return other;
         }
+
+        private static bool IsStandardConnection(GameObject prefab)
+        {
+            return prefab != null &&
+                   prefab.name == "vfx_ExtensionConnection";
+        }
+
         // Local player swaps and world loads need a fresh context even if
         // hover/tool happen to have the same null/reference values as before.
         internal static void ForceNextContextRefresh()
