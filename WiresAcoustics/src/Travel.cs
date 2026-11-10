@@ -106,6 +106,7 @@ namespace WiresAcoustics
                     s_cancelledOldStops++;
                 }
             TraceFootstep(src, z);
+            if (src != null) Declick.Prepare(src);
             float delay = DelayOf(z, src);
             if (delay > .001f)
             {

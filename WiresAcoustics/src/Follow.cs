@@ -74,6 +74,21 @@ namespace WiresAcoustics
             private static void Finalizer() { Owner = null; Voice = false; }
         }
 
+        // A chest's open and close sounds are made at the chest with no owner given, so they had no
+        // shape and came from the point at its middle. Around that call the chest is what they're
+        // made for: they get its shape (Area) and are heard from its open side. It doesn't move, so
+        // nothing follows anything.
+        [HarmonyPatch(typeof(Container), nameof(Container.SetInUse))]
+        private static class Chest
+        {
+            private static void Prefix(Container __instance, out bool __state)
+            {
+                __state = Plugin.Enabled.Value && Owner == null && __instance != null;
+                if (__state) Owner = __instance.transform;
+            }
+            private static void Finalizer(bool __state) { if (__state) Owner = null; }
+        }
+
         private static bool Voice; // inside a creature's idle or alert call
 
         // Only owners that move (creatures, players, ships, carts): a hit on a tree or a wall stays put

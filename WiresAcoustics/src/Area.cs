@@ -27,6 +27,7 @@ namespace WiresAcoustics
         {
             if (f.AreaKnown) return;
             f.AreaKnown = true;
+            f.HeardKnown = false;
             Transform owner = f.ShapeRoot != null ? f.ShapeRoot : (sound.parent != null ? sound.root : null);
             if (owner == null) return;
             int id = owner.GetInstanceID();
@@ -76,11 +77,35 @@ namespace WiresAcoustics
             Vector3 across = Vector3.Cross(Vector3.up, c - listener);
             across = across.sqrMagnitude > 1e-4f ? across.normalized : Vector3.right;
             float side = Mathf.Max(f.ShapeHalf.x, f.ShapeHalf.z) * .85f;
-            into[0] = c;
-            into[1] = c + across * side;
-            into[2] = c - across * side;
-            into[3] = c + Vector3.up * f.ShapeHalf.y * .85f;
+            // all on the side facing you: the nearest point of its surface, either side of it and its top
+            Vector3 near = Heard(f, listener);
+            into[0] = near;
+            into[1] = Surface(f, c, near + across * side, listener);
+            into[2] = Surface(f, c, near - across * side, listener);
+            into[3] = Surface(f, c, new Vector3(near.x, c.y + f.ShapeHalf.y, near.z), listener);
             return 4;
+        }
+
+        // The nearest point of a shape's surface, just outside it (a chest set into a wall: its front,
+        // where you see it). Inside the shape: its middle. One of the points Batch tries when the
+        // sound's own spot is blocked; a sound whose own spot is in the clear is heard from there.
+        internal static Vector3 Heard(AcousticFilter f, Vector3 listener)
+        {
+            Vector3 c = f.ShapeRoot.TransformPoint(f.ShapeCenter);
+            return Surface(f, c, listener, listener);
+        }
+
+        // A point clamped onto the shape's box, then 5 cm out toward you (so a check toward it isn't
+        // stopped by the thing it sits on); the middle if you're inside the box.
+        private static Vector3 Surface(AcousticFilter f, Vector3 c, Vector3 p, Vector3 listener)
+        {
+            Vector3 h = f.ShapeHalf;
+            Vector3 q = new Vector3(Mathf.Clamp(p.x, c.x - h.x, c.x + h.x),
+                                    Mathf.Clamp(p.y, c.y - h.y, c.y + h.y),
+                                    Mathf.Clamp(p.z, c.z - h.z, c.z + h.z));
+            Vector3 out_ = listener - q;
+            if (out_.sqrMagnitude < 1e-6f) return c;
+            return q + out_.normalized * .05f;
         }
 
         // Share of all around (0 a point, 1 surrounding you) a shape this wide covers from here.

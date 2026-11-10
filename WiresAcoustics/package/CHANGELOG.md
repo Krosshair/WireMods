@@ -1,3 +1,7 @@
+## 0.2.7
+- Fixed a vanilla bug: clicks and crackles in the game's sound effects, most obvious on wood and stone footsteps because they stand out against those deep sounds. This is in Valheim's own sound files, not something this mod caused. Two things are wrong with them: many clips have tiny bursts of noise baked in, and many were trimmed so they start in the middle of the sound instead of from silence, which clicks every time they play. I tried to fix both and hopefully fully succeeded. The mod repairs the sounds in memory as the game plays them; the game's files are not changed and no audio is added to the mod.
+- Improved: if the spot a sound is made at is muffled but part of the thing making it is in the open (a chest set into a wall), it's heard from that open part, so something you can clearly see is heard clearly. Sounds that aren't muffled come from where they always did.
+
 ## 0.2.6
 - Sorry, I put the wrong thing in the last changelog. Claude screwed me over: the crackles on wood/stone footsteps are a vanilla bug I'm trying to fix, but he put it in there like it's my damn fault. I shouldn't trust AI with changelogs. Sorry, fellas.
 - No changes to the mod itself.

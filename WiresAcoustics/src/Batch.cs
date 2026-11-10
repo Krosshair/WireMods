@@ -217,9 +217,24 @@ namespace WiresAcoustics
                 int bestKind = 0; // 1 opening, 2 corner, 3 reflection
                 bool bestIsSecondBounce = false;
                 int c = r.First + 1;
+                int open = -1; // which point on its shape is least hidden (none better than its own spot: -1)
                 for (int k = 0; k < r.An; k++, c++)
                     if (on && occ > .05f)
-                        occ = Mathf.Min(occ, Walls(c, k == 0 ? r.A0 : k == 1 ? r.A1 : k == 2 ? r.A2 : r.A3, out _));
+                    {
+                        float o = Walls(c, k == 0 ? r.A0 : k == 1 ? r.A1 : k == 2 ? r.A2 : r.A3, out _);
+                        if (o < occ) { occ = o; open = k; }
+                    }
+                // a sound with a shape is heard from its least hidden point (Directions)
+                if (r.An > 0 && f.ShapeRoot != null)
+                {
+                    if (open >= 0)
+                    {
+                        Vector3 at = open == 0 ? r.A0 : open == 1 ? r.A1 : open == 2 ? r.A2 : r.A3;
+                        f.HeardLocal = f.ShapeRoot.InverseTransformPoint(at);
+                        f.HeardKnown = true;
+                    }
+                    else f.HeardKnown = false;
+                }
                 // The LEAST blocked spot on an extended source controls
                 // audibility. Use that result for next-step routing decisions
                 // and whether second-bounce jobs are worth scheduling.

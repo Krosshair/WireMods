@@ -93,9 +93,18 @@ namespace WiresAcoustics
                         }
                     }
                     if (f.Placed) f.AirCutoff = AcousticFilter.AirAt(r.w);
-                    // heard through an opening, round a corner or by a bounce: from there
+                    // heard through an opening, round a corner or by a bounce: from there. A sound
+                    // with a shape whose own spot is blocked while part of the shape isn't: from that
+                    // part (Batch). Its own spot in the clear: from where it is, like any other sound.
                     if (f.Hrtf && f.Kind != AcousticFilter.Kinds.Ambient)
-                        f.SetDirection(f.Routed ? inv * (f.RoutePoint - lp).normalized : local);
+                    {
+                        Vector3 heard = f.Routed ? f.RoutePoint
+                            : f.AreaRadius > 0f && f.ShapeRoot != null && f.HeardKnown
+                                ? f.ShapeRoot.TransformPoint(f.HeardLocal)
+                                : Vector3.zero;
+                        Vector3 toHeard = heard - lp;
+                        f.SetDirection(heard != Vector3.zero && toHeard.sqrMagnitude > 1e-4f ? inv * toHeard.normalized : local);
+                    }
                 }
             }
             Apply();
