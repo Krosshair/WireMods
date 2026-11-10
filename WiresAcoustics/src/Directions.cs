@@ -68,7 +68,7 @@ namespace WiresAcoustics
                     if (f == null) continue;
                     Vector4 r = s_dirs[i];
                     f.LastDist = r.w;
-                    if (f.Placed) Doppler.Update(f, r.w, dt);
+                    if (f.Placed) { Doppler.Update(f, r.w, dt); if (f.Kind == AcousticFilter.Kinds.Other) Doppler.ApplyOther(f); }
                     if (echo && f.Placed)
                     {
                         Vector3 at = lp + rot * new Vector3(r.x, r.y, r.z) * r.w;
@@ -93,15 +93,10 @@ namespace WiresAcoustics
                         }
                     }
                     if (f.Placed) f.AirCutoff = AcousticFilter.AirAt(r.w);
-                    // heard through an opening, round a corner or by a bounce: from there. A sound
-                    // with a shape whose own spot is blocked while part of the shape isn't: from that
-                    // part (Batch). Its own spot in the clear: from where it is, like any other sound.
+                    // heard through an opening, round a corner or by a bounce: from there
                     if (f.Hrtf && f.Kind != AcousticFilter.Kinds.Ambient)
                     {
-                        Vector3 heard = f.Routed ? f.RoutePoint
-                            : f.AreaRadius > 0f && f.ShapeRoot != null && f.HeardKnown
-                                ? f.ShapeRoot.TransformPoint(f.HeardLocal)
-                                : Vector3.zero;
+                        Vector3 heard = f.Routed ? f.RoutePoint : Vector3.zero;
                         Vector3 toHeard = heard - lp;
                         f.SetDirection(heard != Vector3.zero && toHeard.sqrMagnitude > 1e-4f ? inv * toHeard.normalized : local);
                     }

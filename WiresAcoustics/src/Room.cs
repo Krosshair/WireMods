@@ -202,14 +202,13 @@ namespace WiresAcoustics
                         if (t1 != 0L) Cost.Add(ref Cost.Scan, t1);
                     }
                 }
-                long rays = Cost.Start();
                 Run(__instance);
-                Cost.Add(ref Cost.Rays, rays);
                 Cost.AddTick(t0, gc0);
             }
 
             private static void Run(AudioMan __instance)
             {
+                WriteLog();
                 // The rays measure the space for the reverb and for muffling ambience: on if either is.
                 if (!Plugin.Enabled.Value || (!Plugin.RoomReverb.Value && !Plugin.Occlusion.Value))
                 {
@@ -226,11 +225,13 @@ namespace WiresAcoustics
                 if (s_fastAmbientUntil > 0f && now >= s_fastAmbientUntil) RestoreAmbientFade();
                 AudioListener listener = __instance.GetActiveAudioListener();
                 if (listener == null) return;
+                long rays = Cost.Start();
                 Bounces.Complete();
                 if (s_pending)
                 {
                     s_job.Complete();
                     s_pending = false;
+                    Cost.Add(ref Cost.Rays, rays);
                     long c = Cost.Start();
                     Measure();
                     Cost.Add(ref Cost.Measure, c);
@@ -356,6 +357,19 @@ namespace WiresAcoustics
         internal static readonly Vector3[] Point = new Vector3[Rays], Normal = new Vector3[Rays];
         internal static readonly float[] Dist = new float[Rays], Alpha = new float[Rays];
 
+        private static bool s_logDue;
+        private static float s_logEnclosure, s_logNearest, s_logOpen;
+
+        private static void WriteLog()
+        {
+            if (!s_logDue) return;
+            s_logDue = false;
+            Plugin.Log.LogInfo("[acoustics] space: enclosed " + s_logEnclosure.ToString("P0") + ", size " + s_path.ToString("F1") + " m (nearest " +
+                s_logNearest.ToString("F1") + " m), absorption " + s_alpha.ToString("F2") + " (open " + s_logOpen.ToString("P0") + "), RT60 " +
+                s_decay.ToString("F2") + " s -> " + s_current + "; " + Portals.Summary() + "; " + Bounces.Summary() + "; " + Ocean.Summary() + "; " + Ambience.Summary() + "; " + Ambience.WildlifeDiagnostics() + "; " + Spawned.Summary() + ", following their owner " + Follow.Count + "; " + Underwater.Summary() + "; " + Occlusion.Summary() + ", " + Travel.Summary() + "; " + Budget.Summary() + "; " + Budget.Loudness() + "; " + AcousticFilter.DiagnosticsSummary() + "; " +
+                Batch.Summary() + "; " + RoomStats.Summary() + "; " + Cost.Report() + "; " + Budget.Toggles());
+        }
+
         private static void Measure()
         {
             int level = 0, hits = 0, treeLevel = 0, up = 0;
@@ -466,11 +480,10 @@ namespace WiresAcoustics
 
             if (Plugin.DebugLog.Value && Time.time >= s_nextLog)
             {
+                // written on the next tick, so building the summary doesn't add to this one
                 s_nextLog = Time.time + 3f;
-                Plugin.Log.LogInfo("[acoustics] space: enclosed " + enclosure.ToString("P0") + ", size " + path.ToString("F1") + " m (nearest " +
-                    nearest.ToString("F1") + " m), absorption " + alpha.ToString("F2") + " (open " + (escaped / Rays).ToString("P0") + "), RT60 " +
-                    decay.ToString("F2") + " s -> " + s_current + "; " + Portals.Summary() + "; " + Bounces.Summary() + "; " + Ocean.Summary() + "; " + Ambience.Summary() + "; " + Ambience.WildlifeDiagnostics() + "; " + Spawned.Summary() + ", following their owner " + Follow.Count + "; " + Underwater.Summary() + "; " + Occlusion.Summary() + ", " + Travel.Summary() + "; " + Budget.Summary() + "; " + Budget.Loudness() + "; " + AcousticFilter.DiagnosticsSummary() + "; " +
-                    Batch.Summary() + "; " + RoomStats.Summary() + "; " + Cost.Report() + "; " + Budget.Toggles());
+                s_logDue = true;
+                s_logEnclosure = enclosure; s_logNearest = nearest; s_logOpen = escaped / Rays;
             }
         }
 

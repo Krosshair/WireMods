@@ -190,3 +190,75 @@
 - Batch already only tries the shape's points when the sound's own spot is blocked (occ > .05) and sets HeardKnown only when one of them is less hidden. The forced part was Directions: with HeardKnown false it used Area.Heard (nearest surface point) instead of the sound's own position.
 - Fix (src/Directions.cs): a shaped sound is steered to HeardLocal only when HeardKnown; otherwise its own position, like any sound. Area.cs comment updated. CHANGELOG 0.2.7 line reworded to match.
 - Built 0 warnings, installed SHA256 dfd62b9f1bf79a4d5ef91d64f135fc442884bc49740864e9c13c984cbc187aee (log ended with ZNet OnDestroy / Net scene destroyed). Rollback backup/OPEN_SIDE_ONLY_IF_MUFFLED_20261110. Not tested in game.
+
+## 30. Source points: right-hand bias, chest lids, fire sounds
+- User: muffled chests sound further to the right nearly every time; chests should sound from their top, sconces from their fire.
+- Right bias (src/Batch.cs): the shape points were compared with a strict "<" in order near, right (Cross(up, toSound) = right), left, top, so equal occlusion always went to the right side. Now all four are measured, then ties (within 0.02) go to the near point, then the top, then the middle between the two sides if they tie, else the better side.
+- Chest lid (src/Follow.cs, src/Area.cs TopOf): a chest's open/close sounds (owner set by the SetInUse patch) are moved to the top centre of the chest's collider box before anything else uses their position.
+- Fire (src/Area.cs Voice): a sound that is a child of a piece with a Fireplace is moved, once, to the nearest enabled Light in that piece (the flame) when it is first measured.
+- Built 0 warnings, installed SHA256 7E6265E95614E998C205E12B596B3034D97F664C27EDFDA3698733D91F1DD346. Not tested. Rollback backup/SOURCE_POINTS_20261110. CHANGELOG not updated yet.
+
+## 31. Sound source overhaul (Spots)
+- User: apply the source-point idea to all sources: footsteps where you step, weapon sounds at the weapon, holstering where the item goes, etc.
+- Survey of the game's EffectList.Create call sites (271): footsteps are already made at the stepping foot (FootStep.OnFoot -> DoEffect at foot.position); hits at hit points; equipping at the hand; projectiles at their spawn point. Wrong ones: attack start/trigger/trail effects at the attack origin, which is the character's root unless m_attackOriginJoint is set (3,387 of ~3,400 attack entries in the exported prefabs are empty); unequip, pickup, drop (Humanoid, at transform.position) and consume (at the local player's position); piece sounds at the piece pivot (Door open/close/locked, Smelter ore/fuel/produce, Fermenter add/tap, Fireplace fuel/toggle, Ship sail change, Incinerator lever, ItemStand, Container move-item).
+- New src/Spots.cs, called first in Follow's EffectList.Create postfix (now also takes basePos):
+  - made at a Humanoid's root and the list is its current attack's start/trigger/trail effect (attack's or weapon's): moved to and attached to the weapon hand (left if the weapon is the left item);
+  - made at a Humanoid's root inside an item call: the call's spot from Equip (unequip: the back slot the item goes to per VisEquipment.AttachBackItem's switch, armour 1 m up; drop: right hand; use/eat: helmet bone; pickup: the picked object's position);
+  - unparented, no owner, made exactly at a networked object's pivot (OverlapSphereNonAlloc 0.5 m, ZNetView root within 1 cm, not a Character): that object becomes the owner and the sound moves to its lid (Container), flame (Fireplace: nearest lit Light) or box middle.
+  - Sounds attached to a bone are placed via PlayerSounds.Place (Follow skips attached sounds).
+- Equip.cs: Take(h, bone, point) also sets Spots; Release clears it. Area.cs: CenterOf, FlameOf, shared shape cache.
+- Debug: first 40 moves logged as "[spots] <sound> -> <where>".
+- Built 0 warnings, installed SHA256 B8E661DCDEC5581B8843C69CC905ADD7CCBC3C83EFAF00ADA817BB02F65182AE. Not tested. Rollback backup/SOURCE_OVERHAUL_20261110.
+- Creature heads: Character.m_eye is set on all 161 creature prefabs in the export (none empty). BaseAI m_idleSound / m_alertedEffects (made at transform.position) and attack sounds of a creature with no weapon shown in the hand (VisEquipment m_rightItemInstance / m_leftItemInstance null: bites, claws) now attach to m_eye; calls keep Facing. A player attacking with nothing shown: right hand. Installed SHA256 f011c343430dda20075a4c5a9d41af6594991eaf039ff7f8b40edbdcc05649d4. Not tested.
+- Split per sound (user: draugr and trolls groan and swing at once). For a creature's call or an attack made at the root, each sound object is classified from its ZSFX name plus its first clip name: Voice (vocal, voice, _vo_, growl, roar, snarl, scream, shout, grunt, bite, spit, attacking, taunt, breath) -> m_eye with Facing; Limb (swing, whoosh, whsh, swipe, swish, slash, claw, trail, stab, chain, lift, flurry, whip) -> the weapon hand, else the right hand, else the head; Ground (stomp, slam, impact, land, jump) -> left at the feet; other -> the weapon hand, a player's right hand, else the head. Word lists from the game's attack sound names (dev/DECLICK_CLIPS.tsv). Installed SHA256 d21e98594fbb57a0c204128630711d04f96a2f29ec76afe1f05377dcb2e02c3c. Not tested.
+
+## 32. Everything that can move takes its sounds with it
+- User: the grappling hook reload sound stays where it started; make all moving sources' sounds follow.
+- Cause: AnimationEffect.Effect (animation events: crossbow and grappling hook reloads, many creature attack and movement sounds) Instantiates the effect at the event's joint and never parents it; none of it goes through EffectList, so neither Follow nor Spots saw it.
+- src/Animated.cs: prefix that does the same as the game's method, then, if the animated object can move (Follow.Moves: a Character or non-kinematic Rigidbody in its parents), attaches each ZSFX in the spawned effect to the joint (skips a ZSFX object that also carries a ParticleSystem).
+- src/Spots.cs: an EffectList sound with no parent and no owner made exactly at a character's pivot (Character.GetAllCharacters, 1 cm) gets that character as owner, so Follow keeps it with it (pets, animals' jumps, Player minor-action start effects, the hammer's build effect). Bow draw (m_holdStartEffect) and the tool's build effect (m_buildEffect) of the held item go to that item's hand.
+- Ships and carts: their own pivot sounds were already made owners by PieceAt (moving rigidbody -> Follow).
+- Footsteps stay where the foot landed (correct). Static pieces unchanged.
+- Performance: no per-frame work added; sounds attached to bones/joints move with the hierarchy instead of Follow's per-frame list.
+- Built 0 warnings, installed SHA256 cee92259e58f1dbbfdb788588676fb193fc28a6aacd84870caa185dc838ac632. Not tested. Rollback backup/SOURCE_FOLLOW_PASS_20261110.
+
+## 33. Deer, wake/sleep, quick performance read
+- Deer (AnimalAI): idle and alert calls already go to m_eye with Facing. Added MonsterAI m_wakeupEffects / m_sleepEffects (made at transform.position) as calls -> head. Built; NOT installed (log active 90 s ago): backup/SOURCE_FOLLOW_PASS_20261110/wake_sleep.dll.
+- Performance, from the mod's own counters in the last session's log: main thread 25-30 ms per ~240 room ticks (~0.12 ms per frame on average), worst tick ~1.1 ms. The "rays (waiting for their jobs)" figure (~1.0 ms worst) is mislabelled: it times all of Room.Run, which includes Measure() (~0.95-0.99 ms worst) and, with Debug log on, the 3-second summary line built from ~15 Summary() calls. Jobs are completed a frame or 0.2 s after scheduling, so there is no real waiting. Audio thread 15-17% busy (45-48 us per callback, echo 8-11% of it).
+- Unmeasured candidates: Doppler's postfix on ZSFX.CustomUpdate calls AudioSource.isPlaying and GetComponent<AcousticFilter>() for every ZSFX every frame (could cache the filter per ZSFX); the debug summary string is built even when only some parts changed.
+
+## 34. Proven issues fixed
+- "rays (waiting for their jobs)" now times only Bounces.Complete + the room ray job Complete (label "waiting for ray jobs"); Measure keeps its own counter.
+- The debug summary (Debug log only) is no longer built inside Measure: Measure flags it and stores the few local values; Room.Run writes it at the start of the next tick, so the two costs don't land in the same frame.
+- Includes the MonsterAI wake/sleep -> head change. Built 0 warnings; installed, SHA256 60a87fc089113a5d7a6a6c6239f54a102983725e43904bc2c559bebc0bbd7769. Rollback backup/PERF_FIXES_20261110.
+
+## 35. Doppler lookup
+- Doppler.Apply (postfix on ZSFX.CustomUpdate, every ZSFX every frame) called AudioSource.isPlaying and GetComponent<AcousticFilter>() first for every sound. Now: filter cached per ZSFX instance id (only non-null results cached, so a filter added later is still found; cache cleared past 2048 entries), and the managed Doppler == 1 check runs before isPlaying, so sounds with no shift leave without engine calls. Same result as before.
+- Built 0 warnings; installed, SHA256 590f1f08cb05e18f13cbd5a077a4d6fccdd9fbd5c3d7e2ec194140b23e7571a7. Rollback backup/DOPPLER_CACHE_20261110.
+
+## 36. Open-side backup removed; crafting at the station
+- User: with sources placed properly, the "heard from the least hidden point when muffled" backup isn't needed. Removed: Area.Points/Heard/Surface, Batch's four extra rays per shaped sound and the tie logic, Filter.HeardLocal/HeardKnown, Directions' use of it. Muffling is the sound's own spot again (own colliders still skipped). Saves up to 4 rays per shaped sound per check. CHANGELOG 0.2.7 line about it removed.
+- Crafting: InventoryGui plays the current station's m_craftItemEffects / m_craftItemDoneEffects / m_craftItemDoneFailEffects at the player's position; Spots now moves them to the station's box middle and makes the station the owner (no follow).
+- Built 0 warnings; installed SHA256 f087e70d4f861f7fd8d8791a5c114e7da19b6b15599582430e733b33a4529fcc. Rollback backup/NO_OPEN_SIDE_20261110.
+
+## 37. 0.3.0 gaps
+- 0.2.7 was published at 22:01 (_releases/WiresAcoustics-0.2.7.zip). package/CHANGELOG.md: 0.2.7 and older restored byte-identical to the published zip; new 0.3.0 section for everything since. Plugin Version 0.3.0 (manifest is set by publish).
+- Doppler for sounds outside ZSFX (Kinds.Other: ship wake/water, shield hum): their Unity Doppler is off while placed and nothing applied ours. Doppler.ApplyOther from Directions (main thread, per frame, only for Other): pitch = base * Doppler, base re-read if the game changed the pitch in between; restored on release. Travel delay not added: these are loops started once.
+- Piece child sounds left at the piece's pivot (prefab didn't place them) move to the box middle in Area.Voice; fires still go to the flame; characters excluded.
+- Built 0 warnings; installed SHA256 853768fba857b7abcbe56b6c19d5e715aaf18f4572c34fb8c1ab179fad3d19a6. Rollback backup/GAPS_030_20261110.
+
+## 38. Wind in the ears (0.3.0)
+- Request: sound changes by which way you face the wind.
+- Game: AudioMan.UpdateWindAmbience sets m_windLoopSource volume/pitch every frame; 2D loop, same in both ears.
+- Ambience.Pan (already per frame from the AudioMan.Update postfix, no new per-frame hook): wind comes from -EnvMan.GetWindDir() (flat). Amount = wind intensity * (1 - Enclosure*1.5), eased, max .6.
+  - HRTF on: wind loop gets Lean toward the wind (Lean now takes an amount). Openings lean wins indoors when stronger.
+  - HRTF off: wind loop panStereo = dot(right, windFrom) * amount.
+  - Volume: +2 dB with an ear to the wind, -3 dB with your back to it, scaled by amount. Applied after the game's set, so no compounding.
+- Gated by Occlusion setting.
+- Backup backup/WIND_EARS_20261110 (before.dll, Restore.cmd, RestoreSource.cmd). Compiled, installed (sha256 b3103462...). Not tested.
+
+## 39. Ocean while paused (0.3.0)
+- Cause: vanilla UpdateOceanAmbiance runs from AudioMan.FixedUpdate; pause sets Time.timeScale 0 (Game.cs 1187), FixedUpdate stops, so Ocean's postfix (shore placement, wall checks, HRTF setup) froze.
+- Fix: Ocean.Step shared by the FixedUpdate postfix and a new AudioMan.Update postfix that runs only when Time.timeScale == 0. Timers now on Time.unscaledTime. Follow lerp frame-rate corrected in the paused path. No extra work in normal play.
+- Backup backup/OCEAN_PAUSED_20261110. Compiled, installed (sha256 f86f6ade...). Not tested.
+- REVERTED: user tested, didn't fix it. Source and changelog restored from the backup, before.dll reinstalled.

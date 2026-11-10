@@ -1,3 +1,15 @@
+## 0.3.0
+- Improved: sounds come from where they're made. The game often plays a sound at a character's feet or at the base of a piece:
+  - Weapon swings and attacks come from the weapon and follow the swing. A bow's draw comes from the bow, the hammer's build sound from your hand.
+  - Holstering comes from the slot on your back the item goes to, dropping from your hand, eating and drinking from your head, picking up from where the item was.
+  - Creatures' growls, roars, calls and bites come from their head, their swings and claws from their weapon or arm, stomps and slams from their feet. A troll's roar and its club swing now come from two different places.
+  - Chests sound from their lid, fires (sconces, hearths, braziers) from their flame, doors, smelters, fermenters and other pieces from their middle. Crafting sounds come from the crafting station instead of from you.
+- Improved: anything that moves takes its sounds with it: reloading a crossbow or grappling hook, animals and pets, sounds on ships and carts.
+- Improved: a ship's wake and water and other sounds outside the game's usual sound system now get the Doppler effect too.
+- Removed: the "heard from its open part" backup from 0.2.7. It isn't needed now that sounds come from where they're made, and it made muffled chests sound like they were off to the right.
+- Added: the wind in your ears. Outside, the wind is heard from the way it's blowing from: louder with an ear turned to it, quieter with your back to it. It fades out as you go indoors.
+- Performance: fewer raycasts for sounds of pieces and creatures, and less work every frame for the Doppler effect.
+
 ## 0.2.7
 - Fixed a vanilla bug: clicks and crackles in the game's sound effects, most obvious on wood and stone footsteps because they stand out against those deep sounds. This is in Valheim's own sound files, not something this mod caused. Two things are wrong with them: many clips have tiny bursts of noise baked in, and many were trimmed so they start in the middle of the sound instead of from silence, which clicks every time they play. I tried to fix both and hopefully fully succeeded. The mod repairs the sounds in memory as the game plays them; the game's files are not changed and no audio is added to the mod.
 - Improved: if the spot a sound is made at is muffled but part of the thing making it is in the open (a chest set into a wall), it's heard from that open part, so something you can clearly see is heard clearly. Sounds that aren't muffled come from where they always did.

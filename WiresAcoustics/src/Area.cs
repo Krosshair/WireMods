@@ -8,9 +8,8 @@ namespace WiresAcoustics
     // made it for), roughly, as a box: a sound with no such object (an effect left at a point) is a
     // point. From the shape:
     //  - the thing making the sound never hides it (rays to it skip its own colliders);
-    //  - it's hidden only as much as its least hidden part: the sound's own spot and the shape's
-    //    middle, both sides as seen from you and its top are all checked (Batch), so anything
-    //    poking out past a wall, a doorframe or another piece is heard;
+    //  - its sounds are made where they happen on it (Spots: a chest's lid, a fire's flame, the
+    //    middle of a door), and a fire's own sounds are moved to its flame (Voice);
     //  - it sounds as wide as it looks from where you are (Directions: the HRTF's direction is scaled
     //    down by the angle it covers): a hearth across the hall is a point, up close it's in front
     //    of you.
@@ -27,7 +26,6 @@ namespace WiresAcoustics
         {
             if (f.AreaKnown) return;
             f.AreaKnown = true;
-            f.HeardKnown = false;
             Transform owner = f.ShapeRoot != null ? f.ShapeRoot : (sound.parent != null ? sound.root : null);
             if (owner == null) return;
             int id = owner.GetInstanceID();
@@ -37,11 +35,83 @@ namespace WiresAcoustics
                 s = Of(owner);
                 Shapes[id] = s;
             }
+            Voice(sound, owner);
             if (!s.Valid) return;
             f.ShapeRoot = owner;
             f.ShapeCenter = s.Center;
             f.ShapeHalf = s.Half;
             f.AreaRadius = Mathf.Max(s.Half.x, s.Half.z);
+        }
+
+        // A piece's own sounds sit wherever the prefab put them. A fire's (a sconce, a hearth, a
+        // brazier) often at its base: moved to the fire itself (its light). Any other piece's sound
+        // left at the piece's pivot (not placed by the prefab at all): moved to the middle of the
+        // piece. On this instance, once. Characters' own sounds are placed elsewhere (Spots).
+        private static void Voice(Transform sound, Transform owner)
+        {
+            if (sound.parent == null || !sound.IsChildOf(owner) || owner.GetComponent<Character>() != null) return;
+            if (owner.GetComponent<Fireplace>() == null)
+            {
+                if ((sound.position - owner.position).sqrMagnitude < 1e-4f && CenterOf(owner, out Vector3 mid)) sound.position = mid;
+                return;
+            }
+            Light best = null;
+            float bestD = float.MaxValue;
+            foreach (Light l in owner.GetComponentsInChildren<Light>(false))
+            {
+                if (l == null || !l.enabled) continue;
+                float d = (l.transform.position - sound.position).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = l; }
+            }
+            if (best != null) sound.position = best.transform.position;
+        }
+
+        // The top of a chest's box (world), where its lid opens: where its open and close sounds come
+        // from (Follow). False without a usable shape.
+        internal static bool TopOf(Transform owner, out Vector3 top)
+        {
+            top = default;
+            if (!Cached(owner, out Shape s)) return false;
+            top = owner.TransformPoint(s.Center) + Vector3.up * s.Half.y;
+            return true;
+        }
+
+        // The middle of a piece's box (world).
+        internal static bool CenterOf(Transform owner, out Vector3 at)
+        {
+            at = default;
+            if (!Cached(owner, out Shape s)) return false;
+            at = owner.TransformPoint(s.Center);
+            return true;
+        }
+
+        // A fire's flame: its nearest lit light to the middle of the piece, else the middle.
+        internal static bool FlameOf(Transform owner, out Vector3 at)
+        {
+            bool have = CenterOf(owner, out at);
+            Vector3 mid = have ? at : owner.position;
+            float best = float.MaxValue;
+            foreach (Light l in owner.GetComponentsInChildren<Light>(false))
+            {
+                if (l == null || !l.enabled) continue;
+                float d = (l.transform.position - mid).sqrMagnitude;
+                if (d < best) { best = d; at = l.transform.position; have = true; }
+            }
+            return have;
+        }
+
+        private static bool Cached(Transform owner, out Shape s)
+        {
+            s = default;
+            if (owner == null) return false;
+            int id = owner.GetInstanceID();
+            if (!Shapes.TryGetValue(id, out s))
+            {
+                if (Shapes.Count > 8192) Shapes.Clear();
+                s = Of(owner);
+                Shapes[id] = s;
+            }
+            return s.Valid;
         }
 
         private static Shape Of(Transform owner)
@@ -65,47 +135,6 @@ namespace WiresAcoustics
             Vector3 half = b.extents;
             if (half.x > Biggest || half.y > Biggest || half.z > Biggest) return default;
             return new Shape { Center = owner.InverseTransformPoint(b.center), Half = half, Valid = true };
-        }
-
-        // The points to check for an area sound (besides its own spot): the middle, both sides as
-        // seen from the listener, the top. Slightly inside the box, so a point isn't on a neighbour's face.
-        internal static int Points(AcousticFilter f, Vector3 listener, Vector3[] into)
-        {
-            Transform owner = f.ShapeRoot;
-            if (owner == null || f.AreaRadius <= 0f) return 0;
-            Vector3 c = owner.TransformPoint(f.ShapeCenter);
-            Vector3 across = Vector3.Cross(Vector3.up, c - listener);
-            across = across.sqrMagnitude > 1e-4f ? across.normalized : Vector3.right;
-            float side = Mathf.Max(f.ShapeHalf.x, f.ShapeHalf.z) * .85f;
-            // all on the side facing you: the nearest point of its surface, either side of it and its top
-            Vector3 near = Heard(f, listener);
-            into[0] = near;
-            into[1] = Surface(f, c, near + across * side, listener);
-            into[2] = Surface(f, c, near - across * side, listener);
-            into[3] = Surface(f, c, new Vector3(near.x, c.y + f.ShapeHalf.y, near.z), listener);
-            return 4;
-        }
-
-        // The nearest point of a shape's surface, just outside it (a chest set into a wall: its front,
-        // where you see it). Inside the shape: its middle. One of the points Batch tries when the
-        // sound's own spot is blocked; a sound whose own spot is in the clear is heard from there.
-        internal static Vector3 Heard(AcousticFilter f, Vector3 listener)
-        {
-            Vector3 c = f.ShapeRoot.TransformPoint(f.ShapeCenter);
-            return Surface(f, c, listener, listener);
-        }
-
-        // A point clamped onto the shape's box, then 5 cm out toward you (so a check toward it isn't
-        // stopped by the thing it sits on); the middle if you're inside the box.
-        private static Vector3 Surface(AcousticFilter f, Vector3 c, Vector3 p, Vector3 listener)
-        {
-            Vector3 h = f.ShapeHalf;
-            Vector3 q = new Vector3(Mathf.Clamp(p.x, c.x - h.x, c.x + h.x),
-                                    Mathf.Clamp(p.y, c.y - h.y, c.y + h.y),
-                                    Mathf.Clamp(p.z, c.z - h.z, c.z + h.z));
-            Vector3 out_ = listener - q;
-            if (out_.sqrMagnitude < 1e-6f) return c;
-            return q + out_.normalized * .05f;
         }
 
         // Share of all around (0 a point, 1 surrounding you) a shape this wide covers from here.

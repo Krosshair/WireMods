@@ -66,7 +66,9 @@ namespace WiresAcoustics
 
         // Every frame, from the game's audio update: lean the environment loop and wind toward the
         // openings (with the HRTF: their real direction; without: left/right as you face). The
-        // left/right lean is also what random ambient calls get (Apply), HRTF or not.
+        // left/right lean is also what random ambient calls get (Apply), HRTF or not. Outside, the
+        // wind loop leans toward where the wind comes from instead, and is louder or quieter by how
+        // your ears face it.
         internal static void Pan(AudioMan man, Transform listener, float dt)
         {
             bool leaning = Plugin.Occlusion.Value && s_open > 0f && Room.Enclosure >= .35f && s_openDir.sqrMagnitude > 0f;
@@ -80,29 +82,67 @@ namespace WiresAcoustics
             s_pan = Mathf.MoveTowards(s_pan, target, 2f * dt);
             bool hrtf = Plugin.Hrtf.Value;
             float lean = hrtf ? Mathf.MoveTowards(s_lean, amount * .8f * share, dt) : 0f;
+            // Outside, the wind in your own ears: it roars in the ear facing it and drops behind your
+            // head. The game plays its wind loop the same in both ears whichever way you face.
+            Vector3 windFrom = Vector3.zero;
+            float windAmount = 0f;
+            if (Plugin.Occlusion.Value && EnvMan.instance != null)
+            {
+                Vector3 d = EnvMan.instance.GetWindDir();
+                d.y = 0f;
+                if (d.sqrMagnitude > 1e-4f)
+                {
+                    windFrom = -d.normalized;
+                    windAmount = Mathf.Clamp01(EnvMan.instance.GetWindIntensity()) * Mathf.Clamp01(1f - Room.Enclosure * 1.5f);
+                }
+            }
+            s_windLean = Mathf.MoveTowards(s_windLean, windAmount * .6f, dt);
+            bool windWins = s_windLean > lean * share + .01f;
             if (lean > 0f || s_lean > 0f)
             {
                 s_lean = lean;
                 Vector3 local = s_openDir.sqrMagnitude > 0f ? listener.InverseTransformDirection(s_openDir) : Vector3.forward;
-                Lean(AmbientLoop(man), local);
-                Lean(WindLoop(man), local);
+                Lean(AmbientLoop(man), local, s_lean);
+                if (!windWins) Lean(WindLoop(man), local, s_lean);
             }
+            if (hrtf && windWins)
+                Lean(WindLoop(man), windFrom.sqrMagnitude > 0f ? listener.InverseTransformDirection(windFrom) : Vector3.forward, s_windLean);
+            else if (s_windLeanOn && lean <= 0f)
+                Lean(WindLoop(man), Vector3.forward, 0f); // wind lean just ended and nothing else leans it
+            s_windLeanOn = hrtf && windWins;
             // the loops' stereo pan: the lean without the HRTF, untouched (centre) with it
             float loopPan = hrtf ? 0f : s_pan;
+            float windPan = hrtf ? 0f : windWins ? Mathf.Clamp(Vector3.Dot(listener.right, windFrom), -1f, 1f) * s_windLean : s_pan;
             if (AmbientLoop(man) is AudioSource a && a != null && a.panStereo != loopPan)
             {
                 RememberPan(a);
                 a.panStereo = loopPan;
             }
-            if (WindLoop(man) is AudioSource w && w != null && w.panStereo != loopPan)
+            if (WindLoop(man) is AudioSource w && w != null)
             {
-                RememberPan(w);
-                w.panStereo = loopPan;
+                if (w.panStereo != windPan)
+                {
+                    RememberPan(w);
+                    w.panStereo = windPan;
+                }
+                // louder with an ear to the wind (up to +2 dB), quieter with your back to it (down to
+                // -3 dB); the game sets the volume every frame, so this never adds up
+                if (s_windLean > .001f)
+                {
+                    Vector3 fwd = listener.forward; fwd.y = 0f;
+                    float facing = fwd.sqrMagnitude > 1e-4f ? Vector3.Dot(fwd.normalized, windFrom) : 0f;
+                    float side = Mathf.Abs(Vector3.Dot(listener.right, windFrom));
+                    float db = (2f * side - 3f * Mathf.Max(0f, -facing)) * (s_windLean / .6f);
+                    w.volume *= Mathf.Pow(10f, db / 20f);
+                }
             }
         }
 
+        private static float s_windLean;
+        private static bool s_windLeanOn;
+
         // The HRTF on an unplaced loop, as strong as the lean (Width is how little direction it gets).
-        private static void Lean(AudioSource src, Vector3 local)
+        private static void Lean(AudioSource src, Vector3 local, float amount)
         {
             if (src == null) return;
             AcousticFilter f = src == s_leanSrc0 ? s_leanF0 : src == s_leanSrc1 ? s_leanF1 : null;
@@ -111,16 +151,16 @@ namespace WiresAcoustics
                 f = src.GetComponent<AcousticFilter>();
                 if (f == null)
                 {
-                    if (s_lean <= .01f) return;
+                    if (amount <= .01f) return;
                     f = src.gameObject.AddComponent<AcousticFilter>();
                 }
                 if (s_leanSrc0 == null || s_leanSrc0 == src) { s_leanSrc0 = src; s_leanF0 = f; }
                 else { s_leanSrc1 = src; s_leanF1 = f; }
             }
             f.Kind = AcousticFilter.Kinds.Ambient;
-            f.Width = 1f - s_lean;
+            f.Width = 1f - amount;
             f.SetDirection(local);
-            f.Hrtf = s_lean > .01f;
+            f.Hrtf = amount > .01f;
             Need(f);
         }
 

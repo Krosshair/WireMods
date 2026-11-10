@@ -24,11 +24,12 @@ namespace WiresAcoustics
         [HarmonyPatch(typeof(EffectList), nameof(EffectList.Create))]
         private static class Created
         {
-            private static void Postfix(EffectList __instance, GameObject[] __result, Transform baseParent)
+            private static void Postfix(EffectList __instance, GameObject[] __result, Vector3 basePos, Transform baseParent)
             {
                 if (!Plugin.Enabled.Value || __result == null) return;
                 if (PlayerSounds.IsCue(__instance)) { PlayerSounds.MarkCue(__result); return; }
                 Transform given = baseParent != null ? baseParent : Owner;
+                Spots.Place(__instance, __result, basePos, baseParent, ref given);
                 // a death: the game spawns the body (a ragdoll) with the death sounds; the wail
                 // comes from the falling body, not from where the creature stood
                 Transform body = null;
@@ -44,6 +45,10 @@ namespace WiresAcoustics
                     foreach (GameObject go in __result)
                         if (go != null)
                             foreach (AcousticFilter a in go.GetComponentsInChildren<AcousticFilter>(true)) { a.ShapeRoot = given; a.AreaKnown = false; }
+                // a chest opens and closes at its lid, not at its base
+                if (given != null && baseParent == null && given.GetComponent<Container>() != null && Area.TopOf(given, out Vector3 lid))
+                    foreach (GameObject go in __result)
+                        if (go != null && go.transform.parent == null && go.GetComponent<ZSFX>() != null) go.transform.position = lid;
                 foreach (GameObject go in __result)
                 {
                     if (go == null || go.transform.parent != null || go.GetComponent<ZSFX>() == null) continue;
@@ -94,7 +99,7 @@ namespace WiresAcoustics
         // Only owners that move (creatures, players, ships, carts): a hit on a tree or a wall stays put
         // without a per-frame follow. Cached per owner.
         private static readonly Dictionary<int, bool> Moving = new Dictionary<int, bool>();
-        private static bool Moves(Transform owner)
+        internal static bool Moves(Transform owner)
         {
             int id = owner.GetInstanceID();
             if (Moving.TryGetValue(id, out bool m)) return m;

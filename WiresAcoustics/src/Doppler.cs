@@ -35,16 +35,46 @@ namespace WiresAcoustics
             f.Doppler = Travel.Speed / (Travel.Speed + f.RadialSpeed);
         }
 
+        // Sounds outside the sound-effect system (a ship's wake and water, a shield's hum): nothing
+        // sets their pitch every frame, so the shift is applied to the pitch they had. If the game
+        // changes it in between, that becomes the new base.
+        internal static void ApplyOther(AcousticFilter f)
+        {
+            AudioSource src = f.Source;
+            if (src == null) return;
+            if (!f.OtherPitchKnown || Mathf.Abs(src.pitch - f.OtherWritten) > 1e-4f)
+            {
+                f.OtherBase = src.pitch;
+                f.OtherPitchKnown = true;
+            }
+            float want = f.OtherBase * f.Doppler;
+            if (Mathf.Abs(want - src.pitch) < 1e-4f) return;
+            src.pitch = want;
+            f.OtherWritten = want;
+        }
+
         // The game sets the pitch every frame (its random pitch, its modifiers); ours goes on top.
         [HarmonyPatch(typeof(ZSFX), nameof(ZSFX.CustomUpdate))]
         private static class Apply
         {
+            // Every sound, every frame: the filter is looked up once per sound, and a sound with no
+            // shift (anything not moving toward or away from you) leaves before any engine call.
+            private static readonly System.Collections.Generic.Dictionary<int, AcousticFilter> Filters =
+                new System.Collections.Generic.Dictionary<int, AcousticFilter>(256);
+
             private static void Postfix(ZSFX __instance, AudioSource ___m_audioSource)
             {
+                int id = __instance.GetInstanceID();
+                if (!Filters.TryGetValue(id, out AcousticFilter f) || f == null)
+                {
+                    f = __instance.GetComponent<AcousticFilter>();
+                    if (f == null) return; // not cached: a filter can still be added to it later
+                    if (Filters.Count > 2048) Filters.Clear(); // ids of sounds long gone
+                    Filters[id] = f;
+                }
+                if (Mathf.Abs(f.Doppler - 1f) < 1e-3f) return;
                 AudioSource src = ___m_audioSource;
                 if (src == null || !src.isPlaying) return;
-                AcousticFilter f = __instance.GetComponent<AcousticFilter>();
-                if (f == null || Mathf.Abs(f.Doppler - 1f) < 1e-3f) return;
                 float p = BasePitch(__instance) * PitchModifier(__instance);
                 p -= p * MistPitch(__instance);
                 src.pitch = p * f.Doppler;

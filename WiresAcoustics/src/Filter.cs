@@ -118,6 +118,8 @@ namespace WiresAcoustics
         private volatile float m_dx, m_dy, m_dz = 1f;
         internal float BaseSpread = -1f;
         internal AudioSource Source;
+        internal float OtherBase, OtherWritten; // Doppler.ApplyOther: the pitch before the shift, the one written
+        internal bool OtherPitchKnown;
         internal bool Voice;       // a voice chat stream: muffled from Room's tick
         internal bool Routed;      // heard through an opening or round a corner: the HRTF places it there
         internal Vector3 RoutePoint;
@@ -144,8 +146,6 @@ namespace WiresAcoustics
         // How wide the game made the source (its own spread, before ours): 0 a point, 1 all around.
         // Wide sources (a waterfall, a shield dome) get less of the HRTF's direction.
         internal volatile float Width;
-        internal Vector3 HeardLocal; // where a shaped sound is heard from, in its owner's space (Batch)
-        internal bool HeardKnown;
         internal Transform ShapeRoot;              // what the sound comes from (Area): never hides it
         internal Vector3 ShapeCenter, ShapeHalf;   // its box: centre in its own space, half-size
         internal float AreaRadius;                 // 0: a point; otherwise how wide (Area)
@@ -463,6 +463,7 @@ namespace WiresAcoustics
                 Source.maxDistance = m_origMax;
                 Source.dopplerLevel = m_origDoppler;
                 Doppler = 1f;
+                if (OtherPitchKnown) { Source.pitch = OtherBase; OtherPitchKnown = false; } // our shift taken back
             }
             m_physical = on;
         }

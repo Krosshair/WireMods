@@ -20,8 +20,6 @@ namespace WiresAcoustics
             internal AcousticFilter F;
             internal Vector3 To, Listener;
             internal bool Under, Reverb, Corners;
-            internal int An;                  // an area source: how many of its points are checked (Area)
-            internal Vector3 A0, A1, A2, A3;
             internal int First, Routes;
             internal Portals.Portal P0, P1;
             internal Vector3 C0, C1, C2, C3, C4;
@@ -29,7 +27,6 @@ namespace WiresAcoustics
             internal Bounces.Try B0, B1, B2;
         }
         private static readonly Bounces.Try[] Tried = new Bounces.Try[Bounces.Tries];
-        private static readonly Vector3[] APts = new Vector3[4];
         private static readonly List<Req> Queue = new List<Req>(64);
         private static readonly Vector3[] Pts = new Vector3[Corners.Count];
         private static Req[] s_flight = new Req[64];
@@ -112,13 +109,9 @@ namespace WiresAcoustics
                 if (r.Routes > 0) r.P0 = Portals.List[0];
                 if (r.Routes > 1) r.P1 = Portals.List[1];
                 s_cmds[c++] = Cast(listener, r.To, q);
-                // a sound with a shape: its middle, sides and top too; the least hidden part is heard
-                r.An = r.F != null ? Area.Points(r.F, listener, APts) : 0;
-                if (r.An > 0) { r.A0 = APts[0]; r.A1 = APts[1]; r.A2 = APts[2]; r.A3 = APts[3]; }
-                for (int k = 0; k < r.An; k++) s_cmds[c++] = Cast(listener, APts[k], q);
                 if (r.Routes > 0) s_cmds[c++] = Cast(r.P0.Point, r.To, q);
                 if (r.Routes > 1) s_cmds[c++] = Cast(r.P1.Point, r.To, q);
-                s_direct += 1 + r.An;
+                s_direct += 1;
                 s_openings += r.Routes;
                 if (r.Corners)
                 {
@@ -217,27 +210,8 @@ namespace WiresAcoustics
                 int bestKind = 0; // 1 opening, 2 corner, 3 reflection
                 bool bestIsSecondBounce = false;
                 int c = r.First + 1;
-                int open = -1; // which point on its shape is least hidden (none better than its own spot: -1)
-                for (int k = 0; k < r.An; k++, c++)
-                    if (on && occ > .05f)
-                    {
-                        float o = Walls(c, k == 0 ? r.A0 : k == 1 ? r.A1 : k == 2 ? r.A2 : r.A3, out _);
-                        if (o < occ) { occ = o; open = k; }
-                    }
-                // a sound with a shape is heard from its least hidden point (Directions)
-                if (r.An > 0 && f.ShapeRoot != null)
-                {
-                    if (open >= 0)
-                    {
-                        Vector3 at = open == 0 ? r.A0 : open == 1 ? r.A1 : open == 2 ? r.A2 : r.A3;
-                        f.HeardLocal = f.ShapeRoot.InverseTransformPoint(at);
-                        f.HeardKnown = true;
-                    }
-                    else f.HeardKnown = false;
-                }
-                // The LEAST blocked spot on an extended source controls
-                // audibility. Use that result for next-step routing decisions
-                // and whether second-bounce jobs are worth scheduling.
+                // The result also decides the routing next time and whether
+                // second-bounce jobs are worth scheduling.
                 f.LastOcc = occ;
                 f.LastBlocker = occ >= .3f ? firstBlocker : null;
                 if (occ >= .3f) { s_blocked++; Bounces.Wake(); }
