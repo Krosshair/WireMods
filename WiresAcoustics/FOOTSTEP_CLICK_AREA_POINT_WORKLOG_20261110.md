@@ -262,3 +262,253 @@
 - Fix: Ocean.Step shared by the FixedUpdate postfix and a new AudioMan.Update postfix that runs only when Time.timeScale == 0. Timers now on Time.unscaledTime. Follow lerp frame-rate corrected in the paused path. No extra work in normal play.
 - Backup backup/OCEAN_PAUSED_20261110. Compiled, installed (sha256 f86f6ade...). Not tested.
 - REVERTED: user tested, didn't fix it. Source and changelog restored from the backup, before.dll reinstalled.
+
+## 40. Light HRTF (0.3.0)
+- Before: light (Pan2) = occlusion + interaural level difference only. Selection by audibility and audio-thread load (Budget, 4..32 full).
+- Bench (.NET 8 on the device, same loops, 1024 stereo frames): light 3.1 us, +ITD 6.3, +head shadow 6.9, +behind 8.3, +elevation notch (= full) 10.3. Relative only; Unity's Mono may differ. In-game log ratio full/light was ~4.6x (0.09 vs 0.02 ms/call), echo excluded.
+- Change: light = Spatialize without the elevation notch (Pan2 removed). Echo stays full-only. Notch is ~7.5 kHz, mostly gone from far sounds via air low-pass already.
+- Expected cost: light ~2.7x what it was by the bench. Budget's load control still applies.
+- Backup backup/LIGHT_HRTF_20261111. Compiled, installed (sha256 74e33332...). Not tested.
+
+## 41. Echo removed (0.3.0)
+- Evidence: 2026-11-10 log: echo active in 2 room reports, "none" in 10; when on, 4-11% of DSP time. NeedsWork also forced processing of every sound within 50 m while an echo was around. Kajetan never heard it.
+- Looked for a better unified approach online: Vercidium's ray traced audio and Sound Physics Perfected cast rays from the player (listener-centric), same as Room's 64-ray measurement driving the reverb. Steam Audio needs the spatializer chosen in Unity's project settings; no runtime route found.
+- Removed: Bounces echo pick, Filter echo delay lines/pool/callback, Directions echo delay, Occlusion EnsureEcho, Room SetEcho and the sky-cover count, Budget echo drop/share. Bounces (first/second bounce paths) kept.
+- Backup backup/NO_ECHO_20261111. Compiled.
+- Installed (sha256 72e50fae...). Not tested.
+
+## 42. Declick debug toggle
+- Debug > "Fix sound clicks" (advanced, default on). Off: Prepare skips; every clip changed this session is UnloadAudioData + LoadAudioData (as CollectResources does), table clips checked against the original print, one log line with the counts. On again: re-repaired on next play (Fixed cleared, Searched cleared).
+- Unproven: that UnloadAudioData/LoadAudioData restores the shipped samples. The log line checks it.
+- Backup backup/DECLICK_TOGGLE_20261111. Compiled, installed. Not tested.
+
+## 43. Realism pass: air absorption (ISO 9613-1)
+- AirAt: was 22k*exp(-(d-5)/60), floor 2.5k. Now a table (every 2 m to 1 km) of the frequency ISO 9613-1 (20 C, 50% RH, 101.325 kPa) attenuates by 3 dB at that distance. Formula checked: 4.66 dB/km at 1 kHz, 159 at 10 kHz (reference ~5 and 160).
+- Old vs new -3 dB point: 10 m 20.2k->14.3k, 30 m 14.5k->7.8k, 60 m 8.8k->5.3k, 100 m 4.5k->4.0k, 200 m 2.5k->2.7k, 400 m 2.5k->1.6k.
+- C# table verified against the Python reference in a .NET harness.
+- Backup backup/ISO_AIR_20261111. Compiled, installed. Not tested.
+- Research findings not acted on yet (need Kajetan's call): walls far too transparent vs any measured wall (mod 1 wall -4.4 dB + 1.5 kHz low-pass; real walls STC 25+ (single plasterboard), timber stud 36, brick 43-55); corner/opening diffraction too weak (mod ~1 dB at 90 deg; Maekawa/ISO 9613-2 5-20 dB, capped 20); upwind wind loss too weak (mod -3.7 dB max; measured upwind/sidewind > 20 dB possible, downwind +few dB which matches). Reverb decay is Sabine already; ITD Woodworth, c 343 m/s, 1/r all correct.
+
+## 44. Realism pass: walls, diffraction, outside indoors, wind
+- Kajetan: do walls/diffraction/wind; calculate walls from thickness (stone 1 m, wood ~1/4) and material, measurements from the game files.
+- Game files: woodwall BoxCollider 2x2x0.3, wood_wall_log 2x0.5x0.5, stone_wall_* 1 m thick. Thickness read per collider at runtime (min side of collider size x lossyScale).
+- Walls: mass law TL = 20 lg(m f) - 47 (field incidence), m = density x thickness. Densities: softwood 500, hardwood/timberwood/ancient 700, stone/ashstone 2400 (masonry), marble 2700, iron 7870, ice 917. Grates excluded. Modeled as low-end gain 223.9/(50 m) + one-pole at 50 Hz (6 dB/oct = mass law slope). Wood 0.3 m: -30.5 dB <50 Hz, -50.5 at 500; stone 1 m: -54.6 / -74.6. Non-walls (terrain, rock, trees, furniture) keep the old soft table. Strength setting scales the wall dB.
+- Diffraction (openings, corners): Kurze-Anderson form of Maekawa, D = 5 + 20 lg(x/tanh x), x = sqrt(2 pi N), N = 2 delta f / 343, cap 20 dB (ISO 9613-2 single edge). Gain = loss at 125 Hz; one-pole matched to the loss at 2 kHz. Table delta 0..50 m step 5 cm. Old Bend (~1 dB at 90 deg) removed. Path length gains: clamps (.35/.25) removed, plain direct/path.
+- Outside indoors (Ambience): energy = (1 - enclosure) open + Room.WallEnergy (per level/up ray hit: Pass^2; wall mass law, furniture 0.9, terrain/rock 0, tree 1). Gain sqrt(total), cutoff energy-weighted log mix of 22k and 50 Hz. Openings' share = open/total drives the HRTF lean (cap 0.8 removed) and pan.
+- Wind: dB = +3 x along downwind, 20 x along upwind, along = dot(wind x intensity, toward listener) x clamp01((d-15)/97). Was +/-35% linear clamp 0.65..1.3. Source: Waddington & Lam (IOA): downwind "a few dB", upwind/sidewind "in excess of 20 dB", shadow zone formed at the 112 m receiver.
+- Unchanged and already physical: reverb (Sabine 0.161V/A via mean path), 1/r, ITD (Woodworth, 8.75 cm, 343 m/s), Doppler.
+- Not done: random ambient calls still positionless indoors (the push-outside-and-route proposal); hills still the soft table (no top-edge geometry for a barrier formula).
+- Backup backup/REALISM_20261111 (RestoreSource also deletes Diffraction.cs). Compiled, installed (2f1ab548...). Not tested.
+
+## 45. Random calls from outside, hills as ridges
+- Random ambient calls (3D) indoors: no longer made positionless. On start, Occlusion.Outside moves the spot along its own direction to 2 m past the first wall/floor/roof/ground within 40 m, unless it's already behind one or that way is open. Then the normal pipeline (mass law, Batch routes, HRTF from the opening). Ambience.Forget drops it from the ambience list and restores its pan. 2D ones still go to Ambience.Apply.
+- Hills: ground hits no longer count soft 1; Occlusion.Ridge finds the highest ground point above the line (Heightmap.GetHeight, 15 samples, no rays) and applies Diffraction.Round over it. No ridge above the line -> stays soft. Works per leg in Batch (each ray's own start).
+- Occlusion.Block struct (Soft, Through, Terrain, BendGain, BendCut) replaces the soft/through pair.
+- Backup backup/AMBIENT_RIDGE_20261111. Compiled, installed (c983b998...). Not tested.
+
+## 46. Documented outdoor/indoor standards (Kajetan: proper documents, no guesses)
+- Ground (Outdoors.Ground): ISO 9613-2:1996 7.3. Porous = everything plants grow on; hard = water (below sea level) and paving (paint mask b > .5), per 7.3.1 wording. Mostly porous -> eq (10) A = 4.8 - (2hm/d)(17 + 300/d) >= 0 (hm mean path height over 17 samples). All hard -> eq (9) G=0: -1.5 -1.5 -3q, q = 0 if dp <= 30(hs+hr) else 1 - 30(hs+hr)/dp. Mixed mostly hard -> 0 dB (per-octave only). Over a ridge -> 1 (A_bar = D_z - A_gr). Indoors (enclosure >= .35) -> 1.
+- Forest (Outdoors.Forest): Hoover A = 0.01 r f^(1/3) (Arup Strutt, ISO 9613-2 foliage page), r <= 200 m (ISO limit). r = path share inside the game's forest: forest factor within a tree vegetation's (TreeBase prefab, m_inForest) threshold range for the biome. Gain at 125 Hz, one-pole matched at 2 kHz, combined into AirCutoff by min. Trunk hits no longer count soft (forest covers them).
+- Critical distance: D = 0.057 sqrt(QV/RT) (Arup Strutt), Q 1, V = 4pi/(3N) sum r^3 over room rays (MaxDistance on misses), RT = Sabine decay. reverbZoneMix curve dist/(dist+D) unchanged (Unity's send semantics unknown).
+- Underwater: T = 4 Z1 Z2/(Z1+Z2)^2, Z air 415, water 1.48e6 (DOSITS; formula: normal-incidence notes) -> -29.5 dB. Cutoff 400 removed (undocumented).
+- Sea: line source 3 dB/doubling (HK EPD). Unity custom rolloff sqrt(min/r), max = min x 200; FadeAt as other physical sounds.
+- Skipped, no quantitative documented model found: night temperature inversion (only a single 5.5 dB @ 500 m data point, COMSOL; JCAA review qualitative), weather in air absorption (no documented mapping from Valheim environments to temperature/humidity).
+- Numbers checked in Python: underwater -29.5 dB; ground porous 50 m hm 1 -> 3.9 dB; hard 100 m -> -4.2; forest 100 m -> 5 / 12.6 / 20 dB at 125/2k/8k; critical 75 m3 RT .5 -> 0.7 m; line 80 m -> -3 dB.
+- Backup backup/OUTDOOR_STANDARDS_20261111. Compiled, installed. Not tested.
+
+## 47. Game values -> real values (Kajetan: anchor game values to real ones and convert)
+- Air: 3 ISO 9613-1 tables chosen by EnvMan.IsFreezing()/IsCold() (the game's status-effect flags). Warm = Bergen-Florida July mean daily max 19.6 C; cold (Meadows nights are "cold" in the game) = July mean daily min 12.4 C; freezing (Mountain) = Finsevatn 1210 m January mean -8 C. RH 75.6% (Bergen July). Sources: Wikipedia climate tables (1991-2020 normals). -3 dB point at 100 m: warm 4.8k, cold 4.2k, freezing 2.3k. Rain/fog humidity not mapped (no source for rain RH; fog threshold would be invented).
+- Wind: game env data (main.unity): SnowStorm wind 1.3-2, ThunderStorm 0.8-1, Clear 0.1-0.6. NWS blizzard = 35 mph (15.6 m/s) and up -> 1.0 = 12 m/s (Clear 1.2-7.2 m/s, ThunderStorm 9.6-12). Waddington & Lam: upwind levels off beyond ~4 m/s, downwind grows to ~7 m/s -> factors clamp01(-v/4), clamp01(v/7).
+- Night inversion: still no quantitative model; a game->real mapping doesn't supply the missing physics.
+- Backup backup/GAME_TO_REAL_20261111. Compiled, installed (0ad6f232...). Not tested.
+
+## 48. Humidity from the game's fog and rain
+- Fog: Valheim RenderSettings fog mode 2 (Exponential, main.unity). Unity exp fog = exp2(-(density/ln2) z) = e^(-density z) (unity_FogParams docs + Shader Graph Fog node). MOR (5% left, IALA/WMO) = ln 20 / density. Fog < 1 km (RMetS, Wikipedia Visibility) -> RH 100 (fog forms near 100%, Wikipedia Fog); mist 1-2 km -> 95 (WMO > 95%, RMetS). Valheim's shader code isn't in the export (stubs), so that its fog uses Unity's standard formula is from the fog mode setting, not read from the shaders.
+- Game data -> visibility: Clear day 0.003 -> 999 m (fog by a metre), Clear night 0.01 -> 300 m, Heath 0.006 -> 499 m, Misty night 0.15 -> 20 m, rain 0.03 -> 100 m. So by this mapping Valheim is foggy nearly always.
+- Rain: LIAISE (MDPI Remote Sensing 18(3):509): moist pre-rain air (> 72%) -> 85-90% within ~30 min of onset; no clear difference by rain rate. 87.5% midpoint. Ramp 30 real min in game time = 30 x 60 x dayLength/86400 (dayLength 1800 s in main.unity -> 37.5 s). After rain: no measurement found -> same pace back (stated as such).
+- AirAt interpolates log-cutoff between humidity tables (75.6/87.5/95/100) per weather; tables built lazily.
+- Backup backup/HUMIDITY_20261111. Compiled, installed. Not tested.
+
+## 49. "Bass boosted, loses detail" (Kajetan's question) - vanilla mixer evidence (MasterMixer.mixer, Default snapshot)
+- SFX group: Compressor threshold -9.8 dB, attack 10 ms, release 154 ms, makeup +1.6 dB; ParamEQ 401 Hz x0.8 (-1.9 dB, 1.2 oct), 1584 Hz x0.809 (-1.8 dB, 0.65 oct), 12 kHz x1.15 (+1.2 dB, 3 oct); its own SFX Reverb (Room -711 mB, decay 0.5 s, Room LF -4651).
+- SFX_LARGE: 420 Hz x0.8, 8.4 kHz x1.2, compressor -1.1 dB, own reverb 3.5 s.
+- Ambient: 223 Hz x0.79, low-pass 11 kHz and 15 kHz, compressor -10.4 dB makeup +3.
+- Master: high-pass 25 Hz, compressor -1 dB.
+- Only volumes are exposed parameters (4), so a mod can't change these effects with SetFloat.
+
+## 50. Clean mix: round the game's mixer colouring
+- Mixer hierarchy (MasterMixer.mixer): Master -> Effects (only Attenuation; exposed = SfxVol, set by AudioMan.SetSFXVolume) -> {Ambient, SFX -> SFX_LARGE}. Effects default 0 dB; SFX 0; SFX_LARGE 0; Ambient -4 (Menu: SFX -15, Ambient -15, SFX_LARGE -14.8).
+- Mixer.cs: sources whose group is SFX/SFX_LARGE/Ambient are sent to Effects (keeps the SFX volume slider and Master's 25 Hz high-pass and -1 dB compressor as the clip limit). Ambient keeps its -4 dB via AcousticFilter.RouteGain (filter forced active). Routed in AcousticFilter.Awake (prefab filters cover nearly every world sound) and for AudioMan's three loops each frame. In menus (AudioMan.InMenu via delegate) all go back to their groups so the Menu snapshot's -15 dB still works; mod off -> back too (before ReleaseAll; also Plugin.OnDestroy).
+- Not replicated: the compressors' make-up gain (+1.6 dB SFX, +3 dB ambient): part of the compression being removed. Loud transients will be louder than vanilla (no -9.8 dB compressor); Master's -1 dB compressor still prevents clipping.
+- Setting: Debug > "Skip the game's mixer colouring" (advanced, default on).
+- Backup backup/CLEAN_MIX_20261111 (RestoreSource deletes Mixer.cs). Compiled, installed. Not tested.
+
+## 51. Clean mix in menus too (Kajetan)
+- No switching back in menus. RouteGain now carries the groups' snapshot levels: SFX 0 -> -15 dB, SFX_LARGE 0 -> -29.82 (-15 SFX parent + -14.82 own), Ambient -4 -> -15, glided over AudioMan.m_snapshotTransitionTime (2 s) on unscaled time. Effects' own Menu change (-0.026 dB) still comes from the snapshot since Effects is in the path.
+- Unity's mixer UpdateMode is Normal (scaled time) in the asset; ours glides on real time, so in the paused menu ours completes the fade where the game's could stall. Noted, not matched.
+- Built while Valheim was running: not installed. Built DLL at backup/CLEAN_MIX_MENU_20261111/next.dll.
+
+## 52. Own reverb (bus + renderer)
+- IMPORTANT finding: the 16:05 test session ran build 881a26a2, whose new setting key "Skip the game's mixer colouring" has an apostrophe -> BepInEx ArgumentException in Plugin.Awake -> the mod did not load at all (LogOutput line 102). Kajetan's "sounds great, nothing cut off" was the game without the mod. Key renamed "Skip the game mixer colouring".
+- Unity docs (OnAudioFilterRead): filter data is the clip or the previous filter's output -> pre-volume, pre-spatialization; a filter with no clip on a playing source is the source (procedural).
+- Bus: sources (filter, before Process) add mono x SendRef (volume x minDistance, Directions per frame) x m_gain x global x RouteGain into one of two slots; renderer reads slot[tick], clears it, tick++ -> 0 or 1 buffer latency whichever order Unity runs them; measured by time since last send, taken off reflection delays. Overlap counter detects a second audio thread.
+- Renderer: AudioSource (no clip, 2D, bypass zones, to Effects) child of AudioMan + ReverbRender. Early: planes from room rays (cluster normal dot > .95, offset within .5 m, >= 2 rays), image source 2d, gain sqrt(1-a)/(2d), Woodworth ITD + ILD per tap from the listener's turn (main thread each frame). Ground excluded outdoors (ISO ground covers it). Late: 8-line FDN (1009..2459 samples @48k), Householder, per-line one-pole damping (Jot) for RT at 250 Hz and 4 kHz; input / critical distance.
+- RT per band: Sabine 0.04 mfp / (a + m mfp), m = ISO air dB/m / 4.343 at 250/4k in current weather. Per-band a (Sengpiel table): brick .03/.07 (stone), marble/tile .01/.02, wood on joists .11/.07 (wood), hardwood .04/.07, water/ice .008/.025, concrete/tile .01/.02 (paving). No per-band data: iron, furniture, props, rock, trees, natural ground -> single measured value for both.
+- Python checks of the FDN: RT measured 1.21 s (target 1.2) low, 0.54 (0.5) at 4 kHz; steady level 0.8-1.03 of input low/mid across RT 0.3-3 s.
+- Unity reverb zone disabled while own reverb is on (Debug > "Physical reverb", default on).
+- Backup backup/OWN_REVERB_20261111. Compiled, installed (cf7f2287...). Not tested.
+
+## 53. Strip (Kajetan: drop the fluff)
+- Kajetan's test: no cutoff this time; a similar issue came from Physical reverb.
+- Removed (his picks): own reverb (Reverb.cs, bus, sends, Room.OwnRoom/BandsAt; Unity zone always on again), ISO ground effect + forest absorption (Outdoors.cs, filter fields, Occlusion.Outdoor, Room.Paved), humidity from fog/rain (air tables back to one humidity, 75.6%), the debug toggles (Fix sound clicks + Declick.Restore/Touched, Physical reverb, Skip the game mixer colouring; the click fix and the clean mix stay always on).
+- Kept: weather temperature for the air, sea line source, underwater, wind in ears, everything else.
+- Removed files kept in backup/STRIP_20261111 (*.removed). Compiled, installed (8aa0bc03...). Not tested.
+
+## 54. HRTF LOD removed (Kajetan, from the older-features strip)
+- Evidence (his last session, build cf7f2287): light 0.090 ms/call vs full 0.097; audio thread 19-24% (budget pinned at its minimum of 4 full). The LOD saved ~7%.
+- Removed: Budget's full-count adaptation, audibility sort, priority cutoff; Filter.Full, Crossfade/PrepareCrossfade/DSP snapshots, light diagnostics, AlwaysOn, Audibility. Spatialize always with the notch. Budget still switches processing on/off per playing sound and measures audio-thread time.
+- Asked about other cuts (paths, portal hum, mist fix, travel delay, Doppler, widths, wind ears, sea, underwater): no answer / no preference -> kept.
+- Backup backup/NO_LOD_20261111.
+- Compiled, installed. Not tested.
+
+## 55. "Deep fried sometimes" + "muffled loses detail" (open)
+- Kajetan: the same sound is sometimes deep fried (landing on stone), linked to some impact; muffled sounds lose detail you'd hear irl.
+- Facts: vanilla FootStep.OnLand picks the land effect by ground material only (no impact scaling). Stone land clips are ~70-75% energy < 100 Hz, land 4 has 7 clipped samples (file analysis), so they're bass-heavy as shipped, but that doesn't explain "sometimes". Repairs are in memory: disabling the mod without a restart keeps them.
+- Unknown: whether output clipping (overlapping loud sounds, e.g. landing + fall damage sounds; no SFX compressor in the clean mix, Master compressor has 50 ms attack) causes it. Added OutputPeak (Debug log only): output peak dBFS and full-scale sample count per room report.
+- Muffling detail: mass-law wall model is airtight (wood 0.3 m: -50 dB at 500 Hz); measured light walls are STC 25-36 (leaks/flanking). Not changed; open.
+- Backup backup/OUTPUT_PEAK_20261111. Compiled, installed (803dc9c9...). Not tested.
+
+## 56. Deep-fried steps: the declick tail cut
+- Log (his session): output peak at most -4.7 dBFS, no full-scale samples -> not clipping. The sound he heard: sfx_footstep_climb (Player_Footstep_Climb_M_01..08), all Kind C in the table.
+- DeclickMathC cuts everything above ~5 kHz from the tail (from where the step is 12 dB below its peak). Climb clips: tail from 48-167 ms of ~0.4 s; share of each clip's >5 kHz energy removed: 0, 24, 18, 7, 29, 17, 40, 10% (clips 1-8). Random clip choice -> "sometimes". Repairs stay in memory -> "mod disabled, still there" without a restart.
+- Change: C clips replay the steps only (tailFrom = frames). Lead-ins unchanged. May bring back some tail crackle on wood/stone steps: to listen for.
+- Backup backup/NO_TAIL_CUT_20261111. Compiled, installed (f7e56e49...). Not tested.
+
+## 57. Still bad after removing the tail cut -> measure the steps, try point-only repair
+- Harness (DeclickMathC.Replay with the table's steps on the shipped clips): steps change 2-19% of samples; highs above 5 kHz -0.1 to -4.9 dB, 2-5 kHz down to -5.6 dB (climb 7). Varies by clip -> still "sometimes".
+- Kajetan's idea: repair only the click points. Prototype (dev listen/, ~/an/arfix.py on the VM): autoregressive click detection (AR(20) per 1024-sample block, prediction error > 8 x robust sigma, impact +/-3 ms untouched) and least-squares AR interpolation of only the flagged samples (the standard method in audio restoration). Touches 0.3-1.3% of samples, highs -0.0 to -0.5 dB (land 2: -1.4).
+- Listening files: dev/listen/<clip>_A_game / _B_mod_now / _C_point_fix .wav, each played 3 times. Waiting for Kajetan's ears before changing the mod.
+
+## 58. Click fix toggle again (Kajetan: to test whether it's the cause)
+- Debug > "Fix sound clicks" (advanced, default on, key without apostrophes). Startup log: "[declick] click fix is ON/OFF". Off: Prepare skips and logs the first 25 clips it left alone; turning it off in game reloads every repaired clip from the game's files and logs how many are verified back to the original. Restart with it off is the sure test.
+- Backup backup/DECLICK_TOGGLE2_20261111. Compiled, installed. Not tested.
+
+## 59. Click fix removed (Kajetan confirmed with the toggle: it was the cause)
+- Removed Declick.cs, DeclickMath.cs, DeclickMathC.cs (in backup/NO_DECLICK_20261111), the Travel.cs call, the setting, and the embedded DeclickTable.tsv.gz from both csproj files (src/ and the VM build dir). data/ and dev/ files left on disk.
+- Changelog 0.3.0: "Removed: the crackle fix from 0.2.7..." (the mod's own fault, stated plainly); dropped the earlier tail-cut line.
+- Compiled, installed (20223516...). Not tested.
+
+## 60. Walls by measured ratings, OutputPeak removed (Kajetan: do all 3, more logical)
+- Problem: the airtight mass law blocked far more than any measured wall (wood 0.3 m: -50 dB at 500 Hz, -62 at 2k): leaks/flanking carry detail in real walls. Kajetan: muffled sounds lose detail you'd hear irl.
+- Data: WoodWorks Mass Timber Acoustics: bare CLT wall 78 mm STC 33, 175 mm STC 38 (NLT 22-24). Commercial Acoustics: solid-core wood door STC 30-35 (field 2-5 lower). Engineering ToolBox: 230 mm brickwork plastered both sides STC 55; frequency shape -9/-5/-1/+3/+7/+11 dB at 125..4k. NAHB: no published STC for log walls. UKY VAC: composite TL (leaks cap TL: 1% open -> 20 dB).
+- Now (Occlusion.LossOf): wood by thickness 33->38 (log-interp, clamped to the measured range), doors 30, stone/ashstone/marble 55, iron/ice mass law (no data). Gain = loss at 125 Hz; one-pole at 318 Hz takes the measured extra 16 dB to 2 kHz. Ambience uses the 500 Hz loss.
+- Wood 0.3 m: -29 dB @125, -37 @500, -45 @2k (was -30.5 <50 Hz, -50, -62). Stone: -46/-54/-62 (was -55/-75/-87). Door: -21/-29/-37.
+- OutputPeak (debug) removed.
+- Backup backup/MEASURED_WALLS_20261111.
+- Compiled, installed. Not tested.
+
+## 61. Soft obstacles and reverb mapping from data (Kajetan: yes to #2)
+- Soft obstacles (rocks/static_solid, non-structural pieces, trees, props): Diffraction.RoundObstacle from collider bounds: over the top + round both vertical edges, Kurze-Anderson each, energy sum (ISO 9613-2 limited-width barrier). Gain at 125 Hz, one-pole matched at 2 kHz. Falls back to the old weight only when you or the sound are inside its box. Muffle table now only for bounce-path penalties and ground without a ridge.
+  - Numbers: 0.5 m trunk midway on 20 m: about -2 dB lows, -3 dB at 2k. 3 x 2 m boulder: -2 dB lows, -8 dB at 2k.
+- Reverb zone: DecayHFRatio = Sabine RT at 4 kHz absorption + 5 kHz air / RT at 250 Hz absorption + air; RoomHF = 10 lg((1-a_hi)/(1-a_lo) x air over one mean free path) in mB. Absorption per band: Sengpiel table (brick .03/.07 stone, marble .01/.02, wood floor .11/.07, hardwood .04/.07, water/ice .008/.025, paving concrete .01/.02); no per-band data -> single value.
+- Not changed, no data: Room/Reflections/Reverb levels. Unity docs: the reverb send comes after volume and distance attenuation; the I3DL2 reference (Microsoft) defines Reflections/Reverb relative to Room but not Room's absolute calibration -> physically correct levels would need an in-game calibration. Forest reverb block (unsourced "measured" claim) also left.
+- Backup backup/OBSTACLES_REVERB_20261111. Compiled, installed. Not tested.
+
+## 62. Measurement, forest reverb, bounce penalties, per-band data (Kajetan)
+- Bounces: the made-up penalty (absorption x1.5 + 0.5 x mirror deviation, in wall units) replaced. Energy = (1 - a)[(1 - s) mirror + s scattered] (Vorlander & Embrechts, Acta Acustica 2004); scattered part Lambert cos/pi (ODEON, Zeng/Lynge/Rindel 2006); mirror part only within the bounce ray's own cone (4 pi / 64 sr, 14.4 deg). Scattered from a patch the size of that cone: E/E_direct = s(1-a)(Omega/pi) cos(theta_out) d^2/r2^2; mirror: (1-a)(1-s) d^2/path^2. Second bounce: first one mirror (1-a1)(1-s1). Ranking by this gain.
+- Scattering coefficients: ODEON Table 5 mid-range values: stone 0.075 (brickwork filled joints unplastered 0.05-0.1), log walls 0.15 (open joints 0.1-0.2), planks/iron/ice 0.035 (smooth 0.02-0.05), marble/water 0.0125 (smooth painted concrete 0.005-0.02), furniture 0.3 (bookshelf), ground/rock/trees 0.45 (rough structures 0.4-0.5).
+- Per-band absorption added: rock = limestone wall .02/.03/.05 (pyroomacoustics database; that page cites no source per row), furniture: beds = cloth upholstered chairs .60/.77/.70, rugs/hides/furs = hairy carpet on felt .14/.37/.25, banners/tapestries = velvet curtains .12/.35/.36, other = wooden chairs .08/.10/.12 (250/500/4k). Snow 0.7 single now sourced (Ishida: compact snow 0.6-0.8). Not found per band: iron/metal, grass, soil, sand, trees.
+- Forest reverb block removed. Only source found (Chalmers thesis 'The sound amplifying forest', 2010: T60 0.66 s @250, 1.67 s @500 Hz, coniferous, 7-10.5 m) is flagged unreliable by its author.
+- Calibrate.cs: Debug > 'Measure the reverb' (one-off): mutes everything, noise 1 m in front (filter-generated), dry then zone at Room 0 with late only (decay 0.5/1/2 s) and early only; GetOutputData energy; logs reverb energy / dry. Zone updates paused while running, reapplied after.
+- Backup backup/BOUNCE_DATA_20261111. Compiled, installed. Not tested.
+
+## 63. First reverb measurement: inconclusive
+- Kajetan ran it in his decorated wooden room (enclosed 100%, RT60 1.51 s by Sabine). Log: late 0.5 s / 1 s / 2 s and early only all +3.1 dB (energy x2.05) over the dry step, dry -16.9 dBFS.
+- Identical across decay times and early-vs-late = the zone settings made no measurable difference; the 3.1 dB is between bypassReverbZones on and off, cause unknown. Can't use it.
+- v2 (built, game was running, waiting at backup/BOUNCE_DATA_20261111/next.dll): baseline is the zone on but silent (Room -10000) on the same path; preset forced to User; reads back the zone's values per step and logs each step's absolute level; adds a bypass step at the end for comparison.
+
+## 64. Per-band absorption: ground, trees, iron (2026-11-11)
+- Sources: Nord2000 ground classes A-H (flow resistivity 12.5 / 31.5 / 80 / 200 / 500 / 2000 / 20000 / 200000 kPa s/m2, labels from d&b NoizCalc white paper 1.6 p.9; same values in Bies/Hansen/Howard Engineering Noise Control table 5.2 per arXiv 2205.13695). Delany-Bazley impedance, locally reacting, random-incidence average (computed in python, Paris integral). Note: X = rho f / sigma is below DB's 0.01 fit range for the hard classes, as in Nord2000 practice.
+- Values (250 / 500 / 4k): A .824/.891/.923, B .663/.791/.924, C .459/.611/.904, D .286/.413/.824, E .165/.251/.664, F .066/.105/.369, G .013/.022/.091, H .002/.004/.018.
+- Mapping (my choice, an anchor mapping, not data): Meadows/Plains C, BlackForest B, Mountain/DeepNorth A, Mistlands D, Swamp D, Ashlands F, Ocean sand E, tilled C, dug E, paved = concrete row.
+- Trees: bark, Li, Van Renterghem, Kang, Verheyen, Botteldooren, Applied Acoustics 165 (2020) 107328: <0.1, 0.04-0.05 below 1 kHz, rising above 1 kHz but <0.1 up to 1.6 kHz. Used .05/.05/.1 (4 kHz not measured; carries the top of the measured range). Was .8 (unsourced).
+- Iron: "Steel decking" .13/.09/.08/.09/.11/.11 (heyizhou.net absorption table). Was .04 single.
+- Snow: Ishida 0.6-0.8 (single) vs class A .82-.92. Went with class A for consistency.
+- Searched, not found: sand-specific flow resistivity with clean source (Attenborough IOA paper sandy soil value is OCR-garbled), per-band props.
+- Backup backup/BANDS_20261111 (before.dll, Room.cs, CHANGELOG.md, Restore.cmd, RestoreSource.cmd). Built, installed (sha1 fba80a65). Not tested.
+
+## 65. Reverb measurement v2: valid (2026-11-11)
+- Baseline (zone on, Room -10000) -16.86 dBFS; bypassed -16.79: the silent zone adds nothing, so the baseline is clean.
+- Room 0, late 0 mB, mix 1, at 1 m: reverb energy = 1.045 / 1.031 / 1.039 x the dry at decay 0.5 / 1 / 2 s. Early only (refl 0): 1.069.
+- So: at 0 mB the zone gives back as much energy as went in, whatever the decay time. The level sets total energy, not the starting level.
+- Physical target (Barron & Lee revised theory, consistent with the critical distance already used): reverberant/direct = 312 T r^2 / V * e^(-0.04 r / T); early part (1 - e^(-1.11/T)), late e^(-1.11/T). Needs per-source mix to rise with r^2, so the mix law and the mB scale must be known first.
+- v3 added: mix 0.5 / 0.25 / 1.1, late +1000 / -1000, Room -1000. Mix re-asserted every step. Backup backup/CALIBRATE3_20261111. Built, installed (sha1 2146b3e9). Not run yet.
+
+## 66. Measurement v3 and Barron reverb levels (2026-11-11)
+- Correction to 65: the logged figure is energy ADDED / dry, so at 0 mB the reverb gives 2.06x (late) and 2.08x (early) the dry energy, not 1x.
+- v3 (relative to late 0 mB, mix 1 = 2.056): mix 0.5 -> 0.257 (= 0.5^1.96), mix 0.25 -> 0.069 (0.25^2 = 0.0625): send scales amplitude. mix 1.1 -> 9.9x (+10 dB). late +1000 -> 9.95x, late -1000 -> 0.111x, Room -1000 -> 0.106x: millibels as documented.
+- Barron (akutek.info, Theory and measurement of early, late and total sound levels in concert spaces): d = 100/r^2, er = 31200T/V e^(-0.04r/T)(1 - e^(-1.11/T)), l = ... e^(-1.11/T). 312 T r^2/V = (r/rc)^2 with rc = 0.057 sqrt(V/T).
+- Zone: Room 0, Reflections = 1000 lg(early/2.08) + 1300, Reverb = 1000 lg(late/2.06) + 1300. Reverb strength setting adds to Reflections and Reverb.
+- Per sound: mix = min(1, sqrt((r/rc)^2 e^(-0.04r/T) / 10^1.3)), r at least minDistance for logarithmic rolloff. Caps at 20x direct (r about 4.5 rc).
+- Removed the occluded-sound mix boost (.3 + .25 occ, unsourced): the muffling sits ahead of the send, so what reaches you excites your room.
+- Old mapping (reverbLevel from (1-a)/a, the -2600/-2200 lerps, dist/(dist+rc) mix) removed.
+- Expect much more reverb in reflective rooms: e.g. the decorated room log (RT 1.44 s, rc about 0.8 m) puts a sound at 3 m about +10 dB reverb over direct. Physically consistent with that RT; the RT itself comes from the ray Sabine estimate.
+- Backup backup/BARRON_20261111. Built, installed (sha1 4b0c12ab). Not tested.
+
+## 67. "Very wet" (Kajetan) -> Eyring + room constant (2026-11-11)
+- Log after 66: outdoors (open 75%, hits on sea 26-50 m) got decay 1.84 s and refl +637 / late +725 mB. Sabine + Barron assume a closed, lightly absorbing room; the old enclosure blend that kept the open dry was gone. My regression.
+- Indoors: rooms ~8 m across (mean ray 4.2 m), a 0.10-0.14, decay 1.2-1.6 s, rc about 0.9 m. Bigger rooms at the same absorption give LESS reverb at a given distance (rc grows with size) but a longer tail (late share e^(-1.11/T) = 46% at 1.44 s vs 11% at 0.5 s). So size alone doesn't explain loudness; the long, bare decay does.
+- Fix: Eyring decay (metricgate: Sabine overestimates above a 0.2-0.3, Eyring -> 0 at a = 1), also for the HF ratio. Critical distance from Arup's room constant R = S a/(1-a), D = sqrt(R/16pi), S = 4V/l. Indoors about the same (rc x1.06 at a .11); open spaces dry out.
+- Not modelled (no quantity found): hearing's own reverb suppression (precedence, binaural). Reverb strength setting remains the honest knob.
+- Backup backup/EYRING_20261111. Built, installed. Not tested.
+
+## 68. "Still a LOT, like a cave, louder" (Kajetan) (2026-11-11)
+- Found: ReverbMix used r = max(r, minDistance) for logarithmic sounds. Your own sounds (steps, swings, voice) sit 1-2 m away but have minimum distances of 2-5 m, so they were sent reverb as if 2-5 m away: e.g. at rc 1 m, 5 m gives 25x (capped 20x, +13 dB) vs 1.5 m giving 2.25x (+5 dB total). Wrong reading on my part: the dry you hear is the direct sound where you stand. Now r is the real distance.
+- Evidence on the decay: furnished living rooms measure about 0.5 s (Perkin 1960) and 0.29 s at 2 kHz (BRE 1983, 47 rooms), per Burgess (IOA). Diaz & Pedrero (Applied Acoustics, 11,457 rooms): RT grows with volume. Ours: 1.2-1.6 s in rooms of a few hundred m3 with a 0.10-0.14. Size alone (T ~ size at equal a) would give about 0.6-1.0 s. So either Valheim rooms really are that bare (all wood, few soft things) or the ray average under-counts absorption (it weights by solid angle from your head, Sabine needs area weighting). Not changed: no evidence yet which.
+- Backup backup/MIXDIST_20261111. Built, installed (sha1 1cd9f6c1). Not tested.
+
+## 69. "Fix the 2nd one, all sounds reverb way too much" (2026-11-11)
+- Found in config: Reverb strength = 0.034 (-29 dB) set during the earlier test. Kajetan needed that much cut.
+- Area weighting (Sabine's average is by area): each hit counts d^2/cos (cos floored 0.1); open rays at 50 m as openings (a = 1). S = 4pi/N sum, V as before, mean free path 4V/S (was the mean ray distance), Eyring on area-weighted a, R = S a/(1-a). Same for the 250 Hz / 4 kHz decays and the HF ratio. Debug log now prints surfaces by area per kind (wood, stone, furniture, soft, ground, trees, rock, other) with their a, plus volume, mean free path, critical distance.
+- Honest expectation: in an all-wood room this barely changes a (everything about 0.1), so the decay may stay long. 
+- New suspect with no evidence yet: Unity reverb zones are FMOD's global reverb; the return may bypass the AudioMixer, so the game's SfxVol (10 lg(master x sfx volume)) would cut the dry but not the reverb. All calibration so far ran with the test sound outside the mixer. Calibration v4: silent/late 0 mB, straight vs through Effects; logs SfxVol and the dry difference.
+- Backup backup/AREA_CAL4_20261111. Built, installed (sha1 d8d943e4). Not tested.
+
+## 70. Reverted the Barron reverb (2026-11-11)
+- Kajetan, strength 1: "still way too goddamn much... this is wrong". His hearing is the ground truth here; I kept defending the model instead of taking that. Room.cs, Occlusion.cs, Batch.cs restored from backup/BARRON_20261111 (pre-Barron, with the per-band data). Changelog lines for Barron, Eyring, own-sound distance, area weighting removed. Calibrate v4 (mixer route test) and Mixer.Effects kept, harmless.
+- Last log before revert: wood 80-94% of area at a 0.12, volume 786-1344 m3 (the volume from cubed ray lengths is dominated by a few long rays: suspect), critical distance 1.2-2.0 m, decay 1.3-2.8 s.
+- The Barron work is kept in backup/REVERT_BARRON_20261111 (Room.cs, Occlusion.cs, Batch.cs). Not to come back without an explanation for the gap.
+- Built. Not installed yet: game running.
+
+## 71. Why the Barron reverb was too much: inspection (2026-11-11)
+- Math checked: zone level 1000 lg(part/2.06) + 1300 and mix sqrt(ratio/20) give wet = ratio x part, as intended. Listener is at the player's eye (GameCamera.UpdateListner), so distances are right. Vanilla sets mix only in ZSFX.UpdateReverb (our postfix overrides); ambient/wind/ocean/music loops bypass zones.
+- Weak spot 1 (untested, strongest): every calibration ran with the test sound at volume 1, outside the mixer. Unity's tracker has reproduced bugs titled "Audio Reverb Zone still produces sound when the Audio Source volume is 0" (issue 16406) and "Audio Reverb Zone is not affected by the global volume setting when the Spatial Blend of the Audio Source is lower than 1" (14385). If the zone's return doesn't follow source volume / mixer volume, quiet sounds (ZSFX volumes ~0.3) and a turned-down SFX slider get the reverb many dB too loud. The pre-Barron levels were low enough to hide it; the +13 dB headroom exposed it.
+- Weak spot 2: room volume from cubed ray lengths: 786-1344 m3 for rooms with a 4 m mean ray. A few rays out through gaps to far terrain dominate.
+- Weak spot 3: Barron assumes the dry level is the free-field level of a real source. Game sounds are mixed to sound right dry.
+- Calibration v5: volume 1 straight, through Effects, volume 0.25 straight. Built, installed with the reverted reverb.
+
+## 72. Listener on the camera; room size through gaps (2026-11-11)
+- Kajetan: "where the camera is, that's where YOU are". Listener.cs: prefix on GameCamera.UpdateListner keeps the listener at the camera (the game's own free-fly branch), vanilla when the mod is off.
+- Room size: rays now first all cast, then a ray that isn't on a built piece (WearNTear) and ends past every built neighbour (Portals' 6-neighbour graph), or escapes with a built neighbour, counts as an opening at the farthest built neighbour's distance: absorbing (open), and its volume cone ends there. Outdoors (no built neighbours) unchanged. Space log shows volume and the number of gap rays.
+- Backup backup/LISTENER_ROOMSIZE_20261111. Built, installed. Not tested. Calibration v5 still to run.
+
+## 73. Calibration v5 result; "focused towards higher pitches" (2026-11-11)
+- v5: late 0 mB adds 2.066x straight, 1.987x through Effects, 2.009x at volume 0.25 (dry -12.0 dB as expected); Effects dry +0.1 dB; SfxVol 0 dB. So Unity's reverb DOES follow source volume and the mixer. My suspect 1 was wrong (Kajetan was sure of it; the measurement says no). The Barron excess is not Unity's fault; remaining suspects: the room volume (since fixed, gaps) and the model's premise vs the game's dry mix.
+- Bright overall sound: candidates from the code, none measured: the clean mix bypasses Ambient's 11 kHz and 15 kHz low-passes (wind, rain, sea get their full top) and both compressors; the SFX bypass is -1.2 dB at 12 kHz and +1.9/+1.8 dB at 400 Hz/1.6 kHz, so not brighter there. Room reverb HF is near 0 mB (RoomHF -6..-23) from the per-band data, brighter than vanilla presets.
+- Added Debug > "Compare with the mod off": 8 s output spectrum (GetSpectrumData, both channels, Blackman-Harris, per octave) mod on, off, on again; logs on-off and the take-to-take spread. Coroutine on the plugin, started by the setting, no per-frame hook otherwise.
+- Backup backup/SPECTRUM_20261111. Built, installed. Not run.
+
+## 74. Clean mix removed (Kajetan) (2026-11-11)
+- "Get rid of that whole thing": the clean mix was added to fix the deep-fried sound, which turned out to be the mod's own click fix. Bypassing the game's EQ, low-passes and compressors sounded off (bright, weird).
+- Mixer.cs moved to backup/NO_CLEAN_MIX_20261111/Mixer.cs.removed. Removed: Mixer.Route in AcousticFilter.Awake, OrigGroup/RouteGain and their use in the gain and activity checks (Filter, Ambience), Mixer.Step (Room), Mixer.UnrouteAll (Plugin). Calibrate's through-Effects steps dropped (already measured). Changelog line "Improved: sound quality..." removed. Sounds play through the game's own groups again, with its EQ, compressors, low-passes, group reverbs and menu snapshot.
+- Kajetan: the reverb on the reverted build is not overpowering.
+- Built, installed. Not tested.
+
+## 75. Clean-up, README (2026-11-11)
+- Removed the one-off debug tools (Calibrate.cs, Spectrum.cs; settings "Measure the reverb", "Compare with the mod off"; Room's calibration hook and ReapplyZone). Their results are in 63-73. Kept in backup/CLEANUP_20261111.
+- Removed dead code: Ambience.PlaceAsAmbient (never called) and the ConvertedAmbient/OldAmbientBlend restore it implied.
+- AcousticFilter.OnAudioFilterRead: no Stopwatch or Interlocked work unless the debug log (or its meter) is on; those only fed the log.
+- Stale text: Filter header (HRTF LOD crossfade, nearest-only processing), Reverb strength "1 = as measured" -> "1 = as designed, 0 = none".
+- README rewritten for the current build (camera listener, measured walls, per-band materials, bounces, wind, sea, under water, places; echo, forest tail and HRTF LOD gone) with a Sources section. Changelog Performance line updated.
+- Built, installed (sha1 b2581632). Not tested.
+- 0.3.0 was released 2026-11-10 23:20 (commit a311070) with only the places/moving/wake/wind-in-ears items. Everything after went into a new ## 0.4.0 section; 0.3.0 and older now match the released file exactly.

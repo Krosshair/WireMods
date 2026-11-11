@@ -27,6 +27,5 @@
     <Reference Include="Unity.Burst"><HintPath>D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed\Unity.Burst.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="..\data\DeclickTable.tsv.gz" LogicalName="WiresAcoustics.DeclickTable.tsv.gz" />
   </ItemGroup>
 </Project>

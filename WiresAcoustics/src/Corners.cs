@@ -42,14 +42,11 @@ namespace WiresAcoustics
             into[4] = pivot + Vector3.up * over;
         }
 
-        internal static float Bend(Vector3 listener, Vector3 p, Vector3 sound) =>
-            .3f * (1f - Vector3.Dot((p - listener).normalized, (sound - p).normalized));
-
         internal static float LengthGain(Vector3 listener, Vector3 p, Vector3 sound)
         {
             float direct = (sound - listener).magnitude;
             float path = (p - listener).magnitude + (sound - p).magnitude;
-            return Mathf.Clamp(direct / Mathf.Max(.01f, path), .35f, 1f);
+            return Mathf.Min(1f, direct / Mathf.Max(.01f, path)); // the longer way spreads the sound further (1/r)
         }
     }
 }

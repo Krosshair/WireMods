@@ -7,7 +7,13 @@ namespace WiresAcoustics
     // camera is above it, and everything goes dull if the camera itself is ever under water.
     internal static class Underwater
     {
-        internal const float Gain = .45f, Cutoff = 400f;
+        // Sound crossing between air and water: the share of its energy that gets through at the
+        // surface is 4 Z1 Z2 / (Z1 + Z2)^2, with the characteristic impedances of air (415 Pa s/m)
+        // and water (1.48e6 Pa s/m) (DOSITS): about 0.1%, 29.5 dB. The surface takes every
+        // frequency alike, so no low-pass.
+        private const float ZAir = 415f, ZWater = 1.48e6f;
+        internal static readonly float Gain = Mathf.Sqrt(4f * ZAir * ZWater / ((ZAir + ZWater) * (ZAir + ZWater)));
+        internal const float Cutoff = 22000f;
         private const float Fade = 3f; // per second
         private static float s_amount;
         internal static bool ListenerBelow;

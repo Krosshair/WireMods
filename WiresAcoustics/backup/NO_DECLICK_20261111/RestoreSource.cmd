@@ -1,0 +1,7 @@
+copy /y "%~dp0Declick.cs" "%~dp0..\..\src\Declick.cs"
+copy /y "%~dp0DeclickMath.cs" "%~dp0..\..\src\DeclickMath.cs"
+copy /y "%~dp0DeclickMathC.cs" "%~dp0..\..\src\DeclickMathC.cs"
+copy /y "%~dp0Travel.cs" "%~dp0..\..\src\Travel.cs"
+copy /y "%~dp0Plugin.cs" "%~dp0..\..\src\Plugin.cs"
+copy /y "%~dp0WiresAcoustics.csproj" "%~dp0..\..\src\WiresAcoustics.csproj"
+copy /y "%~dp0CHANGELOG.md" "%~dp0..\..\package\CHANGELOG.md"

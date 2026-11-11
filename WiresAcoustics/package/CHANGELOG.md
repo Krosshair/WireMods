@@ -1,3 +1,26 @@
+## 0.4.0
+- Changed: you now hear from the camera, not from your character. Left and right, near and far, and which room you're in follow your view.
+- Fixed: a room's size counted the sky or the hills seen through its windows, doors and gaps, so rooms seemed several times bigger than they are.
+- Improved: every sound gets the full HRTF. Before, only the nearest few did and the rest kept only a louder near ear, so you couldn't tell where a distant fight or animal was. The simpler version saved too little to be worth it.
+- Removed: the echo off cliffs and big walls in the open. It was rarely heard and cost audio processing on every nearby sound while it was on. The room's reverb is unchanged.
+- Improved: how much the air dulls distant sounds now follows the international standard for it (ISO 9613-1), with the weather: the game's warm, cold and freezing are matched to the real Norwegian weather they're modelled on (a Bergen summer day and night, the mountains in winter). Sounds 10 to 60 m away were too bright before.
+- Improved: rocks, furniture and tree trunks between you and a sound now muffle it by their size: the sound goes over and round them, so a trunk barely matters and a boulder takes the highs off (the same barrier formula as corners and hills, over the top and round both sides). Before they all took off the same fixed amount.
+- Improved: how much a room's reverb dulls over time and how bright its reflections are now come from what the room is made of, from published absorption figures per material (stone keeps the highs ringing, wood swallows the lows), plus the air.
+- Improved: sound reaching you by bouncing off a wall is now as loud as the reflection would really be: what the surface doesn't absorb, mirrored where the angle is right and scattered evenly elsewhere, by how rough each material is.
+- Removed: the forest's own reverb tail. Its values weren't backed by measurements.
+- Changed: the ground, trees and iron now absorb each frequency band by published data. Ground uses the Nord2000 ground classes per biome (snow, moss, grass, forest floor, sand, packed ash), trees use measured bark, iron uses steel. Before, they had one rough value for every frequency.
+- Improved: walls, floors, roofs and doors now block sound as much as real ones measure, by their material and thickness: a wood wall like a solid timber wall (about 29 dB of the lows, 37 dB at mid frequencies), a door like a solid wood door (less, as doors leak), stone like a brick wall (far more). Through a wall you hear a muffled but still recognisable sound, not just a rumble. Hills, rocks, trees and furniture are unchanged.
+- Improved: indoors, the outside (rain, wind, birds) comes in through the openings and the open sky; what gets through closed walls is a faint low rumble. With the HRTF, it now comes fully from the openings' direction, not partly.
+- Improved: sound bending round a corner or through a doorway loses what real sound does (the barrier formula used for noise walls, capped at 20 dB), more of its highs the longer the detour. Before it lost about 1 dB.
+- Improved: wind. Downwind a sound carries a few dB further; upwind it can drop by up to 20 dB from about 100 m away, as measured outdoors (it was at most 4 dB). The game's wind is matched to real wind speeds by its snow storm being a blizzard.
+- Improved: indoors, a random bird or insect call starts outside your walls instead of somewhere in your room, so it comes in through the windows and doors from their direction.
+- Improved: a hill between you and a sound is now treated as what it is, a ridge the sound goes over: the higher it rises above the line between you, the more it takes off (the same barrier formula as corners).
+- Improved: how much reverb a sound gets indoors now uses the standard critical distance (from the room's measured size and reverb time) instead of a fixed guess.
+- Improved: under water. Sound crossing the surface keeps about 0.1% of its energy, as physics says (about 30 dB quieter), without the old muffling, which wasn't based on anything.
+- Improved: the sea is a long shoreline, so it now fades 3 dB per doubling of distance like a real line of sound, not 6.
+- Removed: the crackle fix from 0.2.7. Repairing the clicks in the game's sound files also took detail out of many deep sounds (footsteps, landings, climbing on stone), leaving them dull and distorted at random, depending on which variant of a sound played. A worse problem than the one it fixed, so the game's sound files are left as they ship again.
+- Performance: the audio processing no longer times itself unless the debug log is on.
+
 ## 0.3.0
 - Improved: sounds come from where they're made. The game often plays a sound at a character's feet or at the base of a piece:
   - Weapon swings and attacks come from the weapon and follow the swing. A bow's draw comes from the bow, the hammer's build sound from your hand.

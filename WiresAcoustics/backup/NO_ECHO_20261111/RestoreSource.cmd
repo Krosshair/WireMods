@@ -1,0 +1,7 @@
+copy /y "%~dp0Filter.cs" "%~dp0..\..\src\Filter.cs"
+copy /y "%~dp0Budget.cs" "%~dp0..\..\src\Budget.cs"
+copy /y "%~dp0Bounces.cs" "%~dp0..\..\src\Bounces.cs"
+copy /y "%~dp0Directions.cs" "%~dp0..\..\src\Directions.cs"
+copy /y "%~dp0Occlusion.cs" "%~dp0..\..\src\Occlusion.cs"
+copy /y "%~dp0Room.cs" "%~dp0..\..\src\Room.cs"
+copy /y "%~dp0CHANGELOG.md" "%~dp0..\..\package\CHANGELOG.md"

@@ -1,0 +1,7 @@
+copy /y "%~dp0Bounces.cs" "%~dp0..\..\src\Bounces.cs"
+copy /y "%~dp0Batch.cs" "%~dp0..\..\src\Batch.cs"
+copy /y "%~dp0Room.cs" "%~dp0..\..\src\Room.cs"
+copy /y "%~dp0Occlusion.cs" "%~dp0..\..\src\Occlusion.cs"
+copy /y "%~dp0CHANGELOG.md" "%~dp0..\..\package\CHANGELOG.md"
+copy /y "%~dp0Plugin.cs" "%~dp0..\..\src\Plugin.cs"
+del "%~dp0..\..\src\Calibrate.cs"

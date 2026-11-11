@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>WiresAcoustics</AssemblyName>
+    <RootNamespace>WiresAcoustics</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="BepInEx"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/kajet/AppData/Roaming/com.kesomannen.gale/valheim/profiles/Enngard/BepInEx/core/BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/kajet/AppData/Roaming/com.kesomannen.gale/valheim/profiles/Enngard/BepInEx/core/0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="assembly_valheim"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/assembly_valheim.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="assembly_utils"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/assembly_utils.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AnimationModule"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="assembly_guiutils"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/assembly_guiutils.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.Mathematics"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/Unity.Mathematics.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.Collections"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/Unity.Collections.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AudioModule"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.Burst"><HintPath>/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/Managed/Unity.Burst.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="/sessions/rcw-01ten8rjjhv7z1osvo2tp1yt/mnt/kajet/WireMods/WiresAcoustics/data/DeclickTable.tsv.gz" LogicalName="WiresAcoustics.DeclickTable.tsv.gz" />
+  </ItemGroup>
+</Project>

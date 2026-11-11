@@ -148,11 +148,23 @@ namespace WiresAcoustics
         // The sea (Ocean): the beach and the seabed within 15 m of where the waves break don't hide them.
         private static bool s_shore;
 
-        private static float Walls(int cmd, Vector3 to, out float first) =>
-            Walls(cmd, to, out first, out _);
+        private static float Walls(int cmd, Vector3 to, ref Occlusion.Block b) =>
+            Walls(cmd, to, out _, out _, ref b);
 
+        // Hits of one ray, and the ridge if the ground was among them (from the ray's own start).
         private static float Walls(int cmd, Vector3 to, out float first,
-                                   out Collider blocker)
+                                   out Collider blocker, ref Occlusion.Block b)
+        {
+            bool hadGround = b.Terrain;
+            b.Terrain = false;
+            float occ = WallHits(cmd, to, out first, out blocker, ref b);
+            if (b.Terrain) Occlusion.Ridge(s_cmds[cmd].from, to, ref b);
+            b.Terrain |= hadGround;
+            return occ;
+        }
+
+        private static float WallHits(int cmd, Vector3 to, out float first,
+                                   out Collider blocker, ref Occlusion.Block b)
         {
             float occ = 0f;
             first = float.MaxValue;
@@ -165,6 +177,7 @@ namespace WiresAcoustics
                 float w = Occlusion.Counts(hit.collider, to);
                 if (w <= 0f) continue;
                 occ += w;
+                Occlusion.Layer(hit.collider, w, s_cmds[cmd].from, to, ref b);
                 if (hit.distance < first)
                 {
                     first = hit.distance;
@@ -175,10 +188,11 @@ namespace WiresAcoustics
         }
 
         // A way round: kept if it arrives louder than the best so far.
-        private static bool Consider(float occ, float lengthGain, Vector3 at, ref float bestGain, ref float bestCutoff, ref float bestOcc, ref Vector3 bestAt)
+        private static bool Consider(float occ, in Occlusion.Block block, float lengthGain, float bendGain, float bendCut, Vector3 at, ref float bestGain, ref float bestCutoff, ref float bestOcc, ref Vector3 bestAt)
         {
-            Occlusion.Muffle(occ, out float g, out float cut);
-            g *= lengthGain;
+            Occlusion.Wall(block, out float g, out float cut);
+            g *= lengthGain * bendGain;
+            cut = Mathf.Min(cut, bendCut);
             if (g <= bestGain) return false;
             bestGain = g;
             bestCutoff = cut;
@@ -200,7 +214,8 @@ namespace WiresAcoustics
                 Occlusion.Own = f.ShapeRoot != null ? f.ShapeRoot.root : null;
                 s_shore = f.Kind == AcousticFilter.Kinds.Ocean;
                 Collider firstBlocker = null;
-                if (on) occ = Walls(r.First, r.To, out first, out firstBlocker);
+                Occlusion.Block direct = Occlusion.Block.Clear;
+                if (on) occ = Walls(r.First, r.To, out first, out firstBlocker, ref direct);
                 f.LastBlockDist = first < float.MaxValue ? first : (r.To - r.Listener).magnitude * .5f;
                 // The direct sound (through the walls) and the best way round (an opening, a corner, a
                 // bounce) are both heard: neither stops the other. The way round is picked by how loud
@@ -220,8 +235,10 @@ namespace WiresAcoustics
                     for (int k = 0; k < r.Routes; k++, c++)
                     {
                         Portals.Portal p = k == 0 ? r.P0 : r.P1;
-                        float total = Walls(c, r.To, out _) + Portals.Bend(p, r.To);
-                        if (Consider(total, Portals.LengthGain(r.Listener, p, r.To), p.Point, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
+                        Occlusion.Block leg = Occlusion.Block.Clear;
+                        float total = Walls(c, r.To, ref leg);
+                        Diffraction.Round(r.Listener, p.Point, r.To, out float bg, out float bc);
+                        if (Consider(total, leg, Portals.LengthGain(r.Listener, p, r.To), bg, bc, p.Point, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
                             bestKind = 1;
                     }
                 else c += r.Routes;
@@ -230,8 +247,10 @@ namespace WiresAcoustics
                     {
                         if (!on || f.LastOcc < .3f) continue;
                         Vector3 p = k == 0 ? r.C0 : k == 1 ? r.C1 : k == 2 ? r.C2 : k == 3 ? r.C3 : r.C4;
-                        float total = Walls(c, p, out _) + Walls(c + 1, r.To, out _) + Corners.Bend(r.Listener, p, r.To);
-                        if (Consider(total, Corners.LengthGain(r.Listener, p, r.To), p, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
+                        Occlusion.Block leg = Occlusion.Block.Clear;
+                        float total = Walls(c, p, ref leg) + Walls(c + 1, r.To, ref leg);
+                        Diffraction.Round(r.Listener, p, r.To, out float bg, out float bc);
+                        if (Consider(total, leg, Corners.LengthGain(r.Listener, p, r.To), bg, bc, p, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
                             bestKind = 2;
                     }
                 if (r.Corners)
@@ -239,14 +258,15 @@ namespace WiresAcoustics
                     {
                         if (!on || f.LastOcc < .3f) continue;
                         Bounces.Try t = k == 0 ? r.B0 : k == 1 ? r.B1 : r.B2;
-                        float total = Walls(c, r.To, out _) + Bounces.Cost(t, r.To);
-                        if (Consider(total, Bounces.LengthGain(r.Listener, t, r.To), t.Heard, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
+                        Occlusion.Block leg = Occlusion.Block.Clear;
+                        float total = Walls(c, r.To, ref leg);
+                        if (Consider(total, leg, t.Score, 1f, 22000f, t.Heard, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
                         {
                             bestKind = 3;
                             bestIsSecondBounce = (t.End - t.Heard).sqrMagnitude > .04f;
                         }
                     }
-                Occlusion.Muffle(occ, out float gain, out float cutoff);
+                Occlusion.Wall(direct, out float gain, out float cutoff);
                 bool routed = false;
                 Vector3 heard = r.To;
                 if (pathGain > 0f)

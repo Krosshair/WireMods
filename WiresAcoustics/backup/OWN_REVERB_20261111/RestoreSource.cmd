@@ -1,0 +1,7 @@
+copy /y "%~dp0Filter.cs" "%~dp0..\..\src\Filter.cs"
+copy /y "%~dp0Room.cs" "%~dp0..\..\src\Room.cs"
+copy /y "%~dp0Directions.cs" "%~dp0..\..\src\Directions.cs"
+copy /y "%~dp0Plugin.cs" "%~dp0..\..\src\Plugin.cs"
+copy /y "%~dp0Mixer.cs" "%~dp0..\..\src\Mixer.cs"
+del "%~dp0..\..\src\Reverb.cs"
+copy /y "%~dp0CHANGELOG.md" "%~dp0..\..\package\CHANGELOG.md"

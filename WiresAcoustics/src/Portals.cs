@@ -74,6 +74,12 @@ namespace WiresAcoustics
             for (int i = 0; i < Found.Count && i < 4; i++) List.Add(Found[i]);
         }
 
+        internal static int[][] NeighboursOf(Vector3[] dirs)
+        {
+            if (s_nb == null) s_nb = BuildNeighbours(dirs);
+            return s_nb;
+        }
+
         private static int[][] BuildNeighbours(Vector3[] dirs)
         {
             var nb = new int[dirs.Length][];
@@ -89,14 +95,11 @@ namespace WiresAcoustics
             return nb;
         }
 
-        internal static float Bend(Portal p, Vector3 sound) =>
-            .3f * (1f - Vector3.Dot(p.Dir, (sound - p.Point).normalized));
-
         internal static float LengthGain(Vector3 listener, Portal p, Vector3 sound)
         {
             float direct = (sound - listener).magnitude;
             float path = (p.Point - listener).magnitude + (sound - p.Point).magnitude;
-            return Mathf.Clamp(direct / Mathf.Max(.01f, path), .35f, 1f);
+            return Mathf.Min(1f, direct / Mathf.Max(.01f, path)); // the longer way spreads the sound further (1/r)
         }
 
         // Positionless ambience: how much of the outside comes in (openings, bigger and nearer count

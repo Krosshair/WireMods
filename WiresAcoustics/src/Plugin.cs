@@ -15,7 +15,7 @@ namespace WiresAcoustics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.acoustics";
-        public const string Version = "0.3.0";
+        public const string Version = "0.4.0";
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled, RoomReverb, Occlusion, Hrtf, RealDistance, DebugLog;
         internal static ConfigEntry<float> ReverbStrength, OcclusionStrength, HrtfStrength;
@@ -44,7 +44,7 @@ namespace WiresAcoustics
             Occlusion = Setting("General", "Muffling", true, "Sounds behind walls, buildings or hills are muffled and quieter, more so through several layers.");
             Hrtf = Setting("General", "HRTF (headphones)", true,
                 "Where a sound is around your head: a tiny delay and muffling for the far ear, duller sounds from behind, and the outer ear's cue for above and below, instead of plain left/right panning. Made for headphones; turn off on speakers.");
-            ReverbStrength = Setting("Tuning", "Reverb strength", 1f, "How loud the room's reverb is (1 = as measured).", new AcceptableValueRange<float>(0f, 2f));
+            ReverbStrength = Setting("Tuning", "Reverb strength", 1f, "How loud the room's reverb is (1 = as designed, 0 = none).", new AcceptableValueRange<float>(0f, 2f));
             HrtfStrength = Setting("Tuning", "HRTF strength", 1f, "How strong the direction cues are: the far ear's dulling and level drop, the shading from behind, the delay between the ears (1 = as modelled, 2 = exaggerated).", new AcceptableValueRange<float>(0f, 2f));
             OcclusionStrength = Setting("Tuning", "Muffling strength", 1f, "How much walls muffle and quieten sounds (1 = as designed, 0 = none).", new AcceptableValueRange<float>(0f, 1.5f));
             DebugLog = Setting("Debug", "Debug log", false, "Logs the measured space every few seconds and each muffled sound.", null, true);

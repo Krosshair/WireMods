@@ -1,0 +1,71 @@
+using System.Collections;
+using UnityEngine;
+
+namespace WiresAcoustics
+{
+    // One-off comparison of what comes out of the game with the mod on and off (Debug > Compare with
+    // the mod off): the game's output spectrum (AudioListener.GetSpectrumData) averaged for 8 seconds
+    // with the mod on, then off, then on again. The second "on" shows how much the scene itself
+    // changes between takes, so a difference smaller than that isn't the mod. Per octave in the log.
+    internal static class Spectrum
+    {
+        private const int Bins = 4096;
+        private const float Take = 8f, Settle = 2f;
+        private static readonly float[] Centres = { 31.5f, 63f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f };
+        private static readonly float[] L = new float[Bins], R = new float[Bins];
+        internal static bool Running { get; private set; }
+
+        internal static IEnumerator Run()
+        {
+            if (Running) yield break;
+            Running = true;
+            Plugin.Log.LogInfo("[spectrum] comparing: 8 s with the mod on, 8 s off, 8 s on again. Keep still.");
+            var on1 = new double[Centres.Length];
+            var off = new double[Centres.Length];
+            var on2 = new double[Centres.Length];
+            yield return Collect(on1);
+            Plugin.Enabled.Value = false;
+            yield return new WaitForSecondsRealtime(Settle);
+            yield return Collect(off);
+            Plugin.Enabled.Value = true;
+            yield return new WaitForSecondsRealtime(Settle);
+            yield return Collect(on2);
+            Plugin.Log.LogInfo("[spectrum] octave  on   off   on again  (dB)   on-off  again-off  on-again");
+            for (int b = 0; b < Centres.Length; b++)
+            {
+                double a = Db(on1[b]), o = Db(off[b]), c = Db(on2[b]);
+                Plugin.Log.LogInfo("[spectrum] " + Centres[b].ToString("F0").PadLeft(5) + " Hz " + a.ToString("F1").PadLeft(6) + o.ToString("F1").PadLeft(6) + c.ToString("F1").PadLeft(6) +
+                    (a - o).ToString("+0.0;-0.0").PadLeft(9) + (c - o).ToString("+0.0;-0.0").PadLeft(9) + (a - c).ToString("+0.0;-0.0").PadLeft(9));
+            }
+            Running = false;
+            Plugin.CompareSpectrum.Value = false;
+        }
+
+        private static double Db(double p) => p > 0 ? 10.0 * System.Math.Log10(p) : -200.0;
+
+        // Average power per octave, every frame for one take.
+        private static IEnumerator Collect(double[] band)
+        {
+            int rate = AudioSettings.outputSampleRate;
+            float binHz = rate * .5f / Bins;
+            int frames = 0;
+            float end = Time.unscaledTime + Take;
+            while (Time.unscaledTime < end)
+            {
+                AudioListener.GetSpectrumData(L, 0, FFTWindow.BlackmanHarris);
+                AudioListener.GetSpectrumData(R, 1, FFTWindow.BlackmanHarris);
+                for (int b = 0; b < Centres.Length; b++)
+                {
+                    int lo = Mathf.Max(1, Mathf.FloorToInt(Centres[b] / 1.41421356f / binHz));
+                    int hi = Mathf.Min(Bins - 1, Mathf.CeilToInt(Centres[b] * 1.41421356f / binHz));
+                    double s = 0;
+                    for (int i = lo; i < hi; i++) s += L[i] * L[i] + R[i] * R[i];
+                    band[b] += s;
+                }
+                frames++;
+                yield return null;
+            }
+            for (int b = 0; b < band.Length; b++) band[b] /= Mathf.Max(1, frames);
+        }
+    }
+}

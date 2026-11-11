@@ -13,18 +13,6 @@ namespace WiresAcoustics
     // centre, its stereo width kept, more of it the more closed in you are); without it, stereo pan.
     internal static class Ambience
     {
-        internal static void PlaceAsAmbient(AudioSource src)
-        {
-            if (src == null || src.spatialBlend < .5f) return;
-            AcousticFilter f = src.GetComponent<AcousticFilter>() ??
-                               src.gameObject.AddComponent<AcousticFilter>();
-            if (!f.ConvertedAmbient)
-            {
-                f.ConvertedAmbient = true;
-                f.OldAmbientBlend = src.spatialBlend;
-            }
-            src.spatialBlend = 0f;
-        }
         private static void RememberPan(AudioSource src)
         {
             if (src == null) return;
@@ -43,19 +31,14 @@ namespace WiresAcoustics
             {
                 if (f == null) continue;
                 AudioSource src = f.Source;
-                if (src != null)
-                {
-                    if (f.ConvertedAmbient) src.spatialBlend = f.OldAmbientBlend;
-                    if (f.SavedAmbientPan) src.panStereo = f.OriginalAmbientPan;
-                }
-                f.ConvertedAmbient = false;
+                if (src != null && f.SavedAmbientPan) src.panStereo = f.OriginalAmbientPan;
                 f.SavedAmbientPan = false;
             }
         }
         private static readonly AccessTools.FieldRef<AudioMan, AudioSource> AmbientLoop = AccessTools.FieldRefAccess<AudioMan, AudioSource>("m_ambientLoopSource");
         private static readonly AccessTools.FieldRef<AudioMan, AudioSource> WindLoop = AccessTools.FieldRefAccess<AudioMan, AudioSource>("m_windLoopSource");
         private static readonly AccessTools.FieldRef<AudioMan, AudioSource> OceanLoop = AccessTools.FieldRefAccess<AudioMan, AudioSource>("m_oceanAmbientSource");
-        private static float s_gain = 1f, s_cutoff = 22000f, s_open, s_pan, s_lean;
+        private static float s_gain = 1f, s_cutoff = 22000f, s_open, s_pan, s_lean, s_share;
         private static AudioSource s_leanSrc0, s_leanSrc1; // the two loops and their filters, found once
         private static AcousticFilter s_leanF0, s_leanF1;
         private static Vector3 s_openDir;
@@ -76,12 +59,11 @@ namespace WiresAcoustics
             // The outside comes in both ways at once: muffled through the walls (from all around) and
             // clear through the openings (from their direction). How much leans toward the openings
             // is the openings' share of what you hear.
-            float wall = Mathf.Lerp(1f, .3f, Room.Enclosure * Room.Enclosure);
-            float share = s_open * s_open / Mathf.Max(1e-4f, s_open * s_open + wall * wall);
+            float share = s_share; // the openings' share of what you hear of the outside (Update)
             float target = leaning ? Mathf.Clamp(Vector3.Dot(listener.right, s_openDir) * .8f, -.8f, .8f) * amount * share : 0f;
             s_pan = Mathf.MoveTowards(s_pan, target, 2f * dt);
             bool hrtf = Plugin.Hrtf.Value;
-            float lean = hrtf ? Mathf.MoveTowards(s_lean, amount * .8f * share, dt) : 0f;
+            float lean = hrtf ? Mathf.MoveTowards(s_lean, amount * share, dt) : 0f;
             // Outside, the wind in your own ears: it roars in the ear facing it and drops behind your
             // head. The game plays its wind loop the same in both ears whichever way you face.
             Vector3 windFrom = Vector3.zero;
@@ -169,14 +151,23 @@ namespace WiresAcoustics
         internal static bool IsAmbient(AudioSource src) =>
             AudioMan.instance != null && src.outputAudioMixerGroup != null && src.outputAudioMixerGroup == AudioMan.instance.m_ambientMixer;
 
-        // From the room measurement (every 0.2 s).
+        // From the room measurement (every 0.2 s). The outside comes in two ways: through the open
+        // directions (openings, open sky: 1 - enclosure) at full strength, and through the walls,
+        // floors and roofs by what they let through (Room.WallEnergy, the mass law). The two add by
+        // energy; the low-pass is their energy-weighted mix of none and the walls' (Occlusion.WallCut).
         internal static void Update(AudioMan man, float enclosure)
         {
+            // the game's own cold and freezing (what its status effects go by), for the air (Filter)
+            AcousticFilter.AirWeather = EnvMan.IsFreezing() ? AcousticFilter.Freezing : EnvMan.IsCold() ? AcousticFilter.Cold : AcousticFilter.Warm;
             float s = Plugin.Occlusion.Value ? Mathf.Clamp(Plugin.OcclusionStrength.Value, 0f, 1.5f) : 0f;
             s_open = Portals.Openness(out s_openDir);
-            float m = enclosure * enclosure * s * (1f - s_open);
-            s_gain = Mathf.Clamp(Mathf.Lerp(1f, .3f, m), .05f, 1f);
-            s_cutoff = Mathf.Clamp(Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(700f), m)), 200f, 22000f);
+            float openE = Mathf.Clamp01(1f - enclosure), wallE = Mathf.Clamp01(Room.WallEnergy);
+            float total = openE + wallE;
+            float gain = Mathf.Sqrt(Mathf.Clamp01(total));
+            float cut = total > 1e-6f ? Mathf.Exp((openE * Mathf.Log(22000f) + wallE * Mathf.Log(Occlusion.WallCut)) / total) : Occlusion.WallCut;
+            s_share = total > 1e-6f ? openE / total : 0f;
+            s_gain = Mathf.Clamp(Mathf.LerpUnclamped(1f, gain, s), .001f, 1f);
+            s_cutoff = Mathf.Clamp(Mathf.Exp(Mathf.LerpUnclamped(Mathf.Log(22000f), Mathf.Log(cut), s)), Occlusion.WallCut, 22000f);
             Set(AmbientLoop(man));
             Set(WindLoop(man));
             // Refresh active random outdoor calls (birds, insects, etc.) at
@@ -239,6 +230,15 @@ namespace WiresAcoustics
             if (!RandomAmbients.Contains(f)) RandomAmbients.Add(f);
             f.Set(s_gain, s_cutoff, starting);
             Need(f);
+        }
+
+        // A random call that's heard from its place again (Occlusion): out of the ambience list,
+        // its own stereo pan back.
+        internal static void Forget(AcousticFilter f)
+        {
+            if (!RandomAmbients.Remove(f)) return;
+            if (f.SavedAmbientPan && f.Source != null) f.Source.panStereo = f.OriginalAmbientPan;
+            f.SavedAmbientPan = false;
         }
 
         // The filter's callback only while there's something to do (muffled, leaning, under water).

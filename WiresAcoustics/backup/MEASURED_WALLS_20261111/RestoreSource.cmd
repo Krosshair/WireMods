@@ -1,0 +1,5 @@
+copy /y "%~dp0Occlusion.cs" "%~dp0..\..\src\Occlusion.cs"
+copy /y "%~dp0Ambience.cs" "%~dp0..\..\src\Ambience.cs"
+copy /y "%~dp0Room.cs" "%~dp0..\..\src\Room.cs"
+copy /y "%~dp0OutputPeak.cs" "%~dp0..\..\src\OutputPeak.cs"
+copy /y "%~dp0CHANGELOG.md" "%~dp0..\..\package\CHANGELOG.md"

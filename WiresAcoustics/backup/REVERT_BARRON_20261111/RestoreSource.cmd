@@ -1,0 +1,4 @@
+copy /y "%~dp0Room.cs" "%~dp0..\..\src\Room.cs"
+copy /y "%~dp0Occlusion.cs" "%~dp0..\..\src\Occlusion.cs"
+copy /y "%~dp0Batch.cs" "%~dp0..\..\src\Batch.cs"
+copy /y "%~dp0CHANGELOG.md" "%~dp0..\..\package\CHANGELOG.md"

@@ -47,6 +47,13 @@ namespace WiresAcoustics
 
         // Measured, smoothed (read by Occlusion for the per-sound reverb send).
         internal static float Enclosure, Absorption = .3f;
+        // The outside's energy reaching you through the walls, floors and roofs round you (share of
+        // directions times what each lets through, squared): the rest comes in through the openings.
+        internal static float WallEnergy;
+        // Where a sound is as much reverb as direct (the critical distance, Hopkins-Stryker as Arup
+        // gives it): D = 0.057 sqrt(Q V / RT), Q = 1 for a sound sending all round, V the space's
+        // volume (from the room rays, each ray's cone out to what it hit), RT the reverb time.
+        internal static float Critical = 5f;
         private static float s_path, s_alpha, s_decay;
         // Valheim's environment-loop mixer can take 10 seconds to fade the old
         // track out, then another 10 to fade the new one in. Speed that handoff
@@ -153,7 +160,7 @@ namespace WiresAcoustics
                 if (roomReverb && !s_wasRoomReverb) { s_nextScan = 0f; Room.Invalidate(); }
                 s_wasRoomReverb = roomReverb;
                 if (s_wasHrtf && !hrtf) { Directions.Flush(); AcousticFilter.ReleaseHrtf(); }
-                if (s_wasOn && !on) { PortalLoop.Clear(); Travel.Clear(); Batch.Flush(); AcousticFilter.ReleaseAll(); PlayerSounds.RestoreAll(); Ambience.RestorePlaced(); Underwater.Reset(); Follow.Clear(); AcousticFilter.SetEcho(0f, Vector3.forward); }
+                if (s_wasOn && !on) { PortalLoop.Clear(); Travel.Clear(); Batch.Flush(); AcousticFilter.ReleaseAll(); PlayerSounds.RestoreAll(); Ambience.RestorePlaced(); Underwater.Reset(); Follow.Clear(); }
                 s_wasOn = on; s_wasHrtf = hrtf;
                 if (!on) { Underwater.Reset(); Directions.Idle(); }
                 if (Plugin.Enabled.Value && __instance.GetActiveAudioListener() is AudioListener l)
@@ -175,8 +182,6 @@ namespace WiresAcoustics
                     Directions.Step(lt);
                     Cost.Add(ref Cost.Dirs, c);
                     r = Cost.Start();
-                    AcousticFilter.SetEcho(Bounces.EchoGain * (Plugin.RoomReverb.Value ? Mathf.Clamp(Plugin.ReverbStrength.Value, 0f, 2f) : 0f),
-                        lt.InverseTransformDirection(Bounces.EchoDir));
                     Ambience.Pan(__instance, lt, Time.deltaTime);
                     float t = Time.time;
                     c = Cost.Start();
@@ -339,6 +344,7 @@ namespace WiresAcoustics
             s_roomDirty = true;
             s_haveCast = false;
             Enclosure = 0f;
+            WallEnergy = 0f;
             Portals.List.Clear();
             Bounces.Clear();
         }
@@ -352,19 +358,33 @@ namespace WiresAcoustics
             if (s_hits.IsCreated) s_hits.Dispose();
         }
 
-        // What each room ray landed on, for the bounces and the echo too (the sea's surface included).
+        // What each room ray landed on, for the bounces too (the sea's surface included).
         internal static readonly bool[] Hit = new bool[Rays], Tree = new bool[Rays];
+        private static readonly bool[] Built = new bool[Rays];
+        private static readonly float[] Opening = new float[Rays]; // where a ray left through a gap, or -1
+        private static readonly Dictionary<int, bool> BuiltCache = new Dictionary<int, bool>();
+        private static bool IsBuilt(Collider c)
+        {
+            if (c == null) return false;
+            int id = c.GetInstanceID();
+            if (BuiltCache.TryGetValue(id, out bool b)) return b;
+            if (BuiltCache.Count > 8192) BuiltCache.Clear();
+            b = c.GetComponentInParent<WearNTear>() != null;
+            BuiltCache[id] = b;
+            return b;
+        }
         internal static readonly Vector3[] Point = new Vector3[Rays], Normal = new Vector3[Rays];
         internal static readonly float[] Dist = new float[Rays], Alpha = new float[Rays];
 
         private static bool s_logDue;
-        private static float s_logEnclosure, s_logNearest, s_logOpen;
+        private static float s_logEnclosure, s_logNearest, s_logOpen, s_logVolume;
+        private static int s_logGaps;
 
         private static void WriteLog()
         {
             if (!s_logDue) return;
             s_logDue = false;
-            Plugin.Log.LogInfo("[acoustics] space: enclosed " + s_logEnclosure.ToString("P0") + ", size " + s_path.ToString("F1") + " m (nearest " +
+            Plugin.Log.LogInfo("[acoustics] space: enclosed " + s_logEnclosure.ToString("P0") + ", volume " + s_logVolume.ToString("F0") + " m3 (" + s_logGaps + " rays out through gaps), size " + s_path.ToString("F1") + " m (nearest " +
                 s_logNearest.ToString("F1") + " m), absorption " + s_alpha.ToString("F2") + " (open " + s_logOpen.ToString("P0") + "), RT60 " +
                 s_decay.ToString("F2") + " s -> " + s_current + "; " + Portals.Summary() + "; " + Bounces.Summary() + "; " + Ocean.Summary() + "; " + Ambience.Summary() + "; " + Ambience.WildlifeDiagnostics() + "; " + Spawned.Summary() + ", following their owner " + Follow.Count + "; " + Underwater.Summary() + "; " + Occlusion.Summary() + ", " + Travel.Summary() + "; " + Budget.Summary() + "; " + Budget.Loudness() + "; " + AcousticFilter.DiagnosticsSummary() + "; " +
                 Batch.Summary() + "; " + RoomStats.Summary() + "; " + Cost.Report() + "; " + Budget.Toggles());
@@ -372,29 +392,52 @@ namespace WiresAcoustics
 
         private static void Measure()
         {
-            int level = 0, hits = 0, treeLevel = 0, up = 0;
-            float upHits = 0f;
-            float levelHits = 0f, treePath = 0f;
-            float pathSum = 0f, alphaSum = 0f, escaped = 0f;
+            int level = 0, hits = 0;
+            float wallEnergy = 0f;
+            float levelHits = 0f;
+            float pathSum = 0f, alphaSum = 0f, escaped = 0f, lowSum = 0f, highSum = 0f;
             float near0 = MaxDistance, near1 = MaxDistance, near2 = MaxDistance;
             for (int i = 0; i < Rays; i++)
             {
-                bool hit = Surface(s_from, Dirs[i], s_hits[i], MaxDistance, out Point[i], out Normal[i], out Dist[i], out Alpha[i], out Tree[i]);
-                Hit[i] = hit;
+                Hit[i] = Surface(s_from, Dirs[i], s_hits[i], MaxDistance, out Point[i], out Normal[i], out Dist[i], out Alpha[i], out Tree[i]);
+                Built[i] = Hit[i] && IsBuilt(s_hits[i].collider);
+            }
+            // Gaps: a ray that leaves a building through a window, a door or a crack goes on to the sky
+            // or to a hill far off, and taking that as part of the room made rooms seem many times their
+            // size. A ray that ends past every built surface next to it, on something that isn't built
+            // (or nothing), went out through an opening; the opening is where those built surfaces are.
+            int[][] nb = Portals.NeighboursOf(Dirs);
+            for (int i = 0; i < Rays; i++)
+            {
+                Opening[i] = -1f;
+                if (Built[i]) continue;
+                float wall = -1f;
+                foreach (int k in nb[i]) if (Built[k]) wall = Mathf.Max(wall, Dist[k]);
+                if (wall > 0f && (!Hit[i] || Dist[i] > wall)) Opening[i] = wall;
+            }
+            for (int i = 0; i < Rays; i++)
+            {
+                bool hit = Hit[i] && Opening[i] < 0f;
                 // a tree trunk isn't a wall: a forest only half encloses you (TreeWeight), a swamp
                 // full of trunks isn't a cave
-                if (Dirs[i].y > .3f) { up++; if (hit) upHits += Tree[i] ? TreeWeight : 1f; }
                 if (Dirs[i].y > -.05f)
                 {
                     level++;
-                    if (hit && Tree[i]) { levelHits += TreeWeight; treeLevel++; treePath += Dist[i]; }
-                    else if (hit) levelHits += 1f;
+                    if (hit && Tree[i]) { levelHits += TreeWeight; wallEnergy += TreeWeight; }
+                    else if (hit)
+                    {
+                        levelHits += 1f;
+                        float pass = Occlusion.Pass(s_hits[i].collider);
+                        wallEnergy += pass * pass;
+                    }
                 }
                 if (!hit) { escaped++; continue; }
                 hits++;
                 float d = Dist[i];
                 pathSum += d;
                 alphaSum += Alpha[i];
+                Vector2 band = BandsAt(i);
+                lowSum += band.x; highSum += band.y;
                 if (d < near0) { near2 = near1; near1 = near0; near0 = d; }
                 else if (d < near1) { near2 = near1; near1 = d; }
                 else if (d < near2) near2 = d;
@@ -404,6 +447,18 @@ namespace WiresAcoustics
             float alpha = hits > 0 ? alphaSum / hits : 1f;
             float alphaEff = Mathf.Max(.01f, (alphaSum + escaped) / Rays); // open directions let the sound out
             float decay = Mathf.Clamp(.04f * path / alphaEff, .1f, 8f);
+            // Highs (the zone's reference, 5 kHz): Sabine with the 4 kHz absorption and the air's at
+            // 5 kHz, as a ratio of the low decay (250 Hz absorption); and how much less of the highs
+            // each reflection gives back, plus the air over one mean free path.
+            float airHigh = AcousticFilter.AirDbPerMetre(5000f), airLow = AcousticFilter.AirDbPerMetre(250f);
+            float rtLow = .04f * path / Mathf.Max(.01f, (lowSum + escaped) / Rays + airLow / 4.343f * path);
+            float rtHigh = .04f * path / Mathf.Max(.01f, (highSum + escaped) / Rays + airHigh / 4.343f * path);
+            float aLow = hits > 0 ? lowSum / hits : 1f, aHigh = hits > 0 ? highSum / hits : 1f;
+            float hfEnergy = (1f - Mathf.Clamp(aHigh, 0f, .99f)) / (1f - Mathf.Clamp(aLow, 0f, .99f)) * Mathf.Pow(10f, -(airHigh - airLow) * path / 10f);
+            float volume = 0f;
+            for (int i = 0; i < Rays; i++) { float r = Opening[i] >= 0f ? Opening[i] : Hit[i] ? Dist[i] : MaxDistance; volume += r * r * r; }
+            volume *= 4f * Mathf.PI / (3f * Rays);
+            float critical = .057f * Mathf.Sqrt(volume / decay);
             float nearest = (near0 + near1 + near2) / 3f;
 
             // The reverberant level, as a real room's: proportional to (1 - a) / a (the room constant), so
@@ -413,33 +468,14 @@ namespace WiresAcoustics
             var room = new Params
             {
                 Room = Mathf.Lerp(-2600f, -150f + reverbLevel, enclosure),
-                RoomHF = Mathf.Lerp(-150f, -2600f, Mathf.Clamp01(alpha * 2.5f)),
+                RoomHF = Mathf.Clamp(1000f * Mathf.Log10(Mathf.Max(1e-4f, hfEnergy)), -10000f, 0f),
                 Decay = decay,
-                DecayHF = Mathf.Lerp(1.2f, .3f, Mathf.Clamp01(alpha * 2.5f)),
+                DecayHF = Mathf.Clamp(rtHigh / Mathf.Max(.01f, rtLow), .1f, 2f),
                 Reflections = Mathf.Lerp(-2600f, -250f + reverbLevel * .6f, enclosure),
                 ReflectionsDelay = Mathf.Clamp(2f * nearest / 343f, .002f, .3f),
                 Reverb = Mathf.Lerp(-2200f, 200f + reverbLevel, wet),
                 ReverbDelay = Mathf.Clamp(path / 343f, .005f, .1f)
             };
-            // A forest's own reverb: trunks all round scatter a sound back and forth before it gets
-            // out through the gaps and the canopy. Real forests measure a soft tail of about 1 to 2 s
-            // when dense, its highs taken by the needles and leaves, some 10 to 20 dB under the direct
-            // sound: here by the share of level rays that hit a trunk. Only where it's louder than
-            // what the space already gives (a hall among trees stays the hall).
-            float scatter = level > 0 ? (float)treeLevel / level : 0f;
-            if (scatter > 0f)
-            {
-                float s = Mathf.Sqrt(scatter);
-                float forestRoom = Mathf.Lerp(-2600f, -1200f, s), forestLate = Mathf.Lerp(-1500f, 0f, s);
-                if (forestRoom + forestLate > room.Room + room.Reverb)
-                {
-                    room.Room = Mathf.Max(room.Room, forestRoom);
-                    room.Reverb = Mathf.Max(room.Reverb, forestLate);
-                    room.Decay = Mathf.Max(room.Decay, Mathf.Lerp(.5f, 1.8f, scatter));
-                    room.DecayHF = Mathf.Min(room.DecayHF, .5f);
-                    room.ReverbDelay = Mathf.Clamp(treePath / treeLevel / 343f, .005f, .1f);
-                }
-            }
             // Out in the open the same: open sky lets the sound out, so it's dry, apart from the
             // ground and what stands round you.
             Params target = room;
@@ -464,6 +500,8 @@ namespace WiresAcoustics
             s_current = s_haveCurrent ? Params.Lerp(s_current, target, response) : target;
             s_haveCurrent = true;
             Enclosure = Mathf.Lerp(Enclosure, enclosure, response);
+            WallEnergy = Mathf.Lerp(WallEnergy, level > 0 ? wallEnergy / level : 0f, response);
+            Critical = Mathf.Lerp(Critical, critical, response);
             Absorption = Mathf.Lerp(Absorption, alpha, response);
             s_path = path; s_alpha = alpha; s_decay = decay;
             // Only when it changed audibly (setting the zone's values is main-thread work).
@@ -474,8 +512,7 @@ namespace WiresAcoustics
                 s_haveApplied = true;
             }
             Portals.Find(s_from, Dirs, s_hits, enclosure, path);
-            // how much of the sky is covered: a roof, not a valley's sides (echoes need the open sky)
-            Bounces.Schedule(Dirs, up > 0 ? upHits / up : 0f);
+            Bounces.Schedule(Dirs);
             if (AudioMan.instance != null) Ambience.Update(AudioMan.instance, Enclosure);
 
             if (Plugin.DebugLog.Value && Time.time >= s_nextLog)
@@ -484,6 +521,8 @@ namespace WiresAcoustics
                 s_nextLog = Time.time + 3f;
                 s_logDue = true;
                 s_logEnclosure = enclosure; s_logNearest = nearest; s_logOpen = escaped / Rays;
+                s_logVolume = volume; s_logGaps = 0;
+                for (int i = 0; i < Rays; i++) if (Opening[i] >= 0f) s_logGaps++;
             }
         }
 
@@ -507,7 +546,7 @@ namespace WiresAcoustics
 
         // Trees, as the game itself defines them: cached per collider. They scatter sound more than they
         // reflect it, so they count little toward enclosure, absorb most of what reaches them (for
-        // the reverb and bounce paths), never echo, and muffle little.
+        // the reverb and bounce paths), and muffle little.
         internal const float TreeWeight = .15f;
         private static readonly Dictionary<int, bool> TreeCache = new Dictionary<int, bool>();
         internal static bool IsTree(Collider c)
@@ -557,18 +596,119 @@ namespace WiresAcoustics
             return true;
         }
 
+        // Absorption per band, 250 Hz and 4 kHz, from published coefficients (Sengpiel's table):
+        // unglazed brick for stone, marble or tile, wood on joists for wood, hardwood, water or ice
+        // surface, concrete or tile for paving, steel decking for iron, bark for trees (Li et al.,
+        // Sound absorption by tree bark, Applied Acoustics 2020: 0.04-0.05 below 1 kHz, rising but
+        // under 0.1 to 1.6 kHz, the top of what they measured), the natural ground by its Nord2000
+        // class (GroundClass). Props have no per-band figure; their single value stands for both.
+        private static readonly Dictionary<int, Vector2> Bands = new Dictionary<int, Vector2>();
+        private static Vector2 BandsAt(int i)
+        {
+            if (Alpha[i] == WaterAbsorb) return new Vector2(.008f, .025f);
+            Collider c = s_hits[i].collider;
+            if (c == null) return new Vector2(Alpha[i], Alpha[i]);
+            int id = c.GetInstanceID();
+            if (!Bands.TryGetValue(id, out Vector2 b))
+            {
+                if (Bands.Count > 8192) Bands.Clear();
+                WearNTear wnt = c.GetComponentInParent<WearNTear>();
+                if (wnt != null && Structural(c))
+                    switch (wnt.m_materialType)
+                    {
+                        case WearNTear.MaterialType.Stone: case WearNTear.MaterialType.Ashstone: b = new Vector2(.03f, .07f); break;
+                        case WearNTear.MaterialType.Marble: b = new Vector2(.01f, .02f); break;
+                        case WearNTear.MaterialType.Ice: b = new Vector2(.008f, .025f); break;
+                        case WearNTear.MaterialType.HardWood: case WearNTear.MaterialType.Timberwood: case WearNTear.MaterialType.Ancient: b = new Vector2(.04f, .07f); break;
+                        case WearNTear.MaterialType.Iron: b = new Vector2(.09f, .11f); break; // steel decking
+                        default: b = new Vector2(.11f, .07f); break;
+                    }
+                else if (wnt != null) { Vector3 f = Furniture(c, wnt); b = new Vector2(f.x, f.z); }
+                else if (c.GetComponentInParent<Heightmap>() != null) b = new Vector2(-2f, -2f); // ground: paved or not, by the spot
+                else if (IsTree(c)) b = new Vector2(.05f, .1f); // bark
+                else if (c.gameObject.layer == LayerMask.NameToLayer("static_solid")) b = new Vector2(.02f, .05f); // limestone wall
+                else b = new Vector2(-1f, -1f);
+                Bands[id] = b;
+            }
+            if (b.x == -2f)
+            {
+                Heightmap hm = Heightmap.FindHeightmap(Point[i]);
+                int k = hm != null ? GroundClassAt(hm, Point[i]) : 3;
+                return k < 0 ? new Vector2(.01f, .02f) : new Vector2(GroundClass[k].x, GroundClass[k].z);
+            }
+            return b.x < 0f ? new Vector2(Alpha[i], Alpha[i]) : b;
+        }
+
+        // Furniture and clutter at 250 Hz, 500 Hz and 4 kHz (pyroomacoustics' material database):
+        // beds as empty cloth-covered upholstered chairs, rugs, hides and furs as hairy carpet on felt,
+        // banners, tapestries and curtains as tight velvet curtains, anything else as wooden chairs.
+        private static Vector3 Furniture(Collider c, WearNTear wnt)
+        {
+            Piece p = c.GetComponentInParent<Piece>();
+            string n = wnt.gameObject.name.ToLowerInvariant();
+            if (p != null && p.m_comfortGroup == Piece.ComfortGroup.Bed) return new Vector3(.60f, .77f, .70f);
+            if ((p != null && p.m_comfortGroup == Piece.ComfortGroup.Carpet) || n.Contains("rug") || n.Contains("hide") || n.Contains("fur") || n.Contains("pillow"))
+                return new Vector3(.14f, .37f, .25f);
+            if ((p != null && p.m_comfortGroup == Piece.ComfortGroup.Banner) || n.Contains("tapestry") || n.Contains("curtain") || n.Contains("cloth"))
+                return new Vector3(.12f, .35f, .36f);
+            return new Vector3(.08f, .10f, .12f);
+        }
+
+        // How much of what a surface reflects it scatters instead of mirroring (Bounces): ODEON's
+        // recommended mid-frequency scattering coefficients (Zeng, Lynge and Rindel 2006), the middle
+        // of each range: stone walls as brickwork with filled joints, unplastered (0.05-0.1); log walls
+        // as brickwork with open joints (0.1-0.2); planks, iron and ice as smooth surfaces in general
+        // (0.02-0.05); marble and water as smooth painted concrete (0.005-0.02); furniture as a
+        // bookshelf with some books (0.3); the ground, rock and trees as rough structures (0.4-0.5).
+        internal static float ScatterAt(int i) => s_hits[i].collider == null ? .0125f : ScatterOf(s_hits[i].collider, Alpha[i]);
+        internal static float ScatterOf(Collider c, float alpha)
+        {
+            if (alpha == WaterAbsorb || c == null) return .0125f;
+            WearNTear wnt = c.GetComponentInParent<WearNTear>();
+            if (wnt != null && Structural(c))
+                switch (wnt.m_materialType)
+                {
+                    case WearNTear.MaterialType.Stone: case WearNTear.MaterialType.Ashstone: return .075f;
+                    case WearNTear.MaterialType.Marble: return .0125f;
+                    case WearNTear.MaterialType.Iron: case WearNTear.MaterialType.Ice: return .035f;
+                    default: return wnt.gameObject.name.IndexOf("log", System.StringComparison.OrdinalIgnoreCase) >= 0 ? .15f : .035f;
+                }
+            if (wnt != null) return .3f;
+            return .45f;
+        }
+
         // Absorption where a ray landed: the ground by what's at that very spot, anything else by
         // what it is (AbsorptionOf).
         internal static float AbsorptionAt(Collider c, Vector3 p)
         {
             float a = AbsorptionOf(c);
             if (a >= 0f) return a;
-            return Ground.TryGetValue(c.GetInstanceID(), out Heightmap hm) && hm != null ? GroundAt(hm, p) : .35f;
+            return Ground.TryGetValue(c.GetInstanceID(), out Heightmap hm) && hm != null ? GroundAt(hm, p) : GroundClass[3].y;
         }
 
-        // The ground's absorption (mid frequencies, typical measured values): first what the player
-        // made of it (paved, tilled, dug), else what the biome's ground is.
-        private static float GroundAt(Heightmap hm, Vector3 p)
+        // The natural ground, by the Nord2000 ground classes (effective flow resistivity in kPa s/m2,
+        // as listed in d&b's NoizCalc white paper and Bies, Hansen and Howard, Engineering Noise
+        // Control, table 5.2): A 12.5 snow or moss, B 31.5 soft forest floor, thick moss, C 80 turf,
+        // grass, loose soil, D 200 normal uncompacted ground, field, forest floor, E 500 compacted
+        // field and gravel, F 2000 gravel road, G 20000 asphalt, concrete, H 200000 dense asphalt,
+        // water. Each turned into random-incidence absorption at 250 Hz, 500 Hz and 4 kHz the way
+        // Nord2000 itself does it: Delany and Bazley's impedance for a thick porous ground, locally
+        // reacting, averaged over every angle of arrival.
+        private static readonly Vector3[] GroundClass =
+        {
+            new Vector3(.824f, .891f, .923f), // A
+            new Vector3(.663f, .791f, .924f), // B
+            new Vector3(.459f, .611f, .904f), // C
+            new Vector3(.286f, .413f, .824f), // D
+            new Vector3(.165f, .251f, .664f), // E
+            new Vector3(.066f, .105f, .369f), // F
+            new Vector3(.013f, .022f, .091f), // G
+            new Vector3(.002f, .004f, .018f), // H
+        };
+
+        // Which class the ground is at a spot: first what the player made of it (paved is -1, the
+        // concrete and tile row of the per-band table), else what the biome's ground is.
+        private static int GroundClassAt(Heightmap hm, Vector3 p)
         {
             Texture2D mask = hm.GetPaintMask();
             if (mask != null)
@@ -576,25 +716,31 @@ namespace WiresAcoustics
                 try
                 {
                     Color c = hm.GetPaintMask(p);
-                    if (c.b > .5f) return .03f;  // paved: stone
-                    if (c.g > .5f) return .55f;  // tilled: loose soil
-                    if (c.r > .5f) return .25f;  // dug or cleared: packed earth
+                    if (c.b > .5f) return -1; // paved
+                    if (c.g > .5f) return 2;  // tilled: loose soil
+                    if (c.r > .5f) return 4;  // dug or cleared: compacted
                 }
                 catch (System.Exception) { }
             }
             switch (hm.GetBiome(p))
             {
-                case Heightmap.Biome.Meadows: return .4f;      // grass
-                case Heightmap.Biome.BlackForest: return .55f; // forest floor: moss, needles
-                case Heightmap.Biome.Swamp: return .15f;       // wet mud and standing water
-                case Heightmap.Biome.Mountain: return .7f;     // snow
-                case Heightmap.Biome.DeepNorth: return .7f;    // snow
-                case Heightmap.Biome.Plains: return .35f;      // dry grass
-                case Heightmap.Biome.Mistlands: return .3f;    // rock and moss
-                case Heightmap.Biome.AshLands: return .25f;    // rock and ash
-                case Heightmap.Biome.Ocean: return .3f;        // sand
-                default: return .35f;
+                case Heightmap.Biome.Meadows: return 2;     // grass
+                case Heightmap.Biome.Plains: return 2;      // grass, dry
+                case Heightmap.Biome.BlackForest: return 1; // moss and needles
+                case Heightmap.Biome.Mountain: return 0;    // snow
+                case Heightmap.Biome.DeepNorth: return 0;   // snow
+                case Heightmap.Biome.Mistlands: return 3;   // forest floor
+                case Heightmap.Biome.Swamp: return 3;       // mud
+                case Heightmap.Biome.AshLands: return 5;    // packed ash and rock
+                case Heightmap.Biome.Ocean: return 4;       // sand
+                default: return 3;
             }
+        }
+
+        private static float GroundAt(Heightmap hm, Vector3 p)
+        {
+            int k = GroundClassAt(hm, p);
+            return k < 0 ? .03f : GroundClass[k].y;
         }
 
         private static float AbsorptionOf(Collider c)
@@ -615,7 +761,7 @@ namespace WiresAcoustics
                     string n = wnt.gameObject.name.ToLowerInvariant();
                     soft = n.Contains("rug") || n.Contains("hide") || n.Contains("fur") || n.Contains("cloth") || n.Contains("tapestry") || n.Contains("curtain") || n.Contains("pillow");
                 }
-                a = soft ? .55f : .3f;
+                a = Furniture(c, wnt).y;
             }
             else if (wnt != null)
             {
@@ -623,7 +769,7 @@ namespace WiresAcoustics
                 {
                     case WearNTear.MaterialType.Stone: case WearNTear.MaterialType.Ashstone: a = .03f; break;
                     case WearNTear.MaterialType.Marble: a = .02f; break;
-                    case WearNTear.MaterialType.Iron: a = .04f; break;
+                    case WearNTear.MaterialType.Iron: a = .08f; break; // steel decking at 500 Hz
                     case WearNTear.MaterialType.Ancient: a = .05f; break;
                     case WearNTear.MaterialType.Ice: a = .03f; break;
                     case WearNTear.MaterialType.HardWood: case WearNTear.MaterialType.Timberwood: a = .09f; break;
@@ -635,8 +781,8 @@ namespace WiresAcoustics
                 a = -1f; // the ground: by the exact point (AbsorptionAt)
                 Ground[id] = hm;
             }
-            else if (IsTree(c)) a = .8f;                                                                           // trees: sound mostly passes and scatters
-            else if (c.gameObject.layer == LayerMask.NameToLayer("static_solid")) a = .04f;                       // rock
+            else if (IsTree(c)) a = .05f;                                                                          // bark at 500 Hz (BandsAt)
+            else if (c.gameObject.layer == LayerMask.NameToLayer("static_solid")) a = .03f;                       // rock: limestone wall at 500 Hz (pyroomacoustics database)
             else a = .15f;                                                                                        // props
             Absorb[id] = a;
             return a;

@@ -60,6 +60,7 @@ namespace WiresAcoustics
                     AcousticFilter f = src.GetComponent<AcousticFilter>() ?? src.gameObject.AddComponent<AcousticFilter>();
                     f.Kind = AcousticFilter.Kinds.Ocean;
                     f.Placed = true;
+                    f.Physical(Plugin.RealDistance.Value, true); // the shore is a line
                     bool hrtf = Plugin.Hrtf.Value;
                     if (hrtf) f.TakePanning(src.spread);
                     f.Hrtf = hrtf;
