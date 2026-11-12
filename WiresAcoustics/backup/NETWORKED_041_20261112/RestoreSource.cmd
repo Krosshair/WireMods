@@ -1,0 +1,5 @@
+copy /y "%~dp0Follow.cs" "%~dp0..\..\src\Follow.cs"
+copy /y "%~dp0Spots.cs" "%~dp0..\..\src\Spots.cs"
+copy /y "%~dp0Animated.cs" "%~dp0..\..\src\Animated.cs"
+copy /y "%~dp0PortalLoop.cs" "%~dp0..\..\src\PortalLoop.cs"
+copy /y "%~dp0CHANGELOG.md" "%~dp0..\..\package\CHANGELOG.md"

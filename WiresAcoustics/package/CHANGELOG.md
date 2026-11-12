@@ -1,3 +1,7 @@
+## 0.4.1
+- Fixed: an endless loading screen with errors in the game's object clean-up (ZNetScene.RemoveObjects), since 0.3.0. The mod attached creature and weapon sounds to the creature so they'd move with it; in some setups those sounds are networked objects, and they were destroyed together with the creature while the game still tracked them. The mod was at fault. Networked sounds now follow their creature without being attached.
+- Fixed: the Room reverb setting's description said the game's own reverb comes back outdoors. It doesn't: the mod's reverb is used everywhere and goes dry in the open.
+
 ## 0.4.0
 - Changed: you now hear from the camera, not from your character. Left and right, near and far, and which room you're in follow your view.
 - Fixed: a room's size counted the sky or the hills seen through its windows, doors and gaps, so rooms seemed several times bigger than they are.

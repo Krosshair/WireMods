@@ -15,7 +15,7 @@ namespace WiresAcoustics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.acoustics";
-        public const string Version = "0.4.0";
+        public const string Version = "0.4.1";
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled, RoomReverb, Occlusion, Hrtf, RealDistance, DebugLog;
         internal static ConfigEntry<float> ReverbStrength, OcclusionStrength, HrtfStrength;
@@ -38,7 +38,7 @@ namespace WiresAcoustics
             Log = Logger;
             Enabled = Setting("General", "Enabled", true, "Master switch. Off: the game's own reverb and no muffling.");
             RoomReverb = Setting("General", "Room reverb", true,
-                "Reverb from the space you're in: rays measure how enclosed it is, how big and what it's made of (stone rings, wood is warmer, soil and open sky swallow sound). Replaces the game's distance-only reverb indoors; outdoors it blends back to the game's own.");
+                "Reverb from the space you're in: rays measure how enclosed it is, how big and what it's made of (stone rings, wood is warmer, soil and open sky swallow sound). Replaces the game's own reverb everywhere; out in the open it goes dry.");
             RealDistance = Setting("General", "Realistic distance", true,
                 "Sounds get quieter with distance the way real sound does (6 dB each time the distance doubles, from the distance the game plays them at full volume), instead of the game's own curves, which cut many sounds off within a few metres (a hearth is silent 10 m away). The air still dulls them on top.");
             Occlusion = Setting("General", "Muffling", true, "Sounds behind walls, buildings or hills are muffled and quieter, more so through several layers.");

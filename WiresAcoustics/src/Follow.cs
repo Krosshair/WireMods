@@ -57,6 +57,7 @@ namespace WiresAcoustics
                     Transform owner = body != null ? body : given != null ? given : go.GetComponent<AcousticFilter>()?.Player;
                     if (owner == null || !Moves(owner)) continue;
                     if (go.GetComponent<UnityEngine.Animations.ParentConstraint>() != null) continue; // the game's own follow
+                    if (Tracked(go.transform)) continue; // already following its bone (Spots)
                     Items.Add(new Item { Sound = go.transform, Owner = owner, Offset = owner.InverseTransformPoint(go.transform.position) });
                     // facing: only a creature's voice (its idle and alert calls) comes out of its mouth;
                     // its steps, hits and attacks come from wherever they happen
@@ -126,7 +127,28 @@ namespace WiresAcoustics
             }
         }
 
+        // A sound that can't be attached (it's networked, see Networked): it follows its bone from
+        // here instead, every frame, and the creature-level follow above leaves it alone.
+        internal static void Track(Transform sound, Transform bone)
+        {
+            if (sound == null || bone == null) return;
+            for (int i = 0; i < Items.Count; i++) if (Items[i].Sound == sound) return;
+            Items.Add(new Item { Sound = sound, Owner = bone, Offset = bone.InverseTransformPoint(sound.position) });
+        }
+
+        // Whether this object or anything under it is a networked object (ZNetView). The game tracks
+        // those itself and destroys them on its own; attached under a creature, one would be destroyed
+        // with the creature while the game still had it on its list, and its clean-up then fails every
+        // frame (an endless loading screen). Some sound effects are networked.
+        internal static bool Networked(GameObject go) => go != null && go.GetComponentInChildren<ZNetView>(true) != null;
+
         internal static void Clear() => Items.Clear();
         internal static int Count => Items.Count;
+
+        private static bool Tracked(Transform t)
+        {
+            for (int i = 0; i < Items.Count; i++) if (Items[i].Sound == t) return true;
+            return false;
+        }
     }
 }

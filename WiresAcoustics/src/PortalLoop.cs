@@ -42,6 +42,7 @@ namespace WiresAcoustics
                 AudioListener l = AudioMan.instance != null ? AudioMan.instance.GetActiveAudioListener() : null;
                 ZNetView nv = __instance.GetComponent<ZNetView>();
                 if (l == null || nv == null || nv.GetZDO() == null) return;
+                if (Follow.Networked(src.gameObject)) return; // a networked hum stays the game's to manage
                 ZDOID exitId = nv.GetZDO().GetConnectionZDOID(ZDOExtraData.ConnectionType.Portal);
                 ZDO exit = ZDOMan.instance.GetZDO(exitId);
                 if (exit == null) return;

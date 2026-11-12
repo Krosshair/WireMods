@@ -195,8 +195,9 @@ namespace WiresAcoustics
             if (t.parent != null && t.parent != root) return;
             t.position = at;
             if (bone == null) return;
-            t.SetParent(bone, true);
-            // attached now, so Follow skips it: an unplaced (2D) player sound is placed here instead
+            if (Follow.Networked(go)) Follow.Track(t, bone); // never attach a networked object
+            else t.SetParent(bone, true);
+            // attached (or following) now, so Follow skips it: an unplaced (2D) player sound is placed here instead
             PlayerSounds.Place(go.GetComponent<ZSFX>(), go.GetComponent<AudioSource>());
         }
 

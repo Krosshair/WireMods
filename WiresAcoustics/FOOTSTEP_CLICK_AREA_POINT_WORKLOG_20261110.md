@@ -512,3 +512,11 @@
 - README rewritten for the current build (camera listener, measured walls, per-band materials, bounces, wind, sea, under water, places; echo, forest tail and HRTF LOD gone) with a Sources section. Changelog Performance line updated.
 - Built, installed (sha1 b2581632). Not tested.
 - 0.3.0 was released 2026-11-10 23:20 (commit a311070) with only the places/moving/wake/wind-in-ears items. Everything after went into a new ## 0.4.0 section; 0.3.0 and older now match the released file exactly.
+
+## 76. 0.4.0 released; 0.4.1 started (2026-11-11)
+- Room reverb description fixed (game zones are suspended everywhere; ours goes dry in the open). Changelog ## 0.4.1. Rejected by Kajetan: apparent wind from own speed (would blow on fast moves), thunder delay (game does it), door lag and under-water checks (not seen). Backup backup/DESC_041_20261111. Built, installed.
+
+## 77. 0.4.1: endless loading screen fix (2026-11-12)
+- Hexium report (KaiserMaeximus): ZNetScene.RemoveObjects NRE every frame since 0.3.0. Their ClientLifecycle log: DESTROY_WHILE_STILL_REGISTERED for networked sfx (ZNetView on sfx_blob_alerted, sfx_goblin_idle, sfx_leech_idle, sfx_goblinbrute_clubswing, skeleton hand sounds, sfx_bow_draw) that Spots/Animated had parented under the creature. Destroyed with it while still in m_instances.
+- Fix: Follow.Networked (ZNetView in the object or below) and Follow.Track (follow a bone by position); Spots.MoveOne and Animated never parent networked sounds; Follow.Created skips tracked ones; PortalLoop does not carry a networked hum. Changelog 0.4.1.
+- A binary-patched 0.4.0 DLL (Cecil) was sent to Kajetan on his phone first; this source build replaces it. Backup backup/NETWORKED_041_20261112. Built, installed. Not tested.
