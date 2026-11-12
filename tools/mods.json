@@ -365,6 +365,19 @@
       "nexus_mod_id": 4854,
       "nexus_file_id": null,
       "publish": true
+    },
+    "WiresShadows": {
+      "thunderstore": true,
+      "thunderstore_categories": [
+        "ai-generated",
+        "client-side",
+        "mods",
+        "tweaks"
+      ],
+      "hexium": true,
+      "nexus_mod_id": null,
+      "nexus_file_id": null,
+      "publish": true
     }
   }
 }

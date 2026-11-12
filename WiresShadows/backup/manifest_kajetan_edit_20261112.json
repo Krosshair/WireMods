@@ -1,0 +1,7 @@
+{
+    "name": "WiresShadows",
+    "description": "Pointlight shadows for all pointlights without a performance cost.",
+    "version_number": "0.1.0",
+    "website_url": "",
+    "dependencies": []
+}

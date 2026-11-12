@@ -1,0 +1,6 @@
+# Large old experiment archive and staging (kept on this PC only)
+_removed/
+stage/
+stage_next/
+src_old_*/
+backup/old_versions/
