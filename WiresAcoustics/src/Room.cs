@@ -263,7 +263,14 @@ namespace WiresAcoustics
                 RoomStats.Scheduled++;
                 s_from = from;
                 var q = new QueryParameters(Mask, false, QueryTriggerInteraction.Ignore, false);
-                for (int i = 0; i < Rays; i++) s_cmds[i] = new RaycastCommand(from, Dirs[i], q, MaxDistance);
+                for (int i = 0; i < Rays; i++)
+                {
+                    s_cmds[i] = new RaycastCommand(from, Dirs[i], q, MaxDistance);
+                    // two beside it, 8 cm off (Picked)
+                    Occlusion.Lines(from, from + Dirs[i], out Vector3 side, out Vector3 up);
+                    s_cmds[Rays + 2 * i] = new RaycastCommand(from + side, Dirs[i], q, MaxDistance);
+                    s_cmds[Rays + 2 * i + 1] = new RaycastCommand(from + up, Dirs[i], q, MaxDistance);
+                }
                 s_job = RaycastCommand.ScheduleBatch(s_cmds, s_hits, 16, 1);
                 JobHandle.ScheduleBatchedJobs();
                 s_pending = true;
@@ -273,8 +280,8 @@ namespace WiresAcoustics
         private static void EnsureArrays()
         {
             if (s_cmds.IsCreated) return;
-            s_cmds = new NativeArray<RaycastCommand>(Rays, Allocator.Persistent);
-            s_hits = new NativeArray<RaycastHit>(Rays, Allocator.Persistent);
+            s_cmds = new NativeArray<RaycastCommand>(Rays * 3, Allocator.Persistent);
+            s_hits = new NativeArray<RaycastHit>(Rays * 3, Allocator.Persistent);
         }
 
         private static void Setup(Transform listener)
@@ -418,6 +425,19 @@ namespace WiresAcoustics
                 Batch.Summary() + "; " + RoomStats.Summary() + "; " + Cost.Report() + "; " + Budget.Toggles());
         }
 
+        // Each room ray is three, 8 cm apart. One that got through where both beside it hit something
+        // slipped through a seam between pieces: it counts as hitting what they hit (the nearer).
+        // Openings you see are wider than that, and all three get through them.
+        private static readonly RaycastHit[] Picked = new RaycastHit[Rays];
+        private static RaycastHit Pick(int i)
+        {
+            RaycastHit h = s_hits[i];
+            if (h.collider != null) return h;
+            RaycastHit a = s_hits[Rays + 2 * i], b = s_hits[Rays + 2 * i + 1];
+            if (a.collider == null || b.collider == null) return h;
+            return a.distance <= b.distance ? a : b;
+        }
+
         private static void Measure()
         {
             int level = 0, hits = 0;
@@ -429,8 +449,9 @@ namespace WiresAcoustics
             float near0 = MaxDistance, near1 = MaxDistance, near2 = MaxDistance;
             for (int i = 0; i < Rays; i++)
             {
-                Hit[i] = Surface(s_from, Dirs[i], s_hits[i], MaxDistance, out _, out _, out Dist[i], out Alpha[i], out Tree[i]);
-                Built[i] = Hit[i] && IsBuilt(s_hits[i].collider);
+                Picked[i] = Pick(i);
+                Hit[i] = Surface(s_from, Dirs[i], Picked[i], MaxDistance, out _, out _, out Dist[i], out Alpha[i], out Tree[i]);
+                Built[i] = Hit[i] && IsBuilt(Picked[i].collider);
             }
             // Gaps: a ray that leaves a building through a window, a door or a crack goes on to the sky
             // or to a hill far off, and taking that as part of the room made rooms seem many times their
@@ -473,7 +494,7 @@ namespace WiresAcoustics
                 int wallRay = hit && Built[i] ? i : SealedBy[i];
                 if (wallRay >= 0)
                 {
-                    float fw = Occlusion.FirstWall(s_hits[wallRay].collider);
+                    float fw = Occlusion.FirstWall(Picked[wallRay].collider);
                     if (fw > 0f) { bedSum += fw * fw; bedWalls++; }
                 }
                 if (!hit) { escaped++; continue; }

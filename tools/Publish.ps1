@@ -95,12 +95,20 @@ if (-not $Changelog) {
         for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match "^#+.*\b$([regex]::Escape($Ver))\b") { $start = $i; break } }
         if ($start -ge 0) {
             $body = @()
-            for ($i = $start + 1; $i -lt $lines.Count -and $lines[$i] -notmatch '^#+ '; $i++) { $body += $lines[$i] }
+            # stop at the next heading of the same or a higher level (a version's own ### sections stay in)
+            $level = ([regex]::Match($lines[$start], '^#+')).Length
+            for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+                $m = [regex]::Match($lines[$i], '^(#+) ')
+                if ($m.Success -and $m.Groups[1].Length -le $level) { break }
+                $body += $lines[$i]
+            }
             $Changelog = ($body -join "`n").Trim()
         }
     }
 }
 if (-not $Changelog) { $Changelog = "Version $Ver" }
+# Nexus shows each line as one entry and no markdown: headings and blank lines dropped, no list dashes
+$NexusChangelog = (($Changelog -split "`n") | Where-Object { $_.Trim() -and $_ -notmatch '^#+ ' } | ForEach-Object { $_ -replace '^\s*[-*]\s+', '' }) -join "`n"
 
 # ---------- build ----------
 if (-not $SkipBuild) {
@@ -231,7 +239,7 @@ function Publish-Nexus {
         Invoke-RestMethod -Uri "$api/mod-files/$fileId/versions" -Method Post -Headers $h -ContentType 'application/json' `
             -Body ($body | ConvertTo-Json) | Out-Null
         Invoke-RestMethod -Uri "$api/mods/$($modInfo.data.id)/changelogs" -Method Post -Headers $h -ContentType 'application/json' `
-            -Body (@{ version = $Ver; changelog = $Changelog } | ConvertTo-Json) | Out-Null
+            -Body (@{ version = $Ver; changelog = $NexusChangelog } | ConvertTo-Json) | Out-Null
         return 'published'
     } catch { return "FAILED: $($_.Exception.Message) $($_.ErrorDetails.Message)" }
 }

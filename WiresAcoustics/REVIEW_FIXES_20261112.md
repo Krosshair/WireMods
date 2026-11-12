@@ -170,3 +170,6 @@ DN = one loop of its own (vol 2) + 20 wind variations every ~10 s. Every biome n
 - PlayerSounds: near distance 5 m -> at least 1 m (listener is at the head now, the 5 m was for the third-person camera). README judgement list updated.
 - Filter/Plugin comments: camera -> head/listener where the listener moved.
 - Built, installed, package dll and NEXUS_DESCRIPTION regenerated. Backup: backup/FINAL_REVIEW_20261112.
+
+## 0.5.1 rays (2026-11-12)
+- Three rays per line (8 cm side/up), median by gain; room rays x3, a lone escaped ray with both twins hitting takes the nearer twin hit; SourceClearance .5 -> .05; MaxHits 8 -> 16, full buffer = at least a plank wall. Version 0.5.1, CHANGELOG + README judgement list, Nexus regenerated. Built 0/0, staged in stage_next (game running). Backup backup/RAYS051_20261112.

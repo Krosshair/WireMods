@@ -11,11 +11,13 @@ namespace WiresAcoustics
     [HarmonyPatch(typeof(ZSFX), "UpdateReverb")]
     internal static class Occlusion
     {
-        private static readonly RaycastHit[] Hits = new RaycastHit[8];
+        private static readonly RaycastHit[] Hits = new RaycastHit[MaxHits];
+        internal const int MaxHits = 16; // hits recorded per ray
         // Soft layers (anything that isn't a wall, ground or a sized obstacle): no source, a judgement value.
         private static readonly float[] Gain = { 1f, .6f, .4f, .28f };
         private static readonly float[] Cutoff = { 22000f, 1500f, 800f, 500f };
-        internal const float SourceClearance = .5f; // the thing making the sound (a hearth, a door) doesn't hide it
+        internal const float SourceClearance = .05f; // a ray stops just short of the sound (what makes it is left out by Counts)
+        internal const float Twin = .08f; // the two rays beside each line: a seam between pieces is a centimetre or two
         private static int s_checked, s_muffled, s_added, s_missingNativeLoopRechecks;
         private static float s_worstOcc;
         private static string s_worst;
@@ -90,7 +92,6 @@ namespace WiresAcoustics
             Own = f != null && f.ShapeRoot != null ? f.ShapeRoot.root : null;
             Block block = Block.Clear;
             float occ = starting && Plugin.Occlusion.Value ? Blocking(from, to, out first, out firstCollider, out block) : 0f;
-            if (block.Terrain) Ridge(from, to, ref block);
             Own = null;
             s_checked++;
             if (occ > .05f) s_muffled++;
@@ -196,24 +197,67 @@ namespace WiresAcoustics
 
         // How much is between the listener and a sound, in walls. A wall, floor, roof, beam, hill or
         // rock counts 1, furniture and props 0.25 (sound bends around them), a trunk 0.1, anything
-        // else 0.3. The thing the
-        // sound comes from doesn't count (a chest, a workbench, a hearth: anything whose box holds
-        // the sound's position), nor anything in the last 0.5 m.
+        // else 0.3. The thing the sound comes from doesn't count (a chest, a workbench, a hearth:
+        // anything whose box holds the sound's position, Counts).
+        // Three lines, not one: the line itself and two beside it, 8 cm off sideways and up (Lines),
+        // and what two of them agree on is what's in the way. Pieces snapped together often leave a
+        // hairline gap between their colliders, and one ray that happened to run along it got through
+        // a closed wall as if it were open; three rays 8 cm apart can't all find it. A real gap a
+        // sound gets through (a door left ajar) is wider than that.
         internal static float Blocking(Vector3 from, Vector3 to, out float first, out Collider firstCollider, out Block block)
         {
             first = float.MaxValue; firstCollider = null; block = Block.Clear;
-            Vector3 d = to - from;
+            if ((to - from).magnitude <= SourceClearance + .1f) return 0f;
+            Lines(from, to, out Vector3 side, out Vector3 up);
+            Block b0 = Block.Clear, b1 = Block.Clear, b2 = Block.Clear;
+            float o0 = One(from, to, to, ref b0, out float f0, out Collider c0);
+            float o1 = One(from + side, to + side, to, ref b1, out float f1, out Collider c1);
+            float o2 = One(from + up, to + up, to, ref b2, out float f2, out Collider c2);
+            int k = Median(b0, b1, b2);
+            block = k == 0 ? b0 : k == 1 ? b1 : b2;
+            first = k == 0 ? f0 : k == 1 ? f1 : f2;
+            firstCollider = k == 0 ? c0 : k == 1 ? c1 : c2;
+            return k == 0 ? o0 : k == 1 ? o1 : o2;
+        }
+
+        private static float One(Vector3 from, Vector3 end, Vector3 to, ref Block b, out float first, out Collider firstCollider)
+        {
+            Vector3 d = end - from;
             float dist = d.magnitude;
-            if (dist <= SourceClearance + .1f) return 0f;
             int n = Physics.RaycastNonAlloc(from, d / dist, Hits, dist - SourceClearance, Room.Mask, QueryTriggerInteraction.Ignore);
-            return Along(Hits, n, from, to, ref block, out first, out firstCollider);
+            float occ = Along(Hits, n, from, to, ref b, out first, out firstCollider, n >= Hits.Length);
+            if (b.Terrain) Ridge(from, end, ref b);
+            return occ;
+        }
+
+        // The offsets of the two lines beside one from a to b: sideways and up, square to it.
+        internal static void Lines(Vector3 a, Vector3 b, out Vector3 side, out Vector3 up)
+        {
+            Vector3 d = b - a;
+            side = Vector3.Cross(Vector3.up, d);
+            if (side.sqrMagnitude < 1e-8f) side = Vector3.Cross(Vector3.right, d);
+            side = side.normalized;
+            up = Vector3.Cross(d, side).normalized;
+            side *= Twin; up *= Twin;
+        }
+
+        // Which of three lines lets the middle amount through (what two of them agree on).
+        internal static int Median(in Block b0, in Block b1, in Block b2)
+        {
+            Wall(b0, out float g0, out _); Wall(b1, out float g1, out _); Wall(b2, out float g2, out _);
+            if ((g0 >= g1 && g0 <= g2) || (g0 <= g1 && g0 >= g2)) return 0;
+            if ((g1 >= g0 && g1 <= g2) || (g1 <= g0 && g1 >= g2)) return 1;
+            return 2;
         }
 
         // The hits on one line, nearest first, as layers. A wall in Valheim is several colliders (the
         // wall, a beam, a pole) a few centimetres apart: one wall all the same, so anything built
         // within 0.6 m of the last wall counted is part of it.
         private const float SameWall = .6f;
-        internal static float Along(RaycastHit[] hits, int n, Vector3 from, Vector3 to, ref Block b, out float first, out Collider firstCollider)
+        // Full: the ray had more hits than it could keep, and which ones Unity kept isn't defined, so
+        // the wall among them may be one it dropped. A line through that much counts as through a wall
+        // at least (as a plank wall, 15 dB).
+        internal static float Along(RaycastHit[] hits, int n, Vector3 from, Vector3 to, ref Block b, out float first, out Collider firstCollider, bool full)
         {
             first = float.MaxValue; firstCollider = null;
             for (int i = 1; i < n; i++) // nearest first (Unity returns them in no order)
@@ -234,6 +278,13 @@ namespace WiresAcoustics
                 if (!Layer(c, w, from, to, hits[i].distance, ref b)) continue;
                 occ += w;
                 if (hits[i].distance < first) { first = hits[i].distance; firstCollider = c; }
+            }
+            if (full && b.Walls == 0)
+            {
+                b.Walls = 1;
+                b.Through *= Mathf.Pow(10f, -15f / 20f);
+                b.ThroughCut = Mathf.Min(b.ThroughCut, WallCut);
+                occ = Mathf.Max(occ, 1f);
             }
             return occ;
         }

@@ -5,7 +5,7 @@ namespace WiresAcoustics
 {
     // Where a sound is made. The game often creates a sound at whatever position it has at hand: a
     // character's root (its feet) for weapon swings (3,387 of ~3,400 attacks have no origin joint),
-    // holstering, picking up, dropping and eating; a piece's pivot (a door's hinge, a smelter's or
+    // holstering, picking up, dropping and eating; a piece's pivot (a door's base, a smelter's or
     // fermenter's base) for its own sounds. Those are moved, before anything else uses their position,
     // to where the thing actually happens:
     //  - weapon swing, trigger and trail sounds: the weapon hand, attached to it (they follow the swing);
@@ -14,7 +14,7 @@ namespace WiresAcoustics
     //    the weapon or right hand (no hand: the head), stomps, slams and impacts left at the feet;
     //  - holstering: the back slot the item goes to (armour: the chest); dropping: the right hand;
     //    eating and drinking: the head; picking up: where the item was;
-    //  - a piece's own sounds: a chest's lid, a fire's flame, otherwise the middle of the piece; a
+    //  - a piece's own sounds: a door's hinge, a chest's lid, a fire's flame, otherwise the middle of the piece; a
     //    crafting station's crafting sounds (played at the player): the station.
     // Sounds the game already places (footsteps at the foot, hits at the hit point, equipping at the
     // hand, projectiles at their spawn point) are left alone.
@@ -93,12 +93,14 @@ namespace WiresAcoustics
             if (piece == null) return;
             given = piece;
             Vector3 at;
-            bool known = piece.GetComponent<Container>() != null ? Area.TopOf(piece, out at)
+            bool door = piece.GetComponent<Door>() != null;
+            bool known = door ? Hinge(piece, out at)
+                : piece.GetComponent<Container>() != null ? Area.TopOf(piece, out at)
                 : piece.GetComponent<Fireplace>() != null ? Area.FlameOf(piece, out at)
                 : Area.CenterOf(piece, out at);
             if (!known) return;
             Move(made, null, at, null);
-            Note(piece.name + (piece.GetComponent<Container>() != null ? " lid" : piece.GetComponent<Fireplace>() != null ? " flame" : " middle"), made);
+            Note(piece.name + (door ? " hinge" : piece.GetComponent<Container>() != null ? " lid" : piece.GetComponent<Fireplace>() != null ? " flame" : " middle"), made);
         }
 
         private static int s_noted;
@@ -192,6 +194,27 @@ namespace WiresAcoustics
             else t.SetParent(bone, true);
             // attached (or following) now, so Follow skips it: an unplaced (2D) player sound is placed here instead
             PlayerSounds.Place(go.GetComponent<ZSFX>(), go.GetComponent<AudioSource>());
+        }
+
+        // A door's sounds come from its hinge, half way up: the leaf turns there, so it's in the doorway
+        // whether the door is open or shut, and the leaf swinging never ends up between you and its own
+        // sound (from the middle of the door's box it could: the box of a door first seen open is out in
+        // the room beside the doorway). The hinge is where the game turns the leaf (its "door" part),
+        // brought 15 cm into the doorway so the frame beside it doesn't hide it (a judgement value). A
+        // door whose moving part turns round the middle (a gate, a grate) keeps its middle.
+        private static bool Hinge(Transform piece, out Vector3 at)
+        {
+            bool mid = Area.CenterOf(piece, out at);
+            float y = mid ? at.y : piece.position.y + 1f;
+            Transform leaf = null;
+            foreach (Transform t in piece.GetComponentsInChildren<Transform>(true))
+                if (t != piece && t.name == "door") { leaf = t; break; }
+            if (leaf == null) return mid;
+            Vector3 flat = leaf.position - piece.position; flat.y = 0f;
+            if (flat.sqrMagnitude < .05f * .05f) return mid;
+            Vector3 hinge = leaf.position - flat.normalized * Mathf.Min(.15f, flat.magnitude);
+            at = new Vector3(hinge.x, y, hinge.z);
+            return true;
         }
 
         // The piece (or other networked object) whose pivot is exactly here.

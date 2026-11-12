@@ -1,3 +1,10 @@
+## 0.5.1
+- Fixed: sound got through closed buildings. Pieces snapped together often leave a hairline gap between their colliders, and the one ray from you to a sound could run through it as if the wall were open. Every line is now three rays 8 cm apart, and what two of them agree on counts. The mod was at fault.
+- Fixed: the room rays could take such a seam for a window or a door and route sounds through it. A gap counts as an opening only if the rays beside it get through too.
+- Fixed: a wall right behind a sound (a torch, a chest or a workbench against the far side of a wall) didn't count: the mod ignored everything within 0.5 m of a sound so its own object wouldn't hide it. Now only the thing making the sound is left out. The mod was at fault.
+- Fixed: a door's own sound could be hidden by the door: opening and closing were heard from the middle of the door's box, which for a door first seen open is out beside the doorway. They come from the hinge now, half way up. The mod was at fault.
+- Fixed: a line through a busy build (walls, beams, poles, furniture) could have more hits than the mod recorded (8), and the wall could be among the ones dropped. It records 16 now, and a line with more than that counts as through a wall at least.
+
 ## 0.5.0
 ### Indoors and outdoors
 - Changed: the sea is shaded like the wind, as the whole shoreline it is: a wall or a house between you and it still shuts most of it out, but a single post or tree no longer can (it was one ray to one point). Heard from between the shore and the way that's open to it.
