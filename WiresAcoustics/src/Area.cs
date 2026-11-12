@@ -37,6 +37,7 @@ namespace WiresAcoustics
             }
             Voice(sound, owner);
             if (!s.Valid) return;
+            if (owner.GetComponent<Fireplace>() != null) f.SourceLevel = FireLevel(s.Half);
             f.ShapeRoot = owner;
             f.ShapeCenter = s.Center;
             f.ShapeHalf = s.Half;
@@ -135,6 +136,18 @@ namespace WiresAcoustics
             Vector3 half = b.extents;
             if (half.x > Biggest || half.y > Biggest || half.z > Biggest) return default;
             return new Shape { Center = owner.InverseTransformPoint(b.center), Half = half, Valid = true };
+        }
+
+        // A fire's crackle by how much is burning: a fire's sound grows with how much of it burns, so its
+        // power with the flame's area, its level with 20 lg of its width. Against a campfire (about
+        // 1.5 m across, as loud as the game plays it): a sconce some 14 dB quieter; nothing louder
+        // than the game has it. The scaling and the campfire's width are a choice, not from a source.
+        private const float CampfireWidth = 1.5f, QuietestFire = -18f;
+        private static float FireLevel(Vector3 half)
+        {
+            float width = 2f * Mathf.Max(half.x, half.z);
+            float db = Mathf.Clamp(20f * Mathf.Log10(Mathf.Max(.01f, width) / CampfireWidth), QuietestFire, 0f);
+            return Mathf.Pow(10f, db / 20f);
         }
 
         // Share of all around (0 a point, 1 surrounding you) a shape this wide covers from here.

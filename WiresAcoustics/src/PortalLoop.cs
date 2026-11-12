@@ -29,6 +29,16 @@ namespace WiresAcoustics
         private static Quaternion s_fromLocalRot;
         private static ZDOID s_exitId;
         private static float s_t, s_started;
+        private const float HoldFor = 5f;
+        private static EffectFade s_held;
+        private static float s_heldUntil;
+
+        [HarmonyPatch(typeof(EffectFade), nameof(EffectFade.SetActive))]
+        private static class Hold
+        {
+            private static bool Prefix(EffectFade __instance, bool active) =>
+                active || __instance != s_held || Time.time >= s_heldUntil;
+        }
 
         [HarmonyPatch(typeof(TeleportWorld), nameof(TeleportWorld.Teleport))]
         private static class Through
@@ -47,7 +57,7 @@ namespace WiresAcoustics
                 ZDO exit = ZDOMan.instance.GetZDO(exitId);
                 if (exit == null) return;
                 Clear();
-                Take(__instance, fade, src, exit, exitId, player, l.transform);
+                Take(__instance, fade, src, exit, exitId, player, l.transform.parent != null ? l.transform.parent : l.transform);
             }
         }
 
@@ -147,6 +157,12 @@ namespace WiresAcoustics
             s_src.transform.localRotation = at.localRotation;
             Source(fade) = s_src;
             Intensity(fade) = Mathf.Clamp01(level);
+            // The exit only keeps its hum up while it sees you near and its own way back loaded
+            // (TeleportWorld.UpdatePortal, a couple of times a second); just after you land it often
+            // doesn't yet, and the hum dipped out and came back. Held on for a few seconds (Hold).
+            fade.SetActive(true);
+            s_held = fade;
+            s_heldUntil = Time.time + HoldFor;
             AcousticFilter f = s_src.GetComponent<AcousticFilter>();
             if (f != null) { f.ShapeRoot = exit.transform; f.AreaKnown = false; }
 

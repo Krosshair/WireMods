@@ -5,8 +5,8 @@ namespace WiresAcoustics
     // The game plays some of a player's own sounds unplaced (2D), "in the camera" (picking things up,
     // some tool and item sounds). Any unplaced sound on a player, or spawned right at one, is made
     // placed instead (heard from the player, through the HRTF and walls like any sound) and follows
-    // that player (Follow). Its near distance is raised to a third-person camera's distance, so it
-    // isn't quieter than the game made it. Interface sounds, ambience and the game's cues that aren't
+    // that player (Follow). You hear from your character's head, so your own stay as loud as the
+    // game made them; the near distance is kept at 1 m at least. Interface sounds, ambience and the game's cues that aren't
     // sounds in the world (skill level-up, the adrenaline and perfect dodge cues) stay as they are.
     internal static class PlayerSounds
     {
@@ -55,24 +55,10 @@ namespace WiresAcoustics
             }
             src.spatialBlend = 1f;
             src.bypassReverbZones = false; // the game skips the reverb for unplaced sounds
-            src.minDistance = Mathf.Max(src.minDistance, 5f);
+            src.minDistance = Mathf.Max(src.minDistance, 1f); // no source: a judgement value
             src.maxDistance = Mathf.Max(src.maxDistance, 40f);
             f.Player = p.transform;
             return true;
-        }
-
-        // The player a sound starts right at (within 2.5 m of the body's middle), if any.
-        internal static Transform At(Vector3 at)
-        {
-            global::Player best = null;
-            float bestSq = Near * Near;
-            foreach (global::Player q in global::Player.GetAllPlayers())
-            {
-                if (q == null) continue;
-                float d = (q.transform.position + Vector3.up - at).sqrMagnitude;
-                if (d < bestSq) { bestSq = d; best = q; }
-            }
-            return best != null ? best.transform : null;
         }
 
         private static global::Player Of(Transform t)

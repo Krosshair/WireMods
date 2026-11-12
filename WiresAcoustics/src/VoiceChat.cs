@@ -36,6 +36,31 @@ namespace WiresAcoustics
             }
         }
 
+        // Where a voice comes from: the mod puts it 1.5 m above the speaker's feet (its own guess at a
+        // head, wrong when they crouch, sit or swim). From their head instead (the game's eye point).
+        [HarmonyPatch]
+        private static class FromHead
+        {
+            private static bool Prepare() => TargetMethod() != null;
+
+            private static MethodBase TargetMethod()
+            {
+                System.Type t = AccessTools.TypeByName("ProximityVoiceChat.Voice.Audio.SpatialPlayback");
+                return t != null ? AccessTools.Method(t, "ResolvePosition") : null;
+            }
+
+            private static void Postfix(ref Vector3 __result)
+            {
+                if (!Plugin.Enabled.Value) return;
+                foreach (global::Player p in global::Player.GetAllPlayers())
+                    if (p != null && p.m_eye != null && (p.transform.position + Vector3.up * 1.5f - __result).sqrMagnitude < 1e-4f)
+                    {
+                        __result = p.m_eye.position;
+                        return;
+                    }
+            }
+        }
+
         // Its muffle: always fully open while ours is on.
         [HarmonyPatch]
         private static class NoMuffle

@@ -4,7 +4,7 @@ namespace WiresAcoustics
     internal static class Cost
     {
         internal struct Stat { internal long Total, Worst; internal int Calls; internal bool WorstGc; }
-        internal static Stat Tick, Scan, Sound, Measure, Batch, Recheck, Follow, Dirs, Rays, Rest, Budget, Travel;
+        internal static Stat Tick, Scan, Sound, Measure, Batch, Recheck, Follow, Dirs, Rays, Rest, Budget;
 
         internal static long Start() => Plugin.DebugLog.Value ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
 
@@ -38,8 +38,8 @@ namespace WiresAcoustics
         {
             string r = "main thread: room ticks " + Tick.Calls + " (" + Ms(Tick.Total) + " ms total, worst " + Ms(Tick.Worst) + " ms" + (Tick.WorstGc ? ", the garbage collector ran in it" : "") + "), zone scans " + Scan.Calls +
                 " (worst " + Ms(Scan.Worst) + " ms), sound checks " + Sound.Calls + " (" + Ms(Sound.Total) + " ms total, worst " + Ms(Sound.Worst) + " ms)" +
-                "; worst per part: measure " + Ms(Measure.Worst) + ", batch " + Ms(Batch.Worst) + ", rechecks " + Ms(Recheck.Worst) + ", following " + Ms(Follow.Worst) + ", directions " + Ms(Dirs.Worst) + ", waiting for ray jobs " + Ms(Rays.Worst) + ", budget " + Ms(Budget.Worst) + ", travel " + Ms(Travel.Worst) + ", the rest " + Ms(Rest.Worst) + " ms";
-            Tick = Scan = Sound = Measure = Batch = Recheck = Follow = Dirs = Rays = Rest = Budget = Travel = default;
+                "; worst per part: measure " + Ms(Measure.Worst) + ", batch " + Ms(Batch.Worst) + ", rechecks " + Ms(Recheck.Worst) + ", following " + Ms(Follow.Worst) + ", directions " + Ms(Dirs.Worst) + ", waiting for ray jobs " + Ms(Rays.Worst) + ", budget " + Ms(Budget.Worst) + ", the rest " + Ms(Rest.Worst) + " ms";
+            Tick = Scan = Sound = Measure = Batch = Recheck = Follow = Dirs = Rays = Rest = Budget = default;
             return r;
         }
     }

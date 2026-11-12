@@ -5,9 +5,10 @@ namespace WiresAcoustics
     // Sound bending around things (diffraction) where there's no opening to go through: around the
     // corner of a house, over a wall. For a sound with walls in the way, five points around the first
     // thing in the way are tried as paths: 2.5 m and 5 m to each side, and 3 m above. A path is
-    // listener -> point -> sound; its cost is the walls on both legs, the bend (0.3 walls at 90
-    // degrees, as for openings) and its volume drops with the extra distance. Used like the paths
-    // through openings: the quietest way wins, and the sound is heard from where it comes round.
+    // listener -> point -> sound; its loss is the walls on both legs, the bend round the edge
+    // (Diffraction.Round) and the extra distance. Used like the paths through openings: the loudest
+    // way round adds to the sound through the walls, and where it's heard from follows the
+    // precedence effect (Batch).
     internal static class Corners
     {
         internal const int Count = 5;

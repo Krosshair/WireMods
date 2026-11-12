@@ -2,16 +2,17 @@ using UnityEngine;
 
 namespace WiresAcoustics
 {
-    // Water between a sound and your ears. You hear from the camera, not from your character: a sound
-    // under the surface (a diving player, their voice, anything below) is dull and quiet while the
-    // camera is above it, and everything goes dull if the camera itself is ever under water.
+    // Water between a sound and your ears (your character's head, Hearing): a sound under the
+    // surface (a diving player, their voice, anything below) is quiet while your head is above it,
+    // and with your head under, everything above the surface is.
     internal static class Underwater
     {
         // Sound crossing between air and water: the share of its energy that gets through at the
-        // surface is 4 Z1 Z2 / (Z1 + Z2)^2, with the characteristic impedances of air (415 Pa s/m)
-        // and water (1.48e6 Pa s/m) (DOSITS): about 0.1%, 29.5 dB. The surface takes every
+        // surface is 4 Z1 Z2 / (Z1 + Z2)^2 (the textbook transmission at a boundary), with the
+        // characteristic impedances of air (about 420 Pa s/m) and water (1.48e6 Pa s/m) (UNSW
+        // Physics, Acoustic impedance, intensity and power): about 0.1%, 29.5 dB. The surface takes every
         // frequency alike, so no low-pass.
-        private const float ZAir = 415f, ZWater = 1.48e6f;
+        private const float ZAir = 420f, ZWater = 1.48e6f;
         internal static readonly float Gain = Mathf.Sqrt(4f * ZAir * ZWater / ((ZAir + ZWater) * (ZAir + ZWater)));
         internal const float Cutoff = 22000f;
         private const float Fade = 3f; // per second
@@ -74,6 +75,6 @@ namespace WiresAcoustics
             AcousticFilter.SetGlobal(1f, 22000f, false);
         }
 
-        internal static string Summary() => "camera under water " + s_amount.ToString("P0");
+        internal static string Summary() => "head under water " + s_amount.ToString("P0");
     }
 }

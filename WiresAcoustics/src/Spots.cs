@@ -79,7 +79,6 @@ namespace WiresAcoustics
                             : hand ?? (h is global::Player ? limb : head); // anything else: the weapon, a player's fist, a creature's head
                         if (to == null) continue;
                         MoveOne(go, root, to.position, to);
-                        if (k == Kind.Voice) Face(go, root);
                         Note(go, k + " -> " + to.name);
                     }
                     return;
@@ -158,12 +157,6 @@ namespace WiresAcoustics
             foreach (Character c in Character.GetAllCharacters())
                 if (c != null && (c.transform.position - p).sqrMagnitude < 1e-4f) return c.transform;
             return null;
-        }
-
-        // A voice comes out of its owner's front (Directions: duller from behind it).
-        private static void Face(GameObject go, Transform root)
-        {
-            if (go.GetComponent<AcousticFilter>() is AcousticFilter f) f.Facing = root;
         }
 
         private enum Kind { Other, Voice, Limb, Ground }

@@ -67,7 +67,6 @@ namespace WiresAcoustics
             {
                 AcousticFilter filter = sfx.GetComponent<AcousticFilter>();
                 if (filter == null) filter = sfx.gameObject.AddComponent<AcousticFilter>();
-                filter.WorldLavaAmbient = lava;
                 filter.WorldRandomAmbient = !lava;
             }
             sfx.Play();

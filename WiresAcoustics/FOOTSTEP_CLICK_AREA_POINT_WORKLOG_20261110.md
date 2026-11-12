@@ -520,3 +520,116 @@
 - Hexium report (KaiserMaeximus): ZNetScene.RemoveObjects NRE every frame since 0.3.0. Their ClientLifecycle log: DESTROY_WHILE_STILL_REGISTERED for networked sfx (ZNetView on sfx_blob_alerted, sfx_goblin_idle, sfx_leech_idle, sfx_goblinbrute_clubswing, skeleton hand sounds, sfx_bow_draw) that Spots/Animated had parented under the creature. Destroyed with it while still in m_instances.
 - Fix: Follow.Networked (ZNetView in the object or below) and Follow.Track (follow a bone by position); Spots.MoveOne and Animated never parent networked sounds; Follow.Created skips tracked ones; PortalLoop does not carry a networked hum. Changelog 0.4.1.
 - A binary-patched 0.4.0 DLL (Cecil) was sent to Kajetan on his phone first; this source build replaces it. Backup backup/NETWORKED_041_20261112. Built, installed. Not tested.
+
+## 78. Crackle: lead-in only (2026-11-12)
+- listen2 test (9 wood/stone clips, A game / B lead-in only / C point repair + lead-in): Kajetan hears no crackle in any of the files, but does in game; all three sound alike. dev/listen climb A files had no crackle either.
+- Earlier evidence (sections 24-26): the in-game crackle that recordings caught is clips starting mid-waveform (first sample up to 93% of peak), and the lead-in made it "can't really hear it anymore". The in-file repairs (smoothing, tail cut) were what deep-fried sounds.
+- New src/LeadIn.cs: lead-in only. On ZSFX play (Travel), non-looping DecompressOnLoad clips up to 3 s, first sample > 2% of peak: the clip is moved up to 3 ms later inside its own trailing digital silence, the freed start a raised-cosine rise to the first sample. No filtering or smoothing; the sound plays sample for sample as shipped. Per play, a reload check (game unloads assets): finds the moved head at an offset > 0, else redoes it. Debug: [lead-in] lines.
+- Changelog ## 0.4.2. Backup backup/LEADIN_042_20261112. Built, installed. Not tested.
+- Kajetan: not the solution ("this one is bad"). Reverted: LeadIn.cs to backup as LeadIn.cs.removed, Travel.cs and changelog restored, rebuilt, installed. Crackle stays open; no known fix yet.
+
+## 79. Source audit (2026-11-12, Kajetan: "fix any papers ChatGPT might've made up")
+Opened and checked each (quote matched the value used):
+- WoodWorks Mass Timber Acoustics: 3-ply CLT wall 3.07" STC 33, 5-ply 6.875" STC 38. OK.
+- Engineering ToolBox: 230 mm brick plastered both sides STC 55; correction -9/-5/-1/+3/+7/+11 (125-4k). OK.
+- Commercial Acoustics: solid core wood door 1 3/4" STC 30-35. OK.
+- Waddington & Lam, Proc. IOA 24 pt 3 (2002): downwind "a few dB", upwind "in excess of 20 dB", thresholds ~7 / ~4 m/s at 112 m. OK (code caps at 20).
+- NWS glossary: blizzard sustained wind or frequent gusts 35 mph or greater. OK.
+- Bergen-Florida 1991-2020: July max 19.6, min 12.4, RH 75.6. Finsevatn 1991-2020 (1210 m): Jan -8. OK.
+- HK EPD: line source 3 dB per doubling. OK.
+- Arup: Maekawa form 5 + 20 lg(sqrt(2piN)/tanh sqrt(2piN)); ISO 9613-2:1996 not > 20 dB single diffraction. Kurze & Anderson, Applied Acoustics 4(1) 35-53, 1971, doi 10.1016/0003-682X(71)90024-7. OK. ISO 9613-2:1996 withdrawn (2024 edition current).
+- ISO 9613-1:1993 exists. Bass et al. 1995 exists (details not confirmed on the page fetched).
+- Sengpiel: brick .03/.03/.03/.04/.05/.07; marble/tile .01/.01/.01/.01/.02/.02; water or ice .008/.008/.013/.015/.020/.025; wood on joists .15/.11/.10/.07/.06/.07; concrete or tile floor .01/.01/.015/.02/.02/.02; RT60 = 0.161 V/A. OK.
+- pyroomacoustics: limestone .02/.02/.03/.04/.05/.05; chairs_wooden .05/.08/.1/.12/.12/.12; upholstered cloth .44/.6/.77/.89/.82/.7; carpet_hairy .11/.14/.37/.43/.27/.25; curtains_velvet .05/.12/.35/.45/.38/.36. OK.
+- ODEON paper: Zeng, Christensen (Claus Lynge) & Rindel, Applied Acoustics 67 (2006) 771-786, table 5; Lambert's law in ODEON. OK (author name was given as "Lynge": fixed).
+- Vorlander, Embrechts et al., "Case studies in measurement of random incidence scattering coefficients": defines s as scattered/total reflected; (1-a)(1-s) specular. OK (title fixed; journal not stated in the PDF text).
+- Arup critical distance 0.057 sqrt(QV/RT). OK. Delany & Bazley, Applied Acoustics 3(2) 105-116, 1970, doi 10.1016/0003-682X(70)90031-9. OK.
+- Woodworth (1938) cited on Wikipedia ITD, max ~660 us; head radius 8.75 cm (Hartmann, Physics Today 1999). The exact formula (a/c)(theta + sin theta) not quoted from an opened page: standard, noted.
+WRONG / UNSUPPORTED, fixed:
+- DOSITS does not give the air/water impedances or the 0.1%: now UNSW Physics (air 420, water 1.48e6 Pa s/m) + standard boundary transmission. ZAir 415 -> 420 (no audible change, -29.5 dB stays).
+- Mass law: Warnock (NRC CBD-239, 1985) gives TL = 20 lg(m f) - 48, code had -47 (unsourced). Now -48.
+- Room.AbsorptionOf single values didn't match their rows: marble .02 -> .01, ice .03 -> .013, planks .12 -> .10 (wood on joists 500 Hz), HardWood/Timberwood .09 and Ancient .05 -> .06. BandsAt heavy wood .04/.07 (no matching row anywhere) -> .07/.06 = Vorlander Auralization "wood, stage floor, 2 layers, 27 mm over airspace" (heyizhou.net), the heaviest solid wood listed.
+- Labelled in code as judgement values (no source): reverb level mapping, soft-layer muffling table, TreeWeight, props .15, HRTF level/shading/notch amounts.
+README Sources rewritten with 27 links (all opened), NEXUS_DESCRIPTION.txt regenerated (link parser handles brackets/parentheses). Changelog ## 0.4.2. Backup backup/SOURCE_AUDIT_20261112. Built, installed. Not tested.
+
+## 80. Barron reverb back (Kajetan: "it might've only bugged out cus of the room size leakage")
+- Ported into the current Room.cs (with the gap fix): area-weighted absorption (openings at their gap distance, or 50 m in the open), V from rays with openings, S = 4pi/N sum of areas, mean free path 4V/S, Eyring decay (also for the 250 Hz / 4 kHz HF ratio), critical distance from the room constant sqrt(S a/(1-a)/16pi), Barron early/late split, zone Room 0 + levels lg(part/2.08|2.06) + 1300 mB headroom, Reverb strength on Reflections/Reverb, Room.Decay smoothed, Room.ReverbMix(r) = min(1, sqrt((r/rc)^2 e^(-0.04 r/T) / 10^1.3)) with the real distance. Occlusion uses it; the unsourced occluded-sound mix boost removed in Occlusion and Batch. KindOf diagnostics not ported.
+- README: Barron/Eyring/room constant linked; reverb loudness no longer listed as a judgement value. Nexus regenerated by dev/readme_to_nexus.py (kept for reuse). Changelog 0.4.2 line.
+- Backup backup/BARRON_RETURN_20261112. Built, installed (Reverb strength = 1 in his config). Not tested.
+- Kajetan, 15:36: "back to old reverb". Room/Occlusion/Batch, CHANGELOG restored from backup/BARRON_RETURN_20261112 (Barron version kept in its barron_version/ subfolder); README reverb source line and judgement list restored, Nexus regenerated. Built; NOT installed yet (game running), installed DLL is still the Barron one.
+- Installed the old-reverb build (Kajetan: game long closed; the log timestamp updates without the game running).
+
+## 81. Tree fall sound follows the log (2026-11-12)
+- Game source: TreeBase.RPC_Damage at 0 health: m_destroyedEffect.Create(transform.position, ..., transform) (sfx_tree_fall, Objects_Tree_Fall_01..05, 3.8-4.9 s, at the stump), then SpawnLog instantiates m_logPrefab at m_logSpawnPoint with a push; the log's impact sounds (ImpactEffect, sfx_tree_fall_hit) already play at the log.
+- Follow.Created: when the EffectList is the tree's own m_destroyedEffect (baseParent has TreeBase), its unparented ZSFX roots are kept for this frame. New Follow.Felled (postfix TreeLog.Awake, runs inside SpawnLog's Instantiate): moves them to the log's position and Track()s them on the log (networked: by position, never SetParent); ShapeRoot = log. If the log breaks, Step drops the item and the sound stays where it is.
+- Changelog 0.4.2 line. Backup backup/TREE_FALL_20261112. Built, installed. Not tested.
+
+## 82. Direction of blocked sounds: precedence effect (2026-11-12)
+- Kajetan: a greydwarf outside, away from the window, at a different wall, sounded like it came from the window and from inside the house.
+- Causes in Batch.Apply: heard = Lerp(source position, path point, energy share): a point between the source and the window can lie inside the room; and direction by energy share ignores how hearing localizes.
+- Research (Wikipedia Precedence effect, citing Blauert 1983 ch. 3.1 and Haas 1951): first wavefront dominates for delays 2 to ~50 ms; holds while the delayed sound is up to 10 dB louder. Video transcript (Douglas Dwyer, Voxel Devlog #31) not reachable (YouTube blocks the connection; workaround denied); Kajetan: fix on the research.
+- New Batch.HeardFrom: delay = (|L-via| + |via-S| - |L-S|)/343. < 1 ms: energy blend (summing localization). 1-50 ms: way round only when > 10 dB louder than the through-wall sound (spread 8-12 dB to avoid flicker: smoothing, not data). > 50 ms: louder wins (spread -2..+2 dB). Batch.Toward: Slerp of directions at the source's distance (no more position lerp). Levels unchanged (energy sum).
+- Changelog 0.4.2, README (text + source line), Nexus regenerated. Backup backup/PRECEDENCE_20261112. Built, installed. Not tested.
+
+## 83. "House barely muffling outside" + feature-by-feature check against research (2026-11-12)
+- Found: Ambience took openE = 1 - enclosure (share of level rays that hit nothing) and wallE = mean over level rays of Occlusion.Pass^2. Pass returns 0.9 for any built piece that isn't a wall (furniture, chests, beams): every level ray landing on furniture counted 81% of the outside's energy as coming in. A furnished room read as mostly open (his logs: ambience gain 0.31 in a closed room).
+- Research: Arup room to room L2 = L1 - R + 10 lg(S/A) (A from Sabine). Locher et al. 2018 (IJERPH 15(1):149, n=115/116/76 homes): outdoor-indoor median 10.0 dB(A) open window, 15.8 tilted, 27.8 closed.
+- New (Room.Measure): per ray patch area d^2/cos; shellAbsorb = sum patch*alpha + openings (patch r^2, alpha 1); shellOpen = openings + tree hits; shellWall = walls/roofs/floors patch * Pass^2 (measured loss); furniture/props inside: absorption only; ground/rock: nothing. Room.OpenIn = shellOpen/A, Room.WallIn = shellWall/A (smoothed). Ambience uses them. Sanity: 4x4x2.5 m room, a 0.1, 1 m2 opening -> about -9.5 dB (Locher median 10). Room.WallEnergy now unused (left in).
+- README source line, changelog 0.4.2, Nexus regenerated. Backup backup/ENVELOPE_20261112. Built, installed. Not tested.
+Feature check (against research opened today):
+- Matches research: air absorption (ISO 9613-1), distance 6 dB/doubling (HK EPD), sea line source 3 dB (HK EPD), walls/doors (WoodWorks, Commercial Acoustics, Engineering ToolBox), mass law (Warnock), corners/openings/hills (Maekawa/Kurze-Anderson, ISO 9613-2 cap), wind (Waddington & Lam, NWS), surface absorption (Sengpiel, pyroomacoustics, heyizhou/Auralization), ground (Nord2000 + Delany-Bazley), bark (Li 2020), bounces/scattering (Vorlander et al., ODEON), decay (Sabine) and critical distance (Arup), under water (impedances, UNSW), ITD (Woodworth/Hartmann), direction of blocked sounds (precedence, Haas/Blauert), outside ambience indoors (Arup + Locher), Doppler and travel delay (speed of sound, physics).
+- Judgement values, no research behind them: reverb loudness mapping (the research-based one, Barron, was rejected by ear twice), soft-obstacle muffling table, TreeWeight (forest enclosure), props absorption, HRTF level/shading/notch amounts, wind-in-ears loudness.
+- Not research questions (design): where sounds come from (Spots), following moving things, portal hum, mist pitch.
+
+## 84. Rooms heard as the real rooms they stand for (2026-11-12)
+- Kajetan: reverb not too much, but not great sounding; 0.1.2's reverb sound was fine. Compared with 0.1.2 (git 344a2a7): same level mapping and Sabine decay; differences: RoomHF/DecayHF were by absorption (lerp -150..-2600 mB and 1.2..0.3 over a 0..0.4), now from the per-band tables (about -0.1..-0.2 dB at 5 kHz: far brighter); 0.1.2 blended the mod's send in by enclosure (outdoors kept the game's distance curve).
+- Kajetan: real values for real rooms can't be used literally; Valheim rooms are bigger (his example: real warm basement 2x6x2, Valheim 8x12x2). Judgement values, labelled: RoomScale 0.5 (decay and the two delays), LivedIn 0.1 extra absorption x enclosure (soft furnishings). Critical distance (send) still from the room as built (decayAsBuilt), so how much reverb each sound gets is unchanged. Tone: 0.1.2's RoomHF/DecayHF. Example: 8x12x2 wood room, mean path ~3.5 m, a .11 -> about 0.33 s (furnished real rooms measure ~0.3-0.5 s, Burgess/BRE).
+- Removed dead code: BandsAt and its table (per-band tone), rtLow/rtHigh/hfEnergy. GroundClass keeps its 3 bands (only 500 Hz used now).
+- Changelog 0.4.2, README judgement list, Nexus regenerated. Backup backup/ROOM_FEEL_20261112. Built, installed. Not tested.
+
+## 85. Upwind cap and "outside barely muffled" diagnosis (2026-11-12)
+- User approved one creative liberty: upwind drop capped at 10 dB (was Waddington & Lam's 20). Directions.cs, labelled judgement; changelog and README "not from a source" updated.
+- Log 15:28 UTC: indoors (enclosed 100%, no level openings) ambience gain swings 0.04 to 0.43. At 0.04 the low-pass is 318 Hz (walls only, about -28 dB, matches Locher closed). At 0.3 to 0.4 the low-pass is 20 to 21 kHz: some ray counts as open, and since an opening passes everything, it outweighs the walls and the result is just quieter, not muffled.
+- Enclosed 100% means every level ray hit, so the open energy comes from up or down rays (roof seams, floor gaps to the ground below, or escapes with no built neighbour counting 50 m squared). Added a "shell:" breakdown to the space log line (far / gaps up / level / down / trees) to find which before changing anything. Backup UPWIND_DIAG_20261112.
+- User: improve detection instead. Room.cs: a gap ray whose neighbours are all built (SealedBy) is a seam, not an opening; for the shell it counts as the farthest neighbour's wall (its absorption and Pass squared). Clusters of gap rays and escapes with no built neighbour stay openings. Room size/reverb untouched. Log line now shows "seams N". Changelog line amended.
+- Seams build installed; user heard a "seagull above the house" from the basement. Log: placed seagull creatures fully blocked (gain 0). AudioMan.GetRandomAmbiencePoint puts random calls at listener height 5 to 20 m out (game source); the mod's Outside() pushed them just past the first wall or ground along that line, so in a basement into the earth. Replaced with InOpenAir: same x/z, on top of the highest collider in that column (or sea level) + 1 m (judgement). Runs once at start. Backup AMBIENT_PLACE_20261112. Staged as .dll.new (game running).
+- Ambient loop and wind loop stay as a surrounding bed outdoors (a field of reeds or wind comes from everywhere); indoors they already lean toward the openings.
+
+## 86. Fresh-eyes code review (2026-11-12) - all fixed same day, see REVIEW_FIXES_20261112.md
+Asked for: review the whole codebase as an outsider. Nothing changed yet. Findings:
+- BUG Batch.WallHits iterates all 8 hit slots with `continue` on null. Unity docs (RaycastCommand remarks): only the first invalid slot is null, later ones are not written and may hold stale hits; stop at the first null. Phantom walls possible on every batched check.
+- Two opening detectors disagree: Portals.Find uses "sky only" (collider == null), Room uses gap-aware Opening[] plus the new seam rule. A door facing a hill isn't a portal; a roof seam can be one.
+- Reverb send for Other sources (non-ZSFX) only ever goes up in Batch.Apply (Max), nothing resets it.
+- Underwater: listener under water applies -29.5 dB to every sound, including sounds that are also under water.
+- HRTF path zeroes channels 3+ (5.1/7.1 output loses centre/rears).
+- Per-frame: Directions.Step also does wind, fade, air, facing, Doppler every frame; only direction needs it.
+- Dead code: PlayerSounds.At, Room.WallEnergy, Room.Absorption, WorldLavaAmbient (never read), AirDbPerMetre, Furniture's `soft`, 3-band vectors where only .y is used, Travel.TraceFootstep (crackle diag).
+- Stale comments: Ambience header (enclosure rays, ocean), Occlusion lines about "1 to 40 m" and the removed Outside(), Portals/Corners "quieter/quietest wins", GroundClassAt "per-band table", zero-width char in VanillaShortAmbient.
+- Unlabelled judgement values missing from README list: FadeAt 1.5-3x range, facing 5 kHz, occluded reverb boost, corner probe distances, 0.3 threshold, Openness weights, player-sound 5 m near distance, wind-in-ears dB, HRTF amounts, ambience wind lean.
+- Weight() (occ count) and LossOf() (real loss) are two parallel material tables; Weight's materials only matter against the 0.3 threshold.
+- Portal paths use Kurze-Anderson from the opening's centre with a 5 dB floor; real aperture diffraction is from the nearest edge, so it over-penalises.
+
+## 87. Reverb extras on the old reverb (2026-11-12)
+Air in the tail (Sabine 4mV, ISO 9613-1, on RoomScale'd path), blocked sounds' reverb from their own room (Batch.SourceRoom, 12 rays, Hopkins-Stryker at the wall), stepping-out glide over old RT60. Details and to-do in REVIEW_FIXES_20261112.md. Backup REVERB_PLUS_20261112.
+
+## 88. Strip down (2026-11-12)
+Cut: bounce paths, creature facing, portal hum hand-off, mist pitch undo, next-room reverb, air in the tail. Voice chat from the head. See REVIEW_FIXES_20261112.md. Backup STRIP_20261112.
+
+## 89. Environment rebuild (2026-11-12)
+Outside loops play from up to 2 openings (synced copies, sqrt(share)), muffled bed through walls (Room.WallBed from Occlusion.FirstWall), walls count once (sorted hits, 0.6 m), first wall 12-22 dB then 6 dB each, boxy early reflections, "now:" log line. Backup REBUILD_ENV_20261112. Details in REVIEW_FIXES_20261112.md.
+
+## 90. Hearing from the head, delay and Doppler out (2026-11-12)
+Direction from the camera, distance/walls/room/underwater from the player's head (Hearing.At). Travel and Doppler removed. Backup HEARING_20261112.
+- 18:4x: listener back at the head (vanilla), Unity fall-off again; direction from the camera (listener's parent). Backup VANILLA_LISTENER_20261112.
+- 18:5x cozy pass: reverb send scaled by what gets through, 2-pole muffling, cozy reverb, calls off roofs. Backup COZY_20261112.
+- 18:5x loudness: no fade cut-off (extra 6 dB/doubling past range), fires by flame width. Backup LOUDNESS_20261112.
+- 19:0x 64 real voices (far sounds cut by Unity's 32-voice limit, ~60 playing). Backup VOICES_20261112.
+- 19:1x optimisation for 64 voices: mute < -60 dB, HRTF top 24. Backup VOICES_20261112 covers it.
+- 19:2x polish/optimisation pass for release. Backup POLISH_20261112.
+- 19:4x full HRTF back, 128 voices, pause keeps world mix, toggle restores reverb sends, calls off roofs only near you. Backup HRTF_PAUSE_20261112.
+- 20:0x Biome ambience (Biomes.cs). Backup BIOMES_20261112.
+- 20:1x wind shaped by surroundings + gusts; biome calls denser/louder. Backup WIND_20261112.
+- 20:2x biome ambience to Deep North parity: layered beds, many call groups. Backup VARIETY_20261112.
+- 20:1x biome ambience: no creatures, nothing vanilla already has. 
+- 20:3x portal hand-over hold, 0.5.0 prepared (not published). Backup RELEASE050_20261112.
+- 20:4x biome ambience feature removed; wind shaping stays.

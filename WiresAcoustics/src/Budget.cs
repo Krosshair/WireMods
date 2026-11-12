@@ -73,13 +73,14 @@ namespace WiresAcoustics
                 if (!ReferenceEquals(f, null))
                 {
                     f.InBudget = false;
-                    if (f != null && f.Kind != AcousticFilter.Kinds.Ambient) f.Active = false;
+                    if (f != null) { Silence(f, false); if (f.Kind != AcousticFilter.Kinds.Ambient) f.Active = false; }
                 }
                 Playing[i] = Playing[Playing.Count - 1];
                 Playing.RemoveAt(Playing.Count - 1);
             }
 
             s_on = 0;
+            s_muted = 0;
             foreach (AcousticFilter f in Playing)
             {
                 // processed if there's anything to do (nothing in the way, no HRTF, near: off, free)
@@ -87,12 +88,51 @@ namespace WiresAcoustics
                 f.Active = want;
                 if (!want) continue;
                 s_on++;
+                if (f.Kind == AcousticFilter.Kinds.Ambient || f.Kind == AcousticFilter.Kinds.Outside || f.Voice)
+                {
+                    Silence(f, false); // the room's own sound and voices: never muted
+                    continue;
+                }
+                f.Heard = Heard(f);
+                // too quiet to hear (under -60 dB), back on from -54 dB so it doesn't flicker
+                bool mute = f.Mute ? f.Heard < .002f : f.Heard < .001f;
+                if (mute != f.Mute) Silence(f, mute);
+                if (f.Mute) s_muted++;
             }
+        }
+
+        // A sound too quiet to hear also gives way first when Unity has more sounds than voices to
+        // mix (its lowest priority), so the voices go to sounds you can hear.
+        internal static void Silence(AcousticFilter f, bool mute)
+        {
+            if (f.Mute == mute) return;
+            f.Mute = mute;
+            if (f.Source == null) return;
+            if (mute) { f.OwnPriority = f.Source.priority; f.Source.priority = 256; }
+            else if (f.OwnPriority >= 0) { f.Source.priority = f.OwnPriority; f.OwnPriority = -1; }
+        }
+
+        private static int s_muted;
+
+        // How loud a sound reaches you (amplitude, roughly): Unity's fall-off at its distance and
+        // everything the mod does to it. Not its own volume: the game fades many sounds in from 0, and
+        // a sound muted at its start would miss its first moments. Custom fall-off curves count as
+        // full (reading them would cost more than this saves).
+        private static float Heard(AcousticFilter f)
+        {
+            AudioSource src = f.Source;
+            float d = f.LastDist, fall = 1f;
+            if (src.spatialBlend >= .5f)
+            {
+                if (src.rolloffMode == AudioRolloffMode.Logarithmic) fall = d <= src.minDistance ? 1f : src.minDistance / d;
+                else if (src.rolloffMode == AudioRolloffMode.Linear) fall = Mathf.Clamp01((src.maxDistance - d) / Mathf.Max(.01f, src.maxDistance - src.minDistance));
+            }
+            return fall * f.TargetGain * f.DistanceGain * f.SourceLevel;
         }
 
         internal static void Clear()
         {
-            foreach (AcousticFilter f in Playing) if (!ReferenceEquals(f, null)) f.InBudget = false;
+            foreach (AcousticFilter f in Playing) if (f != null) { f.InBudget = false; Silence(f, false); }
             Playing.Clear();
             s_on = 0;
         }
@@ -119,7 +159,20 @@ namespace WiresAcoustics
             return sb.ToString();
         }
 
+        // Debug: sounds Unity is playing silently (past its real voices), and the nearest of them.
+        private static string Virtual()
+        {
+            int n = 0; float near = float.MaxValue; string name = "";
+            foreach (AcousticFilter f in Playing)
+            {
+                if (f == null || f.Source == null || !f.Source.isVirtual || f.Source.volume < .01f) continue; // silent anyway
+                n++;
+                if (f.LastDist < near) { near = f.LastDist; name = f.name; }
+            }
+            return n == 0 ? "none silenced for voices" : n + " silenced for voices (nearest " + name + " at " + near.ToString("F0") + " m)";
+        }
+
         internal static string Summary() =>
-            "processing " + s_on + " of " + Playing.Count + " playing, audio thread " + (s_load * 100f).ToString("F1") + "% in " + s_calls + " callbacks (" + s_hrtfCalls + " with the HRTF), " + s_perCall.ToString("F1") + " us each";
+            Virtual() + "; processing " + s_on + " of " + Playing.Count +  " playing (" + s_muted + " too quiet to hear), audio thread " + (s_load * 100f).ToString("F1") + "% in " + s_calls + " callbacks (" + s_hrtfCalls + " with the HRTF), " + s_perCall.ToString("F1") + " us each";
     }
 }

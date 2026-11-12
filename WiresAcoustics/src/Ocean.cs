@@ -11,8 +11,8 @@ namespace WiresAcoustics
     // on worker threads, read on the next update) find where the water starts (ground under sea
     // level); the loop moves to the nearest shoreline, where the waves break (each direction's first
     // water point, weighted by 1 / distance squared, a metre above the surface). It then gets what
-    // every placed sound gets: muffling by walls, paths through openings (Batch) and the HRTF; the
-    // beach itself, right at the water, doesn't hide it (Batch: Shore). Vanilla still decides its
+    // every placed sound gets the HRTF and the distance (a shoreline: 3 dB per doubling); what's in
+    // the way is worked out for the whole shore, like the wind (Shade). Vanilla still decides its
     // volume (wind, whether there's ocean nearby at all).
     // (It was placed at the first water 6 m deep: measured in game, that put it 80 to 105 m out,
     // past most of its range, with the beach in the way: 7.7 dB quieter and dull.)
@@ -27,7 +27,7 @@ namespace WiresAcoustics
         private static NativeArray<RaycastHit> s_hits;
         private static JobHandle s_job;
         private static bool s_pending, s_have;
-        private static float s_next, s_lastCast;
+        private static float s_next, s_nextCheck, s_lastCast;
         private static Vector3 s_lastCastPosition;
         private static bool s_everCast;
         private static int s_skippedStationary;
@@ -55,21 +55,50 @@ namespace WiresAcoustics
                     s_everCast = true;
                 }
                 else s_skippedStationary++;
-                if (s_have && audible)
-                {
-                    AcousticFilter f = src.GetComponent<AcousticFilter>() ?? src.gameObject.AddComponent<AcousticFilter>();
-                    f.Kind = AcousticFilter.Kinds.Ocean;
-                    f.Placed = true;
-                    f.Physical(Plugin.RealDistance.Value, true); // the shore is a line
-                    bool hrtf = Plugin.Hrtf.Value;
-                    if (hrtf) f.TakePanning(src.spread);
-                    f.Hrtf = hrtf;
-                    Budget.Note(f, (src.transform.position - l.transform.position).magnitude);
-                    Batch.Enqueue(f, src.transform.position, false, false); // walls and openings, next frame
-                }
+            }
+            if (s_have && now >= s_nextCheck && src.isPlaying && src.volume > .001f)
+            {
+                // the walls and openings between you and the sea, 4 times a second: stepping on and off
+                // a wall changes them quickly
+                s_nextCheck = now + .25f;
+                AcousticFilter f = src.GetComponent<AcousticFilter>() ?? src.gameObject.AddComponent<AcousticFilter>();
+                f.Kind = AcousticFilter.Kinds.Ocean;
+                f.Placed = true;
+                f.Physical(Plugin.RealDistance.Value, true); // the shore is a line
+                bool hrtf = Plugin.Hrtf.Value;
+                if (hrtf) f.TakePanning(src.spread);
+                f.Hrtf = hrtf;
+                Budget.Note(f, (src.transform.position - l.transform.position).magnitude);
+                Shade(f, l.transform.position, src.transform.position);
             }
             // after vanilla's own move toward its zone average: toward the real shore instead
             if (s_have) src.transform.position = Vector3.Lerp(src.transform.position, s_point, Follow);
+        }
+
+        // What's between you and the sea. The sea is a whole shoreline, not a point: one ray to the
+        // middle of it was blocked by a single post. Worked out like the wind (Room.Exposure): how much
+        // of the view toward the sea (and up over things) is open; a wall or a house that side still
+        // shuts most of it out, a post or a tree barely does. Sheltered entirely, it's as muffled as
+        // through one wall (Occlusion: plank wall, 15 dB, 318 Hz). Heard from between the shore's
+        // direction and the way that's open to it.
+        private const float Sheltered = .18f;
+        private static float s_exposure = 1f;
+        private static void Shade(AcousticFilter f, Vector3 listener, Vector3 sea)
+        {
+            Vector3 d = sea - listener;
+            float dist = d.magnitude;
+            Vector3 flat = new Vector3(d.x, 0f, d.z);
+            if (dist < .1f || flat.sqrMagnitude < 1e-4f) { f.Set(1f, 22000f, false); f.Routed = false; return; }
+            flat.Normalize();
+            float open = Room.Exposure(flat, out Vector3 way);
+            s_exposure = Mathf.Lerp(s_exposure, open, .5f);
+            float s = Plugin.Occlusion.Value ? Mathf.Clamp(Plugin.OcclusionStrength.Value, 0f, 1.5f) : 0f;
+            float k = Mathf.Min(1f, s);
+            float gain = Mathf.Lerp(1f, Mathf.Lerp(Sheltered, 1f, s_exposure), k);
+            float cut = Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(Mathf.Lerp(Occlusion.WallCut, 22000f, s_exposure)), k));
+            f.Set(gain, cut, false);
+            f.Routed = way.sqrMagnitude > 0f;
+            f.RoutePoint = listener + Vector3.Slerp(d / dist, way.sqrMagnitude > 0f ? way : d / dist, .5f) * dist;
         }
 
         private static void Cast(Vector3 from)

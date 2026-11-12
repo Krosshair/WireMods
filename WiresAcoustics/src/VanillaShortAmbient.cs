@@ -7,7 +7,7 @@ namespace WiresAcoustics
     // hard Stop, based on nominal clip.length rather than playback time/pitch.
     // For very short animal/water one-shots this fades almost the entire sound
     // and can stop a pitched-down clip before its last sample. Let the source
-    // finish naturally instead; this is NOT an attack/declic​k DSP effect.
+    // finish naturally instead.
     // The hook runs only when vanilla creates an ambient instance, never per frame.
     [HarmonyPatch(typeof(TimedDestruction), nameof(TimedDestruction.Trigger), new System.Type[0])]
     internal static class VanillaShortAmbient

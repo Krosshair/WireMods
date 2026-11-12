@@ -1,3 +1,43 @@
+## 0.5.0
+### Indoors and outdoors
+- Changed: the sea is shaded like the wind, as the whole shoreline it is: a wall or a house between you and it still shuts most of it out, but a single post or tree no longer can (it was one ray to one point). Heard from between the shore and the way that's open to it.
+- Changed: the wind is shaped by what's round you. Behind a wall, a rock or a hill it drops to a low rumble (in their lee), it's heard from where it comes round and over what's upwind, and it comes in gusts and lulls instead of one even loop, more so the harder it blows.
+- Changed: the outside heard from inside, rebuilt. Rain, wind, birds and the rest of the biome's sound play from your doors and windows (up to two), just outside each one and heard from there, as loud as the opening's share of the outside (about 10 dB under outside for a door, as measured homes with a window open). Through the walls only a quiet, dull bed gets in, and openings fade in and out instead of cutting. Before, it was one flat sound from nowhere: barely muffled, or nearly unmuffled the moment any opening was found.
+- Changed: you can hear through walls. One wall counts once, however many pieces it's built from (a wall, a beam and a pole on one line were three walls), and the first wall takes 12 to 22 dB by how heavy it is, each after it 6 dB more and duller. With the measured losses stacked, a hearth in the next house was at -120 dB: silent, not muffled.
+- Changed: muffling is steeper (12 dB an octave instead of 6), so a sound behind a wall is muffled, not just quieter.
+- Fixed: sounds outside heard from inside rang through your room's reverb as bright as if they were in it: Unity's room reverb hears a sound before the mod muffles it. A sound now gets the room's reverb only as much as gets through to you, and sounds behind walls no longer get extra reverb.
+- Fixed: stepping behind something (off a wall, with the sea behind it) shut a sound off for a moment before its way round was found, then opened it again. The way round is found first now.
+- Fixed: the game's random calls (birds, gulls, insects) are placed at your own height, so in a basement or on a hillside they were in the ground, and one could land on your roof and sound like it was in the room. They sit in the open air above their spot, off buildings.
+- Fixed: a door or window looking out at a hill or trees didn't count as an opening, and a seam in the roof could.
+- Fixed: sounds already playing could be muffled by walls that weren't there: their checks read leftover hits from earlier ones (Unity only clears the first unused slot). The mod was at fault.
+- Fixed: a sound behind a wall could seem to come from inside your room. Where you hear it from follows the precedence effect: the sound through the wall arrives first and sets the direction, and a window or corner only takes over when it's more than 10 dB louder.
+- Improved: a sound coming through an opening bends round its nearest edge, not its middle, and loses nothing extra when the straight line passes through it (Kurze and Anderson, the lit side of an edge).
+
+### Reverb
+- Changed: rooms sound like the real rooms they stand for. Valheim's buildings are about twice real size and bare, so they rang like halls; the reverb treats them as half the size and furnished, with the warmer tone from 0.1. Indoors it's cozier the more closed in you are: softer first reflections, a darker ring.
+- Improved: stepping out of a space, its reverb dies away over that space's own reverb time (a cave's over seconds, a small room's at once).
+
+### Distance and loudness
+- Changed: which way a sound is comes from the camera, as you see it; how far it is, what's in the way, which room you're in and whether you're under water come from your character's head again, where the game itself hears from (0.4.0 had moved all of it to the camera). Zooming out no longer makes your own steps quieter, and the camera slipping behind a wall no longer muffles the world.
+- Changed: sounds reach further, just quieter. Past the game's own range for a sound it drops 6 dB more each time the distance doubles, instead of fading out to nothing.
+- Changed: fires are as loud as how much is burning. The game plays a sconce's crackle as loud as a hearth's; now a sconce is about 14 dB quieter than a campfire.
+- Fixed: quieter sounds far off cut out as you walked away (a mead ketill across the hall), and with more sounds than voices Unity cuts an old sound off or doesn't start a new one. Unity mixes only 32 sounds at once in Valheim and a busy base plays about 60: the mod asks for 128, so every sound plays to its end, and sounds too quiet to hear give way first if even that runs out.
+- Changed: sounds upwind of you drop by at most 10 dB instead of the measured 20 and more, so a sound you can see doesn't all but vanish in a breeze. A choice for the game, not from a source.
+- Removed: sounds arriving late with distance, and the Doppler shift.
+
+### Other
+- Improved: a falling tree is heard from its trunk as it comes down, not from the stump.
+- Fixed: a portal's hum dipped out for a moment as it was handed to the exit portal, which often doesn't count itself in use yet when you land. It's held on through the hand-over.
+- Changed: pausing (the Esc menu) keeps the world sounding as it is, instead of switching to the menu's muffled mix.
+- Fixed: switching the mod off left the reverb send it had set on sounds already playing; the game's own is put back.
+- Improved: with Proximity Voice Chat, a voice comes from the speaker's head (it was 1.5 m above their feet, wrong when they crouch, sit or swim).
+- Fixed: with your head under water, sounds under water with you were muffled as if they came through the surface.
+- Fixed: on 5.1 and 7.1 speakers with the HRTF on, the centre and rear speakers went silent. The game's own panning is used there now.
+- Fixed: a few material values didn't match the sources they're credited to: marble, ice, plank and heavy wood now absorb what the published tables say, and iron and ice walls follow the mass law as published.
+- Removed, to keep the mod to what clearly matters: sounds reaching you by bouncing off walls (openings and corners cover it), and a creature's voice being duller from behind it.
+- Performance: sounds too quiet to hear (under -60 dB where you are) aren't processed at all; every other sound gets the full HRTF. Distance, air and wind are worked out 4 times a second instead of every frame.
+- README: every source links to where its numbers come from, and the values that don't come from a source are listed as such.
+
 ## 0.4.1
 - Fixed: an endless loading screen with errors in the game's object clean-up (ZNetScene.RemoveObjects), since 0.3.0. The mod attached creature and weapon sounds to the creature so they'd move with it; in some setups those sounds are networked objects, and they were destroyed together with the creature while the game still tracked them. The mod was at fault. Networked sounds now follow their creature without being attached.
 - Fixed: the Room reverb setting's description said the game's own reverb comes back outdoors. It doesn't: the mod's reverb is used everywhere and goes dry in the open.

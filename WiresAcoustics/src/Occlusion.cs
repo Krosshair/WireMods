@@ -6,12 +6,13 @@ namespace WiresAcoustics
     // Sounds behind walls, buildings or hills. Checked when a sound starts and once a second for
     // looping ones (the game's own reverb update, ZSFX.UpdateReverb): one ray from the listener to the
     // sound, every solid thing in between is a layer. Each layer muffles (low-pass) and quietens it,
-    // and it gets more of the room's reverb (what you hear of it comes round the walls). Also sets
+    // and in the room's reverb (ReverbSend). Also sets
     // each sound's reverb send from the measured space instead of distance alone.
     [HarmonyPatch(typeof(ZSFX), "UpdateReverb")]
     internal static class Occlusion
     {
         private static readonly RaycastHit[] Hits = new RaycastHit[8];
+        // Soft layers (anything that isn't a wall, ground or a sized obstacle): no source, a judgement value.
         private static readonly float[] Gain = { 1f, .6f, .4f, .28f };
         private static readonly float[] Cutoff = { 22000f, 1500f, 800f, 500f };
         internal const float SourceClearance = .5f; // the thing making the sound (a hearth, a door) doesn't hide it
@@ -34,12 +35,12 @@ namespace WiresAcoustics
             if (f != null && f.Cue) return; // a game cue: as the game made it
             if (Stackify.Active) Stackify.Restore(src); // a chest's sound from Wire's Stackify: a world sound at the chest
             if (Plugin.DebugLog.Value) Describe(__instance, src, f);
-            // The game's random ambience (a bird, a gust, an insect) is put at a made-up spot 1 to 40 m
-            // round you at your own height: indoors that's often inside your own room, a bird singing
-            // next to you with nothing in the way. It's the world outside, so indoors it starts outside
-            // the walls instead (Outside) and is then heard like any sound out there: through the
-            // walls by the mass law, through the windows and doors from their direction. Without a
-            // place (the game playing it flat) it's muffled the way the rain and wind are (Ambience).
+            // The game's random ambience (a bird, a gust, an insect) is put at a made-up spot round you
+            // at your own height: indoors that's often inside your own room, a bird singing next to you
+            // with nothing in the way. It's the world outside, so it's moved up into the open air
+            // above that spot (InOpenAir) and then heard like any sound out there: through the walls by
+            // the mass law, through the windows and doors from their direction. Without a place (the
+            // game playing it flat) it's muffled the way the rain and wind are (Ambience).
             if (f != null && f.WorldRandomAmbient && src.spatialBlend < .5f)
             {
                 Ambience.Apply(__instance.gameObject, !src.isPlaying);
@@ -48,9 +49,7 @@ namespace WiresAcoustics
             if (f != null && f.WorldRandomAmbient)
             {
                 Ambience.Forget(f);
-                if (!src.isPlaying && Room.Enclosure >= .35f && AudioMan.instance != null &&
-                    AudioMan.instance.GetActiveAudioListener() is AudioListener l0)
-                    Outside(__instance.transform, l0.transform.position);
+                if (!src.isPlaying) InOpenAir(__instance.transform);
             }
             if (src.spatialBlend < .5f)
             {
@@ -62,7 +61,7 @@ namespace WiresAcoustics
             AudioListener listener = AudioMan.instance != null ? AudioMan.instance.GetActiveAudioListener() : null;
             if (listener == null) return;
 
-            Vector3 from = listener.transform.position, to = __instance.transform.position;
+            Vector3 from = listener.transform.position, to = __instance.transform.position; // how far, what's in the way: from your head (the game's listener)
             Vector3 d = to - from;
             float dist = d.magnitude;
             Mist.Undo(__instance, src, dist); // no pitch drop in the mist
@@ -72,14 +71,10 @@ namespace WiresAcoustics
             // direct, past the room's critical distance mostly reverb. That distance grows with how
             // much the room swallows (furniture).
             bool reverb = Plugin.RoomReverb.Value && !src.bypassReverbZones;
-            if (reverb)
-            {
-                float critical = Room.Critical;
-                src.reverbZoneMix = dist / (dist + critical);
-            }
 
             bool hrtf = Plugin.Hrtf.Value;
             bool under = Underwater.Muffles(to, __instance.transform);
+            bool inWater = Underwater.ListenerBelow && Underwater.Below(to);
             bool starting = !src.isPlaying;
             // A sound starting now gets its direct ray at once and jumps to it (a frame late would let
             // its start through the wall). If walls are in the way, the paths round them (openings,
@@ -96,7 +91,6 @@ namespace WiresAcoustics
             Block block = Block.Clear;
             float occ = starting && Plugin.Occlusion.Value ? Blocking(from, to, out first, out firstCollider, out block) : 0f;
             if (block.Terrain) Ridge(from, to, ref block);
-            if (occ >= .3f) Bounces.Wake();
             Own = null;
             s_checked++;
             if (occ > .05f) s_muffled++;
@@ -104,11 +98,12 @@ namespace WiresAcoustics
             if (f == null) { f = __instance.gameObject.AddComponent<AcousticFilter>(); s_added++; }
             f.Kind = AcousticFilter.Kinds.Sfx;
             f.Placed = true;
+            f.InWater = inWater;
             // The game's random ambience (a bird, a gust, an insect somewhere round you) is placed at a
-            // made-up spot 1 to 40 m off with its own gentle fall-off: it stands for the world around
-            // you, not one creature, so it keeps that (on a real distance curve it was 15 to 20 dB quieter at 10 to 20 m).
-            // Authored provenance, not AudioMan parenting: positional lava
-            // uses exactly the same prefab and hierarchy as random birds.
+            // made-up spot 5 to 20 m off with its own gentle fall-off: it stands for the world around
+            // you, not one creature, so it keeps that (on a real distance curve it was 15 to 20 dB
+            // quieter at 10 to 20 m). Told apart by where the game plays it (AudioProvenance): the lava's
+            // sounds use the same prefab.
             bool ambience = f.WorldRandomAmbient;
             f.NativeReverbLoop = __instance.m_distanceReverb;
             f.Physical(Plugin.RealDistance.Value && !f.Voice && !ambience);
@@ -124,7 +119,7 @@ namespace WiresAcoustics
                 f.Routed = false;
                 f.RoutePoint = to;
                 if (under) { gain *= Underwater.Gain; cutoff = Mathf.Min(cutoff, Underwater.Cutoff); } // the sound is under water
-                f.DistanceGain = f.FadeAt(dist);
+                f.DistanceGain = f.PastRange(dist);
                 f.AirCutoff = AcousticFilter.AirAt(dist);
                 f.Set(gain, cutoff, true);
                 if (occ >= .3f && f.Active) Batch.Enqueue(f, to, under, reverb);
@@ -134,13 +129,14 @@ namespace WiresAcoustics
             if (hrtf)
             {
                 f.TakePanning(BaseSpreadOf(__instance, src));
-                Vector3 hd = to - from;
-                f.SetDirection(hd.sqrMagnitude > 1e-4f ? listener.transform.InverseTransformDirection(hd.normalized) : Vector3.forward);
+                Transform cam = listener.transform.parent != null ? listener.transform.parent : listener.transform; // which way: from the camera
+                Vector3 hd = to - cam.position;
+                f.SetDirection(hd.sqrMagnitude > 1e-4f ? cam.InverseTransformDirection(hd.normalized) : Vector3.forward);
             }
             else if (f.BaseSpread >= 0f) { src.spread = f.BaseSpread; f.BaseSpread = -1f; }
             f.Hrtf = hrtf;
-            if (starting && occ > .05f && reverb)
-                src.reverbZoneMix = Mathf.Max(src.reverbZoneMix, Mathf.Min(1f, .3f + .25f * occ));
+            // what's muffled is quieter in the room's reverb too (ReverbSend)
+            if (reverb) Send(f, ReverbSend(dist, starting ? gain : f.TargetGain));
             // Debug: the most muffled sound of each report (one line per report, not one per sound).
             if (Plugin.DebugLog.Value && occ > s_worstOcc)
             {
@@ -149,31 +145,58 @@ namespace WiresAcoustics
             }
         }
 
-        // A random ambient call indoors: along its own direction from you, past the first wall,
-        // floor, roof or ground in the way (2 m beyond it), if that's nearer than 40 m. If the spot
-        // is already behind one, or nothing's in the way (that way is out of a door or a window), it
-        // stays where the game put it.
         private static readonly RaycastHit[] OutHits = new RaycastHit[8];
-        private static void Outside(Transform t, Vector3 listener)
+
+        // How much of the room's reverb a sound gets: past the room's critical distance it's mostly
+        // reverb (Room.Critical). Times what gets through to you: Unity's room reverb hears a sound
+        // before its muffling, so a bird behind the wall rang through the room as bright as if it were
+        // inside ("reverbed, not muffled"). What comes through a wall is quieter in the room too.
+        internal static void Send(AcousticFilter f, float send)
         {
-            Vector3 d = t.position - listener;
-            float dist = d.magnitude;
-            if (dist < .1f) { d = Vector3.forward; dist = 1f; }
-            Vector3 dir = d / dist;
-            int n = Physics.RaycastNonAlloc(listener, dir, OutHits, 40f, Room.Mask, QueryTriggerInteraction.Ignore);
-            float nearest = float.MaxValue;
-            for (int i = 0; i < n; i++)
+            AudioSource src = f.Source;
+            if (src == null) return;
+            if (f.OwnReverbMix < 0f) f.OwnReverbMix = src.reverbZoneMix; // the game's, put back when the mod's off
+            src.reverbZoneMix = send;
+        }
+
+        internal static float ReverbSend(float dist, float through) => dist / (dist + Room.Critical) * Mathf.Clamp01(through);
+        // The game puts a random call (a bird, a gull, an insect) at your own height, so in a basement
+        // or on a hillside it was in the ground. A call comes from the open air: it keeps the game's
+        // direction from you and sits on top of whatever is there (ground, rock, a treetop, a roof),
+        // 1 m up (a bird on a branch). Not right over you: a call that would land on a building
+        // within 10 m of you is moved further out, 4 m at a time, till it's past it or 10 m off (a
+        // bird right above your bed sounded like it was in the room; pushed past a whole base, behind
+        // five walls, it was gone). Distances by ear, no source.
+        private const float CallHeight = 1f, CallStep = 4f, NotOver = 10f;
+        private static void InOpenAir(Transform t)
+        {
+            Vector3 p = t.position, away = p - Hearing.At;
+            away.y = 0f;
+            away = away.sqrMagnitude > 1e-4f ? away.normalized : Vector3.forward;
+            Vector3 last = t.position;
+            bool any = false;
+            for (int step = 0; step < 6; step++, p += away * CallStep)
             {
-                Collider c = OutHits[i].collider;
-                if (c == null || (!IsWall(c) && !IsGround(c))) continue;
-                nearest = Mathf.Min(nearest, OutHits[i].distance);
+                int n = Physics.RaycastNonAlloc(new Vector3(p.x, p.y + 150f, p.z), Vector3.down, OutHits, 300f, Room.Mask, QueryTriggerInteraction.Ignore);
+                float highest = float.MinValue;
+                Collider top = null;
+                for (int i = 0; i < n; i++)
+                    if (OutHits[i].collider != null && OutHits[i].point.y > highest) { highest = OutHits[i].point.y; top = OutHits[i].collider; }
+                if (top == null) return;
+                float sea = ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : highest;
+                last = new Vector3(p.x, Mathf.Max(highest, sea) + CallHeight, p.z);
+                any = true;
+                Vector3 flat = p - Hearing.At; flat.y = 0f;
+                if (flat.sqrMagnitude < NotOver * NotOver && top.GetComponentInParent<WearNTear>() != null) continue; // a building right by you: further out
+                t.position = last;
+                return;
             }
-            if (nearest == float.MaxValue || nearest < dist) return;
-            t.position = listener + dir * (nearest + 2f);
+            if (any) t.position = last;
         }
 
         // How much is between the listener and a sound, in walls. A wall, floor, roof, beam, hill or
-        // rock counts 1, furniture and props 0.25 (sound bends around them), trees 0.3. The thing the
+        // rock counts 1, furniture and props 0.25 (sound bends around them), a trunk 0.1, anything
+        // else 0.3. The thing the
         // sound comes from doesn't count (a chest, a workbench, a hearth: anything whose box holds
         // the sound's position), nor anything in the last 0.5 m.
         internal static float Blocking(Vector3 from, Vector3 to, out float first, out Collider firstCollider, out Block block)
@@ -183,19 +206,34 @@ namespace WiresAcoustics
             float dist = d.magnitude;
             if (dist <= SourceClearance + .1f) return 0f;
             int n = Physics.RaycastNonAlloc(from, d / dist, Hits, dist - SourceClearance, Room.Mask, QueryTriggerInteraction.Ignore);
+            return Along(Hits, n, from, to, ref block, out first, out firstCollider);
+        }
+
+        // The hits on one line, nearest first, as layers. A wall in Valheim is several colliders (the
+        // wall, a beam, a pole) a few centimetres apart: one wall all the same, so anything built
+        // within 0.6 m of the last wall counted is part of it.
+        private const float SameWall = .6f;
+        internal static float Along(RaycastHit[] hits, int n, Vector3 from, Vector3 to, ref Block b, out float first, out Collider firstCollider)
+        {
+            first = float.MaxValue; firstCollider = null;
+            for (int i = 1; i < n; i++) // nearest first (Unity returns them in no order)
+            {
+                RaycastHit h = hits[i];
+                int k = i - 1;
+                while (k >= 0 && hits[k].distance > h.distance) { hits[k + 1] = hits[k]; k--; }
+                hits[k + 1] = h;
+            }
+            b.LastWall = -10f;
             float occ = 0f;
             for (int i = 0; i < n; i++)
             {
-                if (Hits[i].collider == null) continue;
-                float w = Counts(Hits[i].collider, to);
+                Collider c = hits[i].collider;
+                if (c == null) continue;
+                float w = Counts(c, to);
                 if (w <= 0f) continue;
+                if (!Layer(c, w, from, to, hits[i].distance, ref b)) continue;
                 occ += w;
-                Layer(Hits[i].collider, w, from, to, ref block);
-                if (Hits[i].distance < first)
-                {
-                    first = Hits[i].distance;
-                    firstCollider = Hits[i].collider;
-                }
+                if (hits[i].distance < first) { first = hits[i].distance; firstCollider = c; }
             }
             return occ;
         }
@@ -230,27 +268,9 @@ namespace WiresAcoustics
             if (Weights.TryGetValue(id, out float w)) return w;
             if (Weights.Count > 8192) Weights.Clear();
             WearNTear part = c.GetComponentInParent<WearNTear>();
-            if (part != null && Room.Structural(c))
-            {
-                // Approximate MATERIAL TRANSMISSION, not reflection
-                // absorption: stone, marble and iron block more than wood.
-                // Wood is anchored at one full wall, as before materials
-                // were told apart (0.68 let outside sounds, birds and
-                // seagulls, through plank walls far too clearly; a real
-                // plank wall takes off well over the 4 dB of one wall here).
-                switch (part.m_materialType)
-                {
-                    case WearNTear.MaterialType.Marble: w = 1.40f; break;
-                    case WearNTear.MaterialType.Stone:
-                    case WearNTear.MaterialType.Ashstone: w = 1.25f; break;
-                    case WearNTear.MaterialType.Iron: w = 1.35f; break;
-                    case WearNTear.MaterialType.Ancient: w = 1.10f; break;
-                    case WearNTear.MaterialType.Ice: w = 1.00f; break;
-                    case WearNTear.MaterialType.HardWood:
-                    case WearNTear.MaterialType.Timberwood: w = 1.10f; break;
-                    default: w = 1.00f; break; // wood
-                }
-            }
+            // How much a layer counts toward "something's in the way" (routing, the reverb boost, the
+            // debug log). How much it lets through is LossOf's job, by material; here a wall is a wall.
+            if (part != null && Room.Structural(c)) w = 1f;
             else if (part != null) w = .25f;
             else if (Room.IsTree(c)) w = .1f; // a trunk shadows a sound a little, it doesn't hide it
             else if (c.GetComponentInParent<Heightmap>() != null || c.gameObject.layer == LayerMask.NameToLayer("static_solid")) w = 1f;
@@ -286,20 +306,27 @@ namespace WiresAcoustics
         //  - doors: a solid-core wood door, STC 30 to 35 (Commercial Acoustics), the lower end;
         //  - stone and marble: 230 mm brickwork plastered both sides, STC 55 (Engineering ToolBox), the
         //    heaviest measured;
-        //  - iron and ice: nothing measured found, so the mass law: TL = 20 lg(m f) - 47.
-        // Per wall: a gain (its loss at 125 Hz) and a low-pass taking the rest of its loss at 2 kHz.
+        //  - iron and ice: nothing measured found, so the mass law: TL = 20 lg(m f) - 48 (random
+        //    incidence; Warnock, NRC Canadian Building Digest 239, 1985).
+        // Those measured losses are for real walls between real rooms: through two or three of them a
+        // sound was simply gone (a hearth in the next house at -120 dB). Here the first wall a sound
+        // comes through takes 12 to 22 dB, by how heavy it is (15 for a plank wall, 22 for stone), and
+        // each wall after it 6 dB more and duller, so the next room is muffled, not silent. A choice
+        // for the game, not from a source; the measurements above only set which walls are heavier.
+        // Each wall's low-pass takes the measured shape's extra loss from 125 Hz to 2 kHz.
         internal const float WallCut = 318.3f; // 2000 / sqrt(10^1.6 - 1): the measured shape's extra 16 dB from 125 Hz to 2 kHz
         private const float MassCut = 50f;
-        internal static float MassLaw(float m) => m <= 0f ? 1f : Mathf.Min(1f, Mathf.Pow(10f, 47f / 20f) / MassCut / m);
+        internal static float MassLaw(float m) => m <= 0f ? 1f : Mathf.Min(1f, Mathf.Pow(10f, 48f / 20f) / MassCut / m);
 
-        private struct Loss { internal float Low, Mid, Cut; internal bool Wall; }
+        private struct Loss { internal float First, Cut; internal bool Wall; }
+        private const float NextWall = .5f; // each wall after the first: 6 dB
         private static readonly System.Collections.Generic.Dictionary<int, Loss> Losses = new System.Collections.Generic.Dictionary<int, Loss>();
         private static Loss LossOf(Collider c)
         {
             int id = c.GetInstanceID();
             if (Losses.TryGetValue(id, out Loss l)) return l;
             if (Losses.Count > 8192) Losses.Clear();
-            l = new Loss { Low = 1f, Mid = 1f, Cut = 22000f };
+            l = new Loss { First = 1f, Cut = 22000f };
             WearNTear part = c.GetComponentInParent<WearNTear>();
             if (part != null && Room.Structural(c) && part.name.IndexOf("grate", System.StringComparison.OrdinalIgnoreCase) < 0)
             {
@@ -320,38 +347,47 @@ namespace WiresAcoustics
                         }
                         break;
                 }
-                if (stc > 0f)
-                    l = new Loss { Low = Mathf.Pow(10f, -(stc - 9f) / 20f), Mid = Mathf.Pow(10f, -(stc - 1f) / 20f), Cut = WallCut, Wall = true };
-                else
-                {
-                    float m = Mass(c);
-                    float g = MassLaw(m);
-                    l = new Loss { Low = g, Mid = g * MassCut / 500f, Cut = MassCut, Wall = true };
-                }
+                // how heavy, as the measured loss at 125 Hz, into the game's 12 to 22 dB
+                float lowDb = stc > 0f ? stc - 9f : -20f * Mathf.Log10(Mathf.Max(1e-6f, MassLaw(Mass(c))));
+                float firstDb = Mathf.Clamp(15f + .5f * (lowDb - 24f), 12f, 22f);
+                l = new Loss { First = Mathf.Pow(10f, -firstDb / 20f), Cut = WallCut, Wall = true };
             }
             Losses[id] = l;
             return l;
         }
 
         internal static bool IsWall(Collider c) => LossOf(c).Wall;
+        // A wall's loss as the first one a sound comes through (amplitude), 0 if it isn't a wall.
+        internal static float FirstWall(Collider c) { Loss l = LossOf(c); return l.Wall ? l.First : 0f; }
 
         // What one line from the listener to a sound runs through.
         internal struct Block
         {
             internal float Soft;      // rocks, furniture, trees: the old weights (sound bends round them)
-            internal float Through;   // walls (amplitude at 125 Hz, LossOf)
+            internal float Through;   // walls (amplitude, LossOf: the first one, then 6 dB each)
+            internal int Walls;       // how many walls counted
+            internal float LastWall;  // how far along the line the last one was (SameWall)
             internal float ThroughCut; // and the lowest of their low-passes
             internal bool Terrain;    // the ground is in the way: a hill, worked out over its ridge
             internal float BendGain, BendCut; // the ridge's loss (Ridge)
-            internal static Block Clear => new Block { Through = 1f, ThroughCut = 22000f, BendGain = 1f, BendCut = 22000f };
+            internal static Block Clear => new Block { Through = 1f, ThroughCut = 22000f, BendGain = 1f, BendCut = 22000f, LastWall = -10f };
         }
 
         // One hit: a wall by what it measures, the ground marked for the ridge, anything else (a rock,
         // furniture, a trunk) as something the sound goes over and round (Diffraction.RoundObstacle).
-        internal static void Layer(Collider c, float w, Vector3 from, Vector3 to, ref Block b)
+        // False: part of the wall already counted.
+        internal static bool Layer(Collider c, float w, Vector3 from, Vector3 to, float at, ref Block b)
         {
             Loss l = LossOf(c);
-            if (l.Wall) { b.Through *= l.Low; b.ThroughCut = Mathf.Min(b.ThroughCut, l.Cut); }
+            if (l.Wall)
+            {
+                if (at - b.LastWall < SameWall) return false;
+                b.LastWall = at;
+                b.Walls++;
+                b.Through *= b.Walls == 1 ? l.First : NextWall;
+                b.ThroughCut = b.Walls == 1 ? Mathf.Min(b.ThroughCut, l.Cut) : Mathf.Max(200f, b.ThroughCut * .7f);
+                return true;
+            }
             else if (IsGround(c)) { if (!b.Terrain) { b.Terrain = true; b.Soft += w; } } // undone by Ridge
             else if (Diffraction.RoundObstacle(c.bounds, from, to, out float g, out float cut))
             {
@@ -359,6 +395,7 @@ namespace WiresAcoustics
                 b.BendCut = Mathf.Min(b.BendCut, cut);
             }
             else b.Soft += w; // you or the sound inside its box: the old weight
+            return true;
         }
 
         // A hill in the way: sound goes over it, not through, so it's a barrier with the ridge as its
@@ -414,18 +451,6 @@ namespace WiresAcoustics
                 gain *= Mathf.Pow(b.BendGain, s);
                 cutoff = Mathf.Min(cutoff, Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(b.BendCut), k)));
             }
-        }
-
-        // How much of a sound gets through what a ray hit (amplitude at 500 Hz, no strength applied):
-        // a wall by what it measures, furniture and props mostly (sound bends round them), terrain and
-        // rock nothing, a tree or nothing at all everything. For the outside heard indoors (Room).
-        internal static float Pass(Collider c)
-        {
-            if (c == null || Room.IsTree(c)) return 1f;
-            Loss l = LossOf(c);
-            if (l.Wall) return l.Mid;
-            if (c.GetComponentInParent<WearNTear>() != null) return Mathf.Lerp(Gain[0], Gain[1], .25f);
-            return 0f;
         }
 
         // kg per square metre of a building piece (iron and ice walls, the mass law): its material's
@@ -502,6 +527,7 @@ namespace WiresAcoustics
                 f.Placed = placed;
                 Budget.Note(f, (f.transform.position - listener).magnitude);
                 if (!placed) { f.Set(1f, 22000f, false); f.AirCutoff = 22000f; continue; }
+                f.InWater = Underwater.ListenerBelow && Underwater.Below(f.transform.position);
                 Batch.Enqueue(f, f.transform.position, Underwater.Muffles(f.transform.position, f.transform), false);
             }
         }
@@ -524,7 +550,7 @@ namespace WiresAcoustics
             float now = Time.time;
             foreach (AcousticFilter f in AcousticFilter.Live)
             {
-                if (f == null || f.Source == null || f.Voice || f.Cue || f.Kind == AcousticFilter.Kinds.Ocean || f.Kind == AcousticFilter.Kinds.Ambient) continue;
+                if (f == null || f.Source == null || f.Voice || f.Cue || f.Kind == AcousticFilter.Kinds.Ocean || f.Kind == AcousticFilter.Kinds.Ambient || f.Kind == AcousticFilter.Kinds.Outside) continue;
                 AudioSource src = f.Source;
                 if (!src.isPlaying || src.spatialBlend < .5f) continue;
                 if (f.Kind == AcousticFilter.Kinds.Other && hrtf && !f.Hrtf) { f.TakePanning(src.spread); f.Hrtf = true; }
@@ -544,6 +570,7 @@ namespace WiresAcoustics
                 if (f.Kind == AcousticFilter.Kinds.Sfx && src.loop && !f.NativeReverbLoop)
                     s_missingNativeLoopRechecks++;
                 Vector3 at = f.transform.position;
+                f.InWater = Underwater.ListenerBelow && Underwater.Below(at);
                 Batch.Enqueue(f, at, Underwater.Muffles(at, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
             }
         }

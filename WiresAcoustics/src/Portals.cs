@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Unity.Collections;
 using UnityEngine;
 
 namespace WiresAcoustics
@@ -11,28 +10,29 @@ namespace WiresAcoustics
     // around it (the hit distance of the neighbouring rays that did hit), in the average direction of
     // its rays. Its share of the rays is how big it looks from where you are.
     //
-    // Paths through them (diffraction, as in Vercidium's ray traced audio): a sound with walls in the
-    // way is also tried through the biggest openings: listener -> opening (clear, that's how the
-    // opening was found) -> sound. The path's walls are what lies between the opening and the sound,
-    // plus a bend penalty (sound loses energy turning a corner: 0 straight on, 0.3 walls at 90
-    // degrees, 0.6 turning back) and the extra distance (inverse distance law: direct / path length).
-    // The quieter of direct and best path wins; through an opening the sound is heard from the
-    // opening (the HRTF places it there).
+    // Paths through them (as in Vercidium's ray traced audio): a sound with walls in the way is also
+    // tried through the biggest openings: listener -> opening (clear, that's how the opening was
+    // found) -> sound. The path's loss is the walls between the opening and the sound, the bend
+    // round the opening's nearest edge (Diffraction.Opening) and the extra distance (inverse
+    // distance law: direct / path length). The direct sound and the best way round add by energy,
+    // and where it's heard from follows the precedence effect (Batch).
     internal static class Portals
     {
-        internal struct Portal { internal Vector3 Point, Dir; internal float Share, Dist; }
+        internal struct Portal { internal Vector3 Point, Dir; internal float Share, Dist, Radius; }
         internal static readonly List<Portal> List = new List<Portal>(4);
         internal const int Routes = 2;            // openings tried per blocked sound
         private const int Neighbours = 6;
         private const float MinEnclosure = .35f;  // more open than this: everything is open anyway
         private static int[][] s_nb;
         private static readonly bool[] Escaped = new bool[64];
+        private const float RaySolidAngle = 4f * Mathf.PI / 64f; // each room ray's share of all round
         private static readonly int[] Label = new int[64];
         private static readonly int[] Stack = new int[64];
         private static readonly List<Portal> Found = new List<Portal>(16);
 
-        // From the room measurement (every 0.2 s).
-        internal static void Find(Vector3 from, Vector3[] dirs, NativeArray<RaycastHit> hits, float enclosure, float meanPath)
+        // From the room measurement (every 0.2 s), with its gaps (Room.Out: out through an opening or
+        // to the sky; a lone seam between pieces isn't one).
+        internal static void Find(Vector3 from, Vector3[] dirs, float enclosure, float meanPath)
         {
             List.Clear();
             if (enclosure < MinEnclosure) return;
@@ -43,7 +43,7 @@ namespace WiresAcoustics
             {
                 bool up = dirs[i].y > -.05f;
                 if (up) level++;
-                Escaped[i] = up && hits[i].collider == null;
+                Escaped[i] = up && Room.Out(i);
                 Label[i] = -1;
             }
             Found.Clear();
@@ -63,12 +63,15 @@ namespace WiresAcoustics
                     foreach (int k in s_nb[r])
                     {
                         if (Escaped[k]) { if (Label[k] < 0) { Label[k] = i; Stack[top++] = k; } }
-                        else if (hits[k].collider != null) { wallDist += hits[k].distance; walls++; }
+                        else if (Room.Hit[k]) { wallDist += Room.Dist[k]; walls++; }
                     }
                 }
                 Vector3 dir = sum.normalized;
                 float dist = walls > 0 ? wallDist / walls : meanPath;
-                Found.Add(new Portal { Dir = dir, Dist = dist, Point = from + dir * dist, Share = (float)count / Mathf.Max(1, level) });
+                // as wide as it looks: its rays' solid angle as a cone, its edge that far off at its distance
+                float cosHalf = Mathf.Clamp(1f - count * RaySolidAngle / (2f * Mathf.PI), -1f, 1f);
+                float radius = dist * Mathf.Min(4f, Mathf.Tan(Mathf.Acos(cosHalf)));
+                Found.Add(new Portal { Dir = dir, Dist = dist, Point = from + dir * dist, Share = (float)count / Mathf.Max(1, level), Radius = radius });
             }
             Found.Sort((a, b) => b.Share.CompareTo(a.Share));
             for (int i = 0; i < Found.Count && i < 4; i++) List.Add(Found[i]);
@@ -100,22 +103,6 @@ namespace WiresAcoustics
             float direct = (sound - listener).magnitude;
             float path = (p.Point - listener).magnitude + (sound - p.Point).magnitude;
             return Mathf.Min(1f, direct / Mathf.Max(.01f, path)); // the longer way spreads the sound further (1/r)
-        }
-
-        // Positionless ambience: how much of the outside comes in (openings, bigger and nearer count
-        // more) and from which way.
-        internal static float Openness(out Vector3 dir)
-        {
-            float o = 0f;
-            dir = Vector3.zero;
-            foreach (Portal p in List)
-            {
-                float w = p.Share / (1f + p.Dist / 3f);
-                o += w;
-                dir += p.Dir * w;
-            }
-            if (dir.sqrMagnitude > 1e-6f) dir.Normalize();
-            return Mathf.Clamp01(o * 2.5f);
         }
 
         internal static string Summary()

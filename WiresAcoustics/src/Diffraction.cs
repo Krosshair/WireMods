@@ -72,6 +72,41 @@ namespace WiresAcoustics
             return true;
         }
 
+        // Through an opening (a door, a window) seen from the listener: a disc round its middle, facing
+        // you, as wide as the opening looks (Portals). Sound bends round its nearest edge, not round
+        // its middle. If the straight line from you to the sound passes through it, the sound isn't
+        // in the edge's shadow and loses only what Kurze and Anderson give for the lit side: from
+        // 5 dB right at the edge to nothing from N = 0.2 on (N from how far the line clears it).
+        internal static void Opening(Vector3 listener, Vector3 middle, Vector3 facing, float radius, Vector3 sound, out float gain, out float cutoff)
+        {
+            Vector3 d = sound - listener;
+            float along = Vector3.Dot(d, facing), at = Vector3.Dot(middle - listener, facing);
+            Vector3 q = along > 1e-4f ? listener + d * Mathf.Clamp01(at / along) : sound;
+            Vector3 off = Vector3.ProjectOnPlane(q - middle, facing);
+            float o = off.magnitude;
+            Vector3 side = o > 1e-4f ? off / o : Vector3.ProjectOnPlane(Vector3.up, facing);
+            if (side.sqrMagnitude < .25f) side = Vector3.Cross(facing, Vector3.right);
+            side.Normalize();
+            Vector3 edge = middle + side * radius;
+            float delta = Mathf.Max(0f, (edge - listener).magnitude + (sound - edge).magnitude - d.magnitude);
+            bool lit = along > 1e-4f && at < along && o <= radius;
+            float low = lit ? Lit(delta, 125f) : Loss(delta, 125f);
+            float mid = lit ? Lit(delta, 2000f) : Loss(delta, 2000f);
+            gain = Mathf.Pow(10f, -low / 20f);
+            float r = Mathf.Pow(10f, (mid - low) / 10f) - 1f;
+            cutoff = r <= 1e-4f ? 22000f : Mathf.Clamp(2000f / Mathf.Sqrt(r), 200f, 22000f);
+        }
+
+        // Kurze and Anderson on the lit side of an edge (a negative Fresnel number, as |N| here).
+        private static float Lit(float delta, float f)
+        {
+            float n = 2f * delta * f / Sound;
+            if (n >= .2f) return 0f;
+            if (n <= 1e-6f) return 5f;
+            float x = Mathf.Sqrt(2f * Mathf.PI * n);
+            return Mathf.Max(0f, 5f + 20f * Mathf.Log10(x / Mathf.Tan(x)));
+        }
+
         // Round the edge at "edge" from the listener to the sound.
         internal static void Round(Vector3 listener, Vector3 edge, Vector3 sound, out float gain, out float cutoff)
         {

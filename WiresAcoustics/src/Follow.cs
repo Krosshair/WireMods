@@ -8,8 +8,7 @@ namespace WiresAcoustics
     // leaves them there (a creature's idle grunts and alert roar, hits, jumps, deaths): a troll's
     // roar stays where it started while the troll walks on. Here a sound spawned for a creature (the
     // effect's parent, or the creature whose idle/alert sound it is) keeps its place relative to it
-    // until it ends or its owner is gone; its voice (idle and alert calls) comes out of its front
-    // (Directions: duller from behind it). The same for a character's own item sounds (equipping,
+    // until it ends or its owner is gone. The same for a character's own item sounds (equipping,
     // using, picking up, dropping: Equip says whose they are), and for a death: the wail follows the
     // falling body (the ragdoll the game spawns with it). Sounds the game already attaches or follows
     // are left as they are. Only sounds known to be the owner's follow it: a sound made by something
@@ -19,6 +18,7 @@ namespace WiresAcoustics
     {
         private struct Item { internal Transform Sound, Owner; internal Vector3 Offset; }
         private static readonly List<Item> Items = new List<Item>(32);
+        private static readonly List<AcousticFilter> Filters = new List<AcousticFilter>(4); // reused: effects are made many times a second
         internal static Transform Owner; // set around the game's idle, alert and equip sounds (no parent passed)
 
         [HarmonyPatch(typeof(EffectList), nameof(EffectList.Create))]
@@ -29,6 +29,15 @@ namespace WiresAcoustics
                 if (!Plugin.Enabled.Value || __result == null) return;
                 if (PlayerSounds.IsCue(__instance)) { PlayerSounds.MarkCue(__result); return; }
                 Transform given = baseParent != null ? baseParent : Owner;
+                // a tree coming down: its fall sound is made at the stump, then the log is spawned
+                // (TreeBase.SpawnLog, right after); the sound goes with the log (Felled)
+                if (baseParent != null && baseParent.GetComponent<TreeBase>() is TreeBase tree && ReferenceEquals(__instance, tree.m_destroyedEffect))
+                {
+                    s_falling.Clear();
+                    foreach (GameObject go in __result)
+                        if (go != null && go.transform.parent == null && go.GetComponent<ZSFX>() != null) s_falling.Add(go.transform);
+                    s_fallFrame = Time.frameCount;
+                }
                 Spots.Place(__instance, __result, basePos, baseParent, ref given);
                 // a death: the game spawns the body (a ragdoll) with the death sounds; the wail
                 // comes from the falling body, not from where the creature stood
@@ -44,7 +53,10 @@ namespace WiresAcoustics
                 if (given != null)
                     foreach (GameObject go in __result)
                         if (go != null)
-                            foreach (AcousticFilter a in go.GetComponentsInChildren<AcousticFilter>(true)) { a.ShapeRoot = given; a.AreaKnown = false; }
+                        {
+                            go.GetComponentsInChildren(true, Filters);
+                            foreach (AcousticFilter a in Filters) { a.ShapeRoot = given; a.AreaKnown = false; }
+                        }
                 // a chest opens and closes at its lid, not at its base
                 if (given != null && baseParent == null && given.GetComponent<Container>() != null && Area.TopOf(given, out Vector3 lid))
                     foreach (GameObject go in __result)
@@ -59,25 +71,49 @@ namespace WiresAcoustics
                     if (go.GetComponent<UnityEngine.Animations.ParentConstraint>() != null) continue; // the game's own follow
                     if (Tracked(go.transform)) continue; // already following its bone (Spots)
                     Items.Add(new Item { Sound = go.transform, Owner = owner, Offset = owner.InverseTransformPoint(go.transform.position) });
-                    // facing: only a creature's voice (its idle and alert calls) comes out of its mouth;
-                    // its steps, hits and attacks come from wherever they happen
-                    if (Voice && go.GetComponent<AcousticFilter>() is AcousticFilter f) f.Facing = owner;
                 }
+            }
+        }
+
+        private static readonly List<Transform> s_falling = new List<Transform>(4);
+        private static int s_fallFrame = -1;
+
+        // The log of a tree just cut down: the tree's fall sound (its creaking and rushing, made at the
+        // stump) comes from the falling trunk instead, and follows it down. The log is a networked
+        // object, so the sound follows it by position (Track), never attached to it.
+        [HarmonyPatch(typeof(TreeLog), "Awake")]
+        private static class Felled
+        {
+            private static void Postfix(TreeLog __instance)
+            {
+                if (s_falling.Count == 0) return;
+                if (s_fallFrame == Time.frameCount && Plugin.Enabled.Value && __instance != null)
+                {
+                    Transform log = __instance.transform;
+                    foreach (Transform t in s_falling)
+                    {
+                        if (t == null) continue;
+                        t.position = log.position;
+                        Track(t, log);
+                        foreach (AcousticFilter a in t.GetComponentsInChildren<AcousticFilter>(true)) { a.ShapeRoot = log; a.AreaKnown = false; }
+                    }
+                }
+                s_falling.Clear();
             }
         }
 
         [HarmonyPatch(typeof(BaseAI), "DoIdleSound")]
         private static class Idle
         {
-            private static void Prefix(BaseAI __instance) { Owner = __instance.transform; Voice = true; }
-            private static void Finalizer() { Owner = null; Voice = false; }
+            private static void Prefix(BaseAI __instance) { Owner = __instance.transform; }
+            private static void Finalizer() { Owner = null; }
         }
 
         [HarmonyPatch(typeof(BaseAI), "SetAlerted")]
         private static class Alerted
         {
-            private static void Prefix(BaseAI __instance) { Owner = __instance.transform; Voice = true; }
-            private static void Finalizer() { Owner = null; Voice = false; }
+            private static void Prefix(BaseAI __instance) { Owner = __instance.transform; }
+            private static void Finalizer() { Owner = null; }
         }
 
         // A chest's open and close sounds are made at the chest with no owner given, so they had no
@@ -94,8 +130,6 @@ namespace WiresAcoustics
             }
             private static void Finalizer(bool __state) { if (__state) Owner = null; }
         }
-
-        private static bool Voice; // inside a creature's idle or alert call
 
         // Only owners that move (creatures, players, ships, carts): a hit on a tree or a wall stays put
         // without a per-frame follow. Cached per owner.

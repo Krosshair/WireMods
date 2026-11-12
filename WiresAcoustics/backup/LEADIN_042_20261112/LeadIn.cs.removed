@@ -1,0 +1,118 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace WiresAcoustics
+{
+    // Many of the game's sound effects (wood and stone footsteps most of all) were trimmed so they
+    // start in the middle of a waveform: the first sample is up to 90% of the clip's peak, so every
+    // play jumps from silence straight there, a click at the start. Here such a clip is moved a
+    // few milliseconds later inside its own length (the clips end in digital silence, so nothing
+    // audible falls off the end) and the freed start rises smoothly to the first sample. The sound
+    // itself isn't changed: no filtering, no smoothing, every sample of it plays as shipped.
+    // Done in the game's own clip, once, the first time it plays. The game unloads unused assets
+    // now and then and a clip comes back from disk as it ships, with the same instance id, so each
+    // play compares its first few samples with what they should be and redoes it if needed.
+    // Looping clips are left alone.
+    internal static class LeadIn
+    {
+        private const float MaxSeconds = 3f;
+
+        private sealed class State
+        {
+            internal bool Moved;
+            internal float[] Head; // the first samples after the move
+        }
+
+        private static readonly Dictionary<int, State> Clips = new Dictionary<int, State>();
+        private static float[] s_check = new float[0];
+        private static int s_moved, s_redone;
+
+        // the array overloads by reflection (the compiler would bind the Span ones, which this build can't reference)
+        private static readonly System.Reflection.MethodInfo GetData =
+            typeof(AudioClip).GetMethod("GetData", new[] { typeof(float[]), typeof(int) });
+        private static readonly System.Reflection.MethodInfo SetData =
+            typeof(AudioClip).GetMethod("SetData", new[] { typeof(float[]), typeof(int) });
+
+        // Main thread, as the game starts a sound effect (Travel).
+        internal static void Prepare(AudioSource src)
+        {
+            if (!Plugin.Enabled.Value || src == null || src.loop || GetData == null || SetData == null) return;
+            AudioClip clip = src.clip;
+            if (clip == null || clip.loadState != AudioDataLoadState.Loaded || clip.loadType != AudioClipLoadType.DecompressOnLoad) return;
+            int ch = clip.channels, frames = clip.samples;
+            if (ch < 1 || ch > 8 || frames < 1024 || frames > clip.frequency * MaxSeconds) return;
+            int id = clip.GetInstanceID();
+            if (Clips.TryGetValue(id, out State st))
+            {
+                if (!st.Moved || StillMoved(clip, st)) return;
+                s_redone++; // the game loaded it again from disk
+            }
+            else
+            {
+                if (Clips.Count > 4096) Clips.Clear();
+                st = new State();
+                Clips[id] = st;
+            }
+            int n = frames * ch;
+            float[] data = new float[n]; // once per clip (GetData reads exactly the array's length)
+            if (!(bool)GetData.Invoke(clip, new object[] { data, 0 })) return;
+            int lead = Move(data, ch, frames, clip.frequency);
+            st.Moved = lead > 0;
+            if (!st.Moved) return;
+            SetData.Invoke(clip, new object[] { data, 0 });
+            st.Head = new float[Mathf.Min(n, 16 * ch)];
+            System.Array.Copy(data, lead * ch, st.Head, 0, st.Head.Length);
+            s_moved++;
+            if (Plugin.DebugLog.Value)
+                Plugin.Log.LogInfo("[lead-in] " + clip.name + ": start moved " + (1000f * lead / clip.frequency).ToString("F1") + " ms [" + s_moved + " clips, " + s_redone + " redone]");
+        }
+
+        // Whether the clip still holds the moved version (the samples after the lead-in match).
+        private static bool StillMoved(AudioClip clip, State st)
+        {
+            if (st.Head == null) return true;
+            int ch = clip.channels, lead = Mathf.Max(8, clip.frequency * 3 / 1000);
+            // the moved head starts somewhere within the first 3 ms; read from 0 and look for it
+            int len = st.Head.Length + lead * ch;
+            if (len > clip.samples * ch) return true;
+            if (s_check.Length != len) s_check = new float[len];
+            float[] buf = s_check;
+            if (!(bool)GetData.Invoke(clip, new object[] { buf, 0 })) return true;
+            for (int off = 0; off + st.Head.Length <= len; off += ch)
+            {
+                bool same = true;
+                for (int k = 0; k < st.Head.Length; k++) if (Mathf.Abs(buf[off + k] - st.Head[k]) > 1e-4f) { same = false; break; }
+                if (same) return off > 0; // found later than the start: still moved
+            }
+            return false;
+        }
+
+        // Moves the clip later inside its own length and lets the freed start rise from silence
+        // to the first sample. Only as far as the end is digital silence; under 1 ms it's left.
+        private static int Move(float[] data, int ch, int frames, int rate)
+        {
+            int n = frames * ch;
+            float peak = 0f, first = 0f;
+            for (int i = 0; i < n; i++) peak = Mathf.Max(peak, Mathf.Abs(data[i]));
+            for (int c = 0; c < ch; c++) first = Mathf.Max(first, Mathf.Abs(data[c]));
+            if (first <= .02f * peak || first <= 1e-3f) return 0;
+            int lead = Mathf.Max(8, rate * 3 / 1000), quiet = 0;
+            float floor = peak * 1e-4f;
+            for (int i = frames - 1; i >= 0 && quiet < lead; i--, quiet++)
+            {
+                bool silent = true;
+                for (int c = 0; c < ch; c++) if (Mathf.Abs(data[i * ch + c]) > floor) { silent = false; break; }
+                if (!silent) break;
+            }
+            lead = Mathf.Min(lead, quiet);
+            if (lead < rate / 1000) return 0;
+            System.Array.Copy(data, 0, data, lead * ch, (frames - lead) * ch);
+            for (int i = 0; i < lead; i++)
+            {
+                float g = .5f - .5f * Mathf.Cos(Mathf.PI * (i + 1) / (lead + 1));
+                for (int c = 0; c < ch; c++) data[i * ch + c] = data[lead * ch + c] * g;
+            }
+            return lead;
+        }
+    }
+}
