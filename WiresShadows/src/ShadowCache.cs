@@ -19,7 +19,6 @@ namespace WiresShadows
             internal Light Light;
             internal LightLod Lod;
             internal float NativeCacheRange = 1f; // normalized range of the actually rendered native-depth map
-            internal float StagedNativeRange;
             internal bool StagedNativeReady;
             internal Vector3 PublishedCenterBeforeStage;
             internal int Slot = -1;
@@ -68,6 +67,10 @@ namespace WiresShadows
             internal int WantTier;       // map size it needs on screen (Tiers)
             internal int RenderTier, RenderCube = -1; // where the render in progress goes (Tiers)
             internal float RenderRange;
+            internal int CasterHash, PendingHash; // what cast into its map when rendered (Keep)
+            internal int HashVersion = -1;        // WorldVersion when CasterHash was taken
+            internal float WaitSince = -1f, WaitUntil; // waiting for its area to load in (AreaWait)
+            internal Vector3 HashCenter;
             internal readonly List<Animator> Animators = new List<Animator>();
             internal readonly List<AnimatorCullingMode> AnimatorModes = new List<AnimatorCullingMode>();
         }
@@ -112,8 +115,6 @@ namespace WiresShadows
         // full-size slot, redrawn every frame, only for the cube faces they're
         // in and only for lights whose reach is on screen.
         private RenderTexture _dynMaps;
-        private RenderTexture _dynFace;
-        private Camera _dynCamera;
         private readonly float[] _dynActive = new float[MaxSlots]; // 1 = the slot's moving map is in use
         private RenderTexture _farDynMaps;
         private static readonly int FarDynMapsId = Shader.PropertyToID("_WireFarDynMaps");
@@ -166,138 +167,6 @@ namespace WiresShadows
             _dynPhysicalUniform[sl] = -1f;
             _dynPhysicalDirty = true;
         }
-        private bool GrowDynPool(bool near, int required)
-        {
-            int oldCapacity = near ? _dynNearCapacity : _dynFarCapacity;
-            int limit = near ? Mathf.Min(_near, _nearMovingCap) : Mathf.Min(Mathf.Max(1, _slots.Length - _near), _farMovingCap);
-            int capacity = Mathf.Min(limit, Mathf.Max(required, oldCapacity * 2));
-            if (capacity <= oldCapacity) return false;
-            if (_builtNativeOnly)
-            {
-                // no colour array to grow: the native depth array follows the capacity
-                // (EnsureNativeMovingTier copies the cubes in use over)
-                if (near) _dynNearCapacity = capacity; else _dynFarCapacity = capacity;
-                Plugin.Note("[sparse-moving] " + (near ? "near" : "far") + " moving pool grew to " + capacity + " cubes.");
-                return true;
-            }
-            RenderTexture old = near ? _dynMaps : _farDynMaps;
-            var next = new RenderTexture(old.width, old.height, 0, RenderTextureFormat.RGHalf)
-            {
-                dimension = TextureDimension.CubeArray, volumeDepth = 6 * capacity,
-                useMipMap = false, filterMode = FilterMode.Point,
-                name = near ? "WireDynShadowMapsSparse" : "WireFarDynShadowMapsSparse"
-            };
-            if (!next.Create())
-            {
-                next.Release();
-                Plugin.Log.LogWarning("Could not grow sparse moving-shadow pool.");
-                return false;
-            }
-            // Whole-face copies retain all cached silhouettes exactly. Growth
-            // occurs only on an actual new moving-shadow light, not every frame.
-            int[] owners = near ? _dynNearOwners : _dynFarOwners;
-            for (int i = 0; i < oldCapacity; i++)
-            {
-                int logical = owners[i];
-                if (logical < 0 || _dynFacesLast[logical] == 0) continue;
-                for (int face = 0; face < 6; face++)
-                    Graphics.CopyTexture(old, i * 6 + face, 0, next, i * 6 + face, 0);
-            }
-            if (near)
-            {
-                _dynMaps = next;
-                _dynNearCapacity = capacity;
-                Shader.SetGlobalTexture(DynMapsId, next);
-            }
-            else
-            {
-                _farDynMaps = next;
-                _dynFarCapacity = capacity;
-                Shader.SetGlobalTexture(FarDynMapsId, next);
-            }
-            old.Release();
-            Destroy(old);
-            Plugin.Note("[sparse-moving] " + (near ? "near" : "far") +
-                " moving pool grew to " + capacity + " cubes.");
-            return true;
-        }
-        // The pools only ever grow (a busy base, a big fight). On a teleport or
-        // spawn, behind the loading screen, drop every moving map and start the
-        // pools at their initial size again: whatever is in range at the
-        // destination is redrawn from scratch by the normal moving pass (the
-        // same path as a light's first moving shadow), growing only as needed.
-        private static bool _shrinkPools;
-        private void ShrinkMovingPools()
-        {
-            if (_dynMaps == null || _farDynMaps == null) return;
-            int nearCap = InitialNear, farCap = InitialFar;
-            if (_dynNearCapacity <= nearCap && _dynFarCapacity <= farCap) return;
-            // native-only: the colour arrays are the tiny bound ones and stay as they are
-            int nearCubes = _builtNativeOnly ? 1 : nearCap, farCubes = _builtNativeOnly ? 1 : farCap;
-            var near = new RenderTexture(_dynMaps.width, _dynMaps.height, 0, RenderTextureFormat.RGHalf)
-            {
-                dimension = TextureDimension.CubeArray, volumeDepth = 6 * nearCubes,
-                useMipMap = false, filterMode = FilterMode.Point, name = "WireDynShadowMaps"
-            };
-            var far = new RenderTexture(_farDynMaps.width, _farDynMaps.height, 0, RenderTextureFormat.RGHalf)
-            {
-                dimension = TextureDimension.CubeArray, volumeDepth = 6 * farCubes,
-                useMipMap = false, filterMode = FilterMode.Point, name = "WireFarDynShadowMaps"
-            };
-            if (!near.Create() || !far.Create())
-            {
-                near.Release(); Destroy(near);
-                far.Release(); Destroy(far);
-                return; // keep the big pools rather than lose moving shadows
-            }
-            // A recorded moving pass would still point at the old pools.
-            _framePending = false;
-            if (_frameCb != null) _frameCb.Clear();
-            int oldNear = _dynNearCapacity, oldFar = _dynFarCapacity;
-            for (int sl = 0; sl < MaxSlots; sl++)
-            {
-                _dynActive[sl] = 0f;
-                _dynFacesLast[sl] = 0;
-                _pickupInvalidFaces[sl] = 0;
-            }
-            System.Array.Clear(_faceHash, 0, _faceHash.Length);
-            ResetDynPool();
-            ReleaseNativeMovingResources(); // reallocated at the new size on next use
-            _dynMaps.Release(); Destroy(_dynMaps);
-            _farDynMaps.Release(); Destroy(_farDynMaps);
-            _dynMaps = near;
-            _farDynMaps = far;
-            _dynNearCapacity = nearCap;
-            _dynFarCapacity = farCap;
-            Shader.SetGlobalTexture(DynMapsId, near);
-            Shader.SetGlobalTexture(FarDynMapsId, far);
-            UploadDynActive();
-            Plugin.Note("[sparse-moving] pools shrunk: near " + oldNear + " -> " + nearCap +
-                ", far " + oldFar + " -> " + farCap + " cubes.");
-        }
-        private int InitialNear => Mathf.Max(1, Mathf.Min(InitialMovingCubes, Mathf.Min(_near, _nearMovingCap)));
-        private int InitialFar => Mathf.Max(1, Mathf.Min(InitialMovingCubes, Mathf.Min(Mathf.Max(1, _slots.Length - _near), _farMovingCap)));
-
-        // Out of a busy spot (a fight, a party at the base) without teleporting, the pools stay at their
-        // biggest. Checked every 10 s: when no more moving maps are in use than the starting size holds,
-        // three checks running (30 s), they go back to it. The few in use are redrawn from scratch the
-        // next frame (as after a teleport). Times are judgement values, no source.
-        private float _nextIdleCheck;
-        private int _idleChecks;
-        private void ShrinkWhenIdle()
-        {
-            if (Time.time < _nextIdleCheck) return;
-            _nextIdleCheck = Time.time + 10f;
-            if (_framePending || _dynNearCapacity <= InitialNear && _dynFarCapacity <= InitialFar) { _idleChecks = 0; return; }
-            int usedNear = 0, usedFar = 0;
-            for (int i = 0; i < _dynNearCapacity; i++) if (_dynNearOwners[i] >= 0) usedNear++;
-            for (int i = 0; i < _dynFarCapacity; i++) if (_dynFarOwners[i] >= 0) usedFar++;
-            if (usedNear > InitialNear || usedFar > InitialFar) { _idleChecks = 0; return; }
-            if (++_idleChecks < 3) return;
-            _idleChecks = 0;
-            ShrinkMovingPools();
-        }
-
         // At the cap, a light nearer the camera takes the moving map of the furthest light holding
         // one, if that one is a quarter further away (so two lights don't keep swapping). Not while a
         // recorded moving pass still points at the cubes.
@@ -351,27 +220,6 @@ namespace WiresShadows
             System.Array.Sort(_farMovingDist, 0, n);
             return _farMovingDist[cap - 1];
         }
-        private void ReserveNewMovingCubes(int requestedNear, int requestedFar)
-        {
-            // This is reached only when an EXISTING moving-caster update
-            // actually needs a cube. No timer or independent update loop.
-            if (requestedNear > 0)
-            {
-                int free = 0;
-                for (int i = 0; i < _dynNearCapacity; i++)
-                    if (_dynNearOwners[i] < 0) free++;
-                if (requestedNear > free)
-                    GrowDynPool(true, _dynNearCapacity + requestedNear - free);
-            }
-            if (requestedFar > 0)
-            {
-                int free = 0;
-                for (int i = 0; i < _dynFarCapacity; i++)
-                    if (_dynFarOwners[i] < 0) free++;
-                if (requestedFar > free)
-                    GrowDynPool(false, _dynFarCapacity + requestedFar - free);
-            }
-        }
         private bool EnsureDynSlot(int sl)
         {
             if (_dynPhysical[sl] >= 0) return true;
@@ -383,8 +231,7 @@ namespace WiresShadows
                 if (owners[i] < 0) { free = i; break; }
             if (free < 0)
             {
-                if (!GrowDynPool(near, capacity + 1)) return false;
-                free = capacity;
+                return false; // all in use: the pool is made at its full size (EvictFurther makes room)
             }
             owners[free] = sl;
             _dynPhysical[sl] = free;
@@ -415,75 +262,12 @@ namespace WiresShadows
 
         private Tracked[] _slots = new Tracked[0];
         private readonly Vector4[] _slotData = new Vector4[MaxSlots];
-        private RenderTexture _maps;
-        private RenderTexture _face;
-        private RenderTexture _farMaps, _farFace;
-        private RenderTexture _faceBack, _farFaceBack, _flatFront, _flatBack, _farFlatFront, _farFlatBack;
         // Re-renders of a light that already has a map go into a spare cube
         // (one per tier), a face per frame, and are copied in whole when done:
         // no hitch, and never a half-updated map.
-        private RenderTexture _stage, _farStage;
-        private readonly Tracked[] _stageOwner = new Tracked[2];
-        private Material _combine, _frontMat, _backMat;
+        private Material _combine;
         private CommandBuffer _staticCb;
 
-        // Untagged-shader parts, drawn with the pass's own shader during the
-        // shadow camera's render (same face matrices).
-        private void DrawUntagged(Tracked t, ref Material mat, Shader shader, bool front)
-        {
-            _staticCb.Clear();
-            if (t.Explicit.Count == 0 && t.ProxyMeshes.Count == 0 && t.Sheets.Count == 0)
-                return;
-            if (mat == null)
-                mat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-            if (_proxyProps == null)
-            {
-                _proxyProps = new MaterialPropertyBlock();
-                _proxyProps.SetFloat("_WireProxy", 1f);
-                _structProps = new MaterialPropertyBlock();
-                _structProps.SetFloat("_WireProxy", 2f);
-            }
-            foreach (Renderer r in t.Sheets)
-            {
-                if (r == null || !r.enabled || !r.gameObject.activeInHierarchy)
-                    continue;
-                r.GetSharedMaterials(Materials);
-                // Wind-bent cloth: the stored sheet is its rest pose and the bent banner
-                // keeps crossing it (self-shadow blotches). Its shadow copy is drawn 15 cm
-                // further from the light, so it can't shade its own surface but still
-                // shades what's behind it.
-                Mesh clothMesh = IsClothRenderer(r) && !r.isPartOfStaticBatch && r.GetComponent<MeshFilter>() is MeshFilter mf
-                    ? mf.sharedMesh : null;
-                Matrix4x4 pushed = clothMesh != null
-                    ? Matrix4x4.Translate((r.bounds.center - t.Center).normalized * ClothPush) * r.localToWorldMatrix
-                    : default;
-                for (int sub = 0; sub < Materials.Count; sub++)
-                    if (Materials[sub] != null)
-                    {
-                        if (clothMesh != null && sub < clothMesh.subMeshCount)
-                            _staticCb.DrawMesh(clothMesh, pushed, ClipMaterial(Materials[sub], shader), sub, 1);
-                        else
-                            _staticCb.DrawRenderer(r, ClipMaterial(Materials[sub], shader), sub, 1);
-                    }
-            }
-            // Colliders only by their backs: they block what's behind a wall,
-            // but never shade the wall's own surface inside them.
-            if (!front)
-                for (int i = 0; i < t.ProxyMeshes.Count; i++)
-                    _staticCb.DrawMesh(t.ProxyMeshes[i], t.ProxyMatrices[i], mat, 0, 0, i < t.NearProxies ? _proxyProps : _structProps);
-            for (int i = 0; i < t.Explicit.Count; i++)
-            {
-                Renderer r = t.Explicit[i];
-                if (r == null || !r.enabled || !r.gameObject.activeInHierarchy)
-                    continue;
-                r.GetSharedMaterials(Materials);
-                int sub = t.ExplicitSub[i];
-                Material orig = sub < Materials.Count ? Materials[sub] : null;
-                bool item = StandVisuals.Contains(r) || DropVisuals.Contains(r);
-                _staticCb.DrawRenderer(r, orig != null ? ClipMaterial(orig, shader, item) : mat, sub, 0);
-            }
-        }
-        private CommandBuffer _combineCb;
 
         private const float ClothPush = 0.15f;
         private static readonly Dictionary<Renderer, bool> ClothRenderers = new Dictionary<Renderer, bool>();
@@ -535,23 +319,15 @@ namespace WiresShadows
         }
         private static MaterialPropertyBlock _proxyProps, _structProps;
         private static readonly int NearCutId = Shader.PropertyToID("_WireNearCut");
-        internal static Shader FrontShader, BackShader, CombineShader;
+        internal static Shader CombineShader;
         internal static Shader NativeCopyShader;
         // Extra depth-only cube ARRAYS: same slots/resolutions as existing WLO
         // cached static maps. Conversion runs on face refresh, not per frame.
-        private RenderTexture _nativeNearMaps, _nativeFarMaps;
         // Each tier owns one temporary native-depth cube, just like the
         // existing RHalf stage. Never expose a partially refreshed PCF cube.
-        private RenderTexture _nativeNearStage, _nativeFarStage;
-        private RenderTexture _nativeNearFlat, _nativeFarFlat;
-        private Material _nativeCopyMat;
         private CommandBuffer _nativeCopyCb;
-        private readonly int[] _nativeFaceMasks = new int[MaxSlots];
-        private readonly Tracked[] _nativeOwners = new Tracked[MaxSlots];
         private readonly float[] _nativeActive = new float[MaxSlots];
         private readonly float[] _nativeInvRanges = new float[MaxSlots];
-        private bool _nativeFailed;
-        private bool _nativeReportedReady;
         // Native moving depth is a second representation of the same existing
         // RGHalf faces. No new caster traversal and no new face refreshes.
         private RenderTexture _nativeMovingNear, _nativeMovingFar, _nativeMovingFlat;
@@ -604,7 +380,6 @@ namespace WiresShadows
         // or a native resource is reset. Fade updates must not resend them.
         private readonly float[] _uploadedNativeStaticActive = new float[MaxSlots];
         private readonly float[] _uploadedNativeStaticRanges = new float[MaxSlots];
-        private bool _hasUploadedNativeStaticActive, _hasUploadedNativeStaticRanges;
 
         private void UploadDynActive()
         {
@@ -780,202 +555,16 @@ namespace WiresShadows
 
         private void ReleaseNativeResources()
         {
-            if (_nativeNearMaps != null) _nativeNearMaps.Release();
-            if (_nativeFarMaps != null) _nativeFarMaps.Release();
-            if (_nativeNearStage != null) { _nativeNearStage.Release(); Destroy(_nativeNearStage); }
-            if (_nativeFarStage != null) { _nativeFarStage.Release(); Destroy(_nativeFarStage); }
-            if (_nativeNearFlat != null) _nativeNearFlat.Release();
-            if (_nativeFarFlat != null) _nativeFarFlat.Release();
-            _nativeNearMaps = _nativeFarMaps = null;
-            _nativeNearStage = _nativeFarStage = null;
-            _nativeNearFlat = _nativeFarFlat = null;
-            System.Array.Clear(_nativeFaceMasks, 0, MaxSlots);
-            System.Array.Clear(_nativeOwners, 0, MaxSlots);
             System.Array.Clear(_nativeActive, 0, MaxSlots);
             Shader.SetGlobalFloatArray(NativeActiveId, _nativeActive);
             // Direct shader reset bypasses UploadArrayIfChanged: force next sync.
-            _hasUploadedNativeStaticActive = false;
-            _hasUploadedNativeStaticRanges = false;
         }
 
-        internal static void RequestNativeRefresh()
-        {
-            ShadowCache c = Instance;
-            if (c == null) return;
-            c.ReleaseNativeResources();
-            c._nativeFailed = false;
-            c._nativeReportedReady = false;
-            if (Plugin.NativeDepthPcf)
-            {
-                foreach (Tracked t in c._slots)
-                {
-                    if (t == null || t.Light == null) continue;
-                    t.Dirty = true;
-                    t.DirtyAt = Time.time;
-                }
-                c.WakeRenders();
-            }
-            c.UpdateGlobals();
-        }
 
-        private bool EnsureNativeTier(bool near, int size)
-        {
-            if (_nativeFailed || !Plugin.NativeDepthPcf || NativeCopyShader == null) return false;
-            if (!SupportsShadowmap())
-            {
-                _nativeFailed = true;
-                Plugin.Log.LogWarning("[native-depth] Shadowmap format unsupported; the mod's own filtering is used.");
-                return false;
-            }
-            int tierslots = near ? _near : Mathf.Max(1, _slots.Length - _near);
-            RenderTexture target = near ? _nativeNearMaps : _nativeFarMaps;
-            if (target != null && target.IsCreated() && target.width == size &&
-                target.volumeDepth == tierslots * 6) return true;
-            if (target != null) target.Release();
-            RenderTexture flat = near ? _nativeNearFlat : _nativeFarFlat;
-            if (flat != null) flat.Release();
-            target = new RenderTexture(size, size, NativeDepthBits, RenderTextureFormat.Shadowmap)
-            {
-                dimension = TextureDimension.CubeArray,
-                volumeDepth = tierslots * 6, useMipMap = false,
-                filterMode = FilterMode.Bilinear,
-                name = near ? "WireNativeNearComparison" : "WireNativeFarComparison"
-            };
-            flat = new RenderTexture(size, size, 0, RenderTextureFormat.RHalf)
-            {
-                dimension = TextureDimension.Tex2D,
-                useMipMap = false, filterMode = FilterMode.Point,
-                name = near ? "WireNativeNearCopy" : "WireNativeFarCopy"
-            };
-            if (!target.Create() || !flat.Create())
-            {
-                target.Release(); flat.Release();
-                _nativeFailed = true;
-                Plugin.Log.LogWarning("[native-depth] Comparison cube array allocation unsupported; the mod's own filtering is used.");
-                ReleaseNativeResources();
-                return false;
-            }
-            if (near) { _nativeNearMaps = target; _nativeNearFlat = flat; }
-            else { _nativeFarMaps = target; _nativeFarFlat = flat; }
-            for (int s = near ? 0 : _near; s < (near ? _near : _slots.Length); s++)
-            {
-                _nativeFaceMasks[s] = 0;
-                _nativeOwners[s] = null;
-            }
-            Shader.SetGlobalTexture(near ? NativeNearId : NativeFarId, target);
-            long bytes = (long)tierslots * 6 * size * size * 2;
-            Plugin.Note("[native-depth] " + (near ? "NEAR" : "FAR") +
-                " array allocated: " + tierslots + " slots, " + size +
-                "px faces, ~" + (bytes / 1048576) + " MiB depth.");
-            return true;
-        }
 
-        private bool EnsureNativeStage(bool near, int size)
-        {
-            RenderTexture current = near ? _nativeNearStage : _nativeFarStage;
-            if (current != null && current.IsCreated() && current.width == size)
-                return true;
-            if (current != null) { current.Release(); Destroy(current); }
-            var stage = new RenderTexture(size, size, NativeDepthBits, RenderTextureFormat.Shadowmap)
-            {
-                dimension = TextureDimension.CubeArray, volumeDepth = 6,
-                useMipMap = false, filterMode = FilterMode.Bilinear,
-                name = near ? "WireNativeNearStaging" : "WireNativeFarStaging"
-            };
-            if (!stage.Create())
-            {
-                stage.Release(); Destroy(stage);
-                if (near) _nativeNearStage = null; else _nativeFarStage = null;
-                Plugin.Log.LogWarning("[native-depth] Staging cube allocation failed; " +
-                    "refreshed static shadows will use the manual comparison fallback.");
-                return false;
-            }
-            if (near) _nativeNearStage = stage; else _nativeFarStage = stage;
-            return true;
-        }
 
-        // combined: the RHalf map face it's copied from; null when native-only, then the front and
-        // back faces are combined straight into the depth (WireShadowCombine pass 3).
-        private void CacheNativeFace(Tracked t, RenderTexture combined, int slice, bool near, int size, RenderTexture front, RenderTexture back)
-        {
-            if (!Plugin.NativeDepthPcf || t.Slot < 0 ||
-                !EnsureNativeTier(near, size)) return;
-            int sl = t.Slot;
-            RenderTexture flat = near ? _nativeNearFlat : _nativeFarFlat;
-            RenderTexture dst = near ? _nativeNearMaps : _nativeFarMaps;
-            int cube = near ? sl : sl - _near;
-            if (t.Staged)
-            {
-                // Native PCF MUST use the old published cube during all six
-                // faces of a staged static refresh. Previously native faces
-                // were overwritten one at a time, while the RHalf map stayed
-                // old until FinishMap — a visible filter/geometry mismatch.
-                if (t.Face == 0)
-                {
-                    t.StagedNativeReady = EnsureNativeStage(near, size);
-                    t.StagedNativeRange = Mathf.Max(1f, Range(t));
-                    // native-only has no other copy to refresh into: back to the old way
-                    if (!t.StagedNativeReady && combined == null) _nativeFailed = true;
-                }
-                if (!t.StagedNativeReady) return;
-                dst = near ? _nativeNearStage : _nativeFarStage;
-                cube = 0; // one private scratch cube per tier
-            }
-            else
-            {
-                if (_nativeOwners[sl] != t)
-                {
-                    _nativeOwners[sl] = t;
-                    _nativeFaceMasks[sl] = 0;
-                }
-                if (t.Face == 0 && !t.Ready)
-                    _nativeFaceMasks[sl] = 0;
-            }
-            if (combined != null)
-                Graphics.CopyTexture(combined, slice, 0, flat, 0, 0);
-            if (_nativeCopyMat == null)
-                _nativeCopyMat = new Material(NativeCopyShader) { hideFlags = HideFlags.HideAndDontSave };
-            if (_combine == null)
-                _combine = new Material(CombineShader) { hideFlags = HideFlags.HideAndDontSave };
-            if (_nativeCopyCb == null)
-                _nativeCopyCb = new CommandBuffer { name = "Wire's Shadows native depth conversion" };
-            _nativeCopyCb.Clear();
-            _nativeCopyCb.SetRenderTarget(new RenderTargetIdentifier(dst, 0, CubemapFace.Unknown, cube * 6 + t.Face));
-            if (!t.Staged) t.NativeCacheRange = Mathf.Max(1f, Range(t));
-            _nativeCopyCb.SetGlobalFloat(NativeInvRangeId,
-                1f / (t.Staged ? t.StagedNativeRange : t.NativeCacheRange));
-            if (combined != null)
-            {
-                _nativeCopyCb.SetGlobalTexture(NativeSourceId, flat);
-                _nativeCopyCb.DrawProcedural(Matrix4x4.identity, _nativeCopyMat, 0, MeshTopology.Triangles, 3);
-            }
-            else
-            {
-                _nativeCopyCb.SetGlobalTexture(FrontId, front);
-                _nativeCopyCb.SetGlobalTexture(BackId, back);
-                _nativeCopyCb.DrawProcedural(Matrix4x4.identity, _combine, 3, MeshTopology.Triangles, 3);
-            }
-            Graphics.ExecuteCommandBuffer(_nativeCopyCb);
-            if (!t.Staged)
-                _nativeFaceMasks[sl] |= 1 << t.Face;
-            // Staged PCF stays completely unchanged and enabled until the
-            // fully converted native scratch cube is committed in FinishMap.
-        }
         private static readonly int FrontId = Shader.PropertyToID("_WireFront");
         private static readonly int BackId = Shader.PropertyToID("_WireBack");
-
-        private static RenderTexture FaceRT(int res, int depth, bool cube, string name)
-        {
-            var rt = new RenderTexture(res, res, depth, RenderTextureFormat.RHalf)
-            {
-                dimension = cube ? TextureDimension.Cube : TextureDimension.Tex2D,
-                useMipMap = false,
-                filterMode = FilterMode.Point,
-                name = name
-            };
-            rt.Create();
-            return rt;
-        }
 
         // A staged re-render that won't finish (slot lost, item started rolling).
         private void AbortStage(Tracked t)
@@ -984,28 +573,10 @@ namespace WiresShadows
             t.StagedNativeReady = false;
             if (!t.Staged)
                 return;
-            for (int i = 0; i < 2; i++)
-                if (_stageOwner[i] == t) _stageOwner[i] = null;
             t.Staged = false;
         }
 
-        private static RenderTexture StageRT(int res, string name)
-        {
-            var rt = new RenderTexture(res, res, 0, RenderTextureFormat.RHalf)
-            {
-                dimension = TextureDimension.CubeArray, volumeDepth = 6, useMipMap = false,
-                filterMode = FilterMode.Point, name = name
-            };
-            rt.Create();
-            return rt;
-        }
 
-        private void ReleaseFaces()
-        {
-            foreach (RenderTexture rt in new[] { _faceBack, _farFaceBack, _flatFront, _flatBack, _farFlatFront, _farFlatBack, _stage, _farStage })
-                if (rt != null) rt.Release();
-            _stageOwner[0] = _stageOwner[1] = null;
-        }
         private int _farResolution;
         private static readonly int FarMapsId = Shader.PropertyToID("_WireFarMaps");
         private static readonly int NearCountId = Shader.PropertyToID("_WireNearCount");
@@ -1455,6 +1026,10 @@ namespace WiresShadows
         }
 
         internal static readonly List<ItemDrop> Items = new List<ItemDrop>();
+        // Items on a stand or placed (food on a table): part of the cached maps, they never move,
+        // so they leave the every-frame list. Looked at once a second (ReviewResting) in case one
+        // is knocked off or moved; then it's back on the list.
+        internal static readonly List<ItemDrop> Resting = new List<ItemDrop>();
 
         // Rigidbody state is inspected once per nearby item per frame, not
         // once for every light. Meshes and renderers are discovered only once.
@@ -1519,8 +1094,29 @@ namespace WiresShadows
 
         // Removal invalidates affected persistent moving-map faces; never
         // wait on a scheduled static-cubemap rebuild for a picked-up item.
+        // Resting items knocked off, moved or no longer placed go back on the every-frame list.
+        private static void ReviewResting()
+        {
+            for (int i = Resting.Count - 1; i >= 0; i--)
+            {
+                ItemDrop it = Resting[i];
+                bool back;
+                if (it == null) back = false;
+                else if (!Drops.TryGetValue(it, out DropCaster d)) back = true;
+                else back = !(d.Mounted || d.Placed) || (it.transform.position - d.CurrentPosition).sqrMagnitude > 0.0004f;
+                if (it == null || back)
+                {
+                    if (back) Items.Add(it);
+                    Resting[i] = Resting[Resting.Count - 1];
+                    Resting.RemoveAt(Resting.Count - 1);
+                }
+            }
+        }
+
         internal static void DropRemoved(ItemDrop item)
         {
+            WorldVersion++;
+            Resting.Remove(item);
             if (System.Object.ReferenceEquals(item, null) || !Drops.TryGetValue(item, out DropCaster d))
             {
                 Items.Remove(item);
@@ -1778,6 +1374,7 @@ namespace WiresShadows
 
         internal static void PieceAwake(Piece piece)
         {
+            WorldVersion++;
             if (ZNetView.m_forceDisableInit)
             {
                 Ghosts.Add(piece);
@@ -1808,6 +1405,7 @@ namespace WiresShadows
 
         internal static void PieceChanged(Vector3 position, float settle, Object who)
         {
+            WorldVersion++;
             ShadowCache cache = Instance;
             if (cache == null) return;
             Bounds affected = default;
@@ -1895,14 +1493,7 @@ namespace WiresShadows
             ReleaseNativeMovingResources();
             ReleaseTiers();
             if (_movScratch != null) _movScratch.Release();
-            if (_nativeCopyMat != null) Destroy(_nativeCopyMat);
-            if (_maps != null) _maps.Release();
-            if (_face != null) _face.Release();
-            if (_farMaps != null) _farMaps.Release();
-            if (_farFace != null) _farFace.Release();
-            ReleaseFaces();
             if (_dynMaps != null) _dynMaps.Release();
-            if (_dynFace != null) _dynFace.Release();
 
             if (_farDynMaps != null) _farDynMaps.Release();
 
@@ -1916,7 +1507,6 @@ namespace WiresShadows
             PlacedDrops.Clear();
             LostDrops.Clear();
             if (_camera != null) Destroy(_camera.gameObject);
-            if (_dynCamera != null) Destroy(_dynCamera.gameObject);
             Instance = null;
         }
 
@@ -1964,9 +1554,8 @@ namespace WiresShadows
         // way at the next reassignment (EnsureResources sees the change and rebuilds).
         private bool WantNativeOnly() =>
             Plugin.NativeDepthPcf && Plugin.NativeMovingDepthPcf && Plugin.DirectMovingDraw &&
-            !_nativeFailed && !_nativeMovingFailed && NativeCopyShader != null &&
+            !_nativeMovingFailed && NativeCopyShader != null &&
             CombineShader != null && CombineShader.passCount >= 4 && SupportsShadowmap();
-        private bool _builtNativeOnly;
         private RenderTexture _movScratch; // native-only: moving shadows are drawn here, then converted
         private int _movRes;
 
@@ -2011,41 +1600,39 @@ namespace WiresShadows
             _farMovingCap = _fitFarMoving;
         }
 
+        // One way to keep shadow maps: each light's map sized by the screen, kept once as 16-bit
+        // depth in a pool of its size, both sides of a face drawn in one render (Tiers, OnePass).
+        // The near/far arrays, their colour copies and the two-render faces that came before it are
+        // gone. A GPU or bundle that can't do it gets the game's own point-light shadows instead.
+        private static bool s_unsupportedLogged;
         private bool EnsureResources()
         {
+            if (!WantNativeOnly() || !WantTiered(true) || !OnePass)
+            {
+                if (!s_unsupportedLogged)
+                {
+                    s_unsupportedLogged = true;
+                    Plugin.Log.LogWarning("This GPU or shader bundle can't keep the shadow maps (depth maps, cube arrays, the one-render pass); point lights keep the game's own shadows.");
+                }
+                return false;
+            }
             // Following the game: what Unity gives a point light near you at the
             // current shadow quality (its reach fills the screen, capped at
-            // 1024; only Low comes out at 512). Distant lights a quarter.
-            bool follow = Plugin.FollowGameShadows;
-            int game = QualitySettings.shadowResolution == ShadowResolution.Low ? 512 : 1024;
-            int res = follow ? game : Mathf.ClosestPowerOfTwo(Mathf.Clamp(Plugin.Resolution, 64, 1024));
+            // 1024; only Low comes out at 512).
+            int res = QualitySettings.shadowResolution == ShadowResolution.Low ? 512 : 1024;
             int slots = SlotCount, far = FarCount, ultra = UltraCount;
-            int farRes = follow ? game / 4 : Mathf.ClosestPowerOfTwo(Mathf.Clamp(Plugin.FarResolution, 64, 1024));
-            bool nativeOnly = WantNativeOnly();
-            bool tiered = WantTiered(nativeOnly);
-            FitToMemory(ref res, ref slots, far + ultra, farRes, nativeOnly);
-            int dynRes = res;
-            if (_maps != null && _resolution == res && _farResolution == farRes && _near == slots && _slots.Length == slots + far + ultra && _ultra == ultra &&
-                _dynMaps != null && _farDynMaps != null && _movRes == dynRes && _builtNativeOnly == nativeOnly && _tiered == tiered)
+            int farRes = res / 4;
+            FitToMemory(ref res, ref slots, far + ultra, farRes, true);
+            if (_tiered && _resolution == res && _near == slots && _slots.Length == slots + far + ultra && _ultra == ultra &&
+                _dynMaps != null && _farDynMaps != null && _movRes == res)
                 return true;
-            if (_maps != null && _builtNativeOnly != nativeOnly)
-                Plugin.Log.LogWarning("Shadow maps: " + (nativeOnly ? "depth only" : "native depth unavailable, keeping colour copies too") + "; rebuilding them.");
-            _builtNativeOnly = nativeOnly;
-            _movRes = dynRes;
-            // Native-only: the colour arrays are never read, but the lighting shader declares them,
-            // so a tiny one stays bound.
-            int keepRes = nativeOnly ? 16 : res, keepFarRes = nativeOnly ? 16 : farRes;
+            _movRes = res;
             ReleaseAll();
-            ReleaseNativeResources();
-            if (_maps != null) _maps.Release();
-            if (_face != null) _face.Release();
-            if (_farMaps != null) _farMaps.Release();
-            if (_farFace != null) _farFace.Release();
             _resolution = res;
             _farResolution = farRes;
             _near = slots;
             _ultra = ultra;
-            far += ultra; // distant arrays hold the ultra-distant slots too
+            far += ultra;
             _slots = new Tracked[slots + far];
             // Moving-shadow pools at their full size from the start: the memory share already
             // counts them whole (FitToMemory), and growing them as lights need them meant a new
@@ -2053,128 +1640,38 @@ namespace WiresShadows
             _dynNearCapacity = Mathf.Max(1, Mathf.Min(slots, _nearMovingCap));
             _dynFarCapacity = Mathf.Max(1, Mathf.Min(far, _farMovingCap));
             ResetDynPool();
+            Shader.SetGlobalFloat("_WireDynRes", res);
 
-            // At least one slice so the shader always has a texture bound.
-            _farMaps = new RenderTexture(keepFarRes, keepFarRes, 0, RenderTextureFormat.RHalf)
+            // The cached maps' pools: what's left of the memory share after the moving maps and scratch.
+            long r2 = (long)res * res;
+            long other = (long)(_fitNearMoving + _fitFarMoving) * 6 * r2 * 2 + r2 * 2 * 24;
+            int vram = SystemInfo.graphicsMemorySize;
+            long budget = vram > 0 ? ((long)(vram * VramShare) << 20) - other : long.MaxValue / 4;
+            _tiered = SetUpTiers(System.Math.Max(budget, 0L));
+            if (!_tiered)
             {
-                dimension = TextureDimension.CubeArray,
-                volumeDepth = 6 * (nativeOnly ? 1 : Mathf.Max(1, far)),
-                useMipMap = false,
-                filterMode = FilterMode.Point,
-                name = "WireFarShadowMaps"
-            };
-            _farFace = new RenderTexture(farRes, farRes, 16, RenderTextureFormat.RHalf)
-            {
-                dimension = TextureDimension.Cube,
-                useMipMap = false,
-                filterMode = FilterMode.Point,
-                name = "WireFarShadowFace"
-            };
-            if (!_farMaps.Create() || !_farFace.Create())
-            {
-                Plugin.Log.LogError("Couldn't create the distant shadow textures.");
+                ReleaseTiers();
+                _tiersFailed = true;
+                Plugin.Log.LogWarning("Couldn't make the shadow map pools; point lights keep the game's own shadows.");
                 return false;
             }
-            Shader.SetGlobalTexture(FarMapsId, _farMaps);
-            Shader.SetGlobalFloat("_WireNearRes", res);
-            Shader.SetGlobalFloat("_WireFarRes", farRes);
-            // Separate actual resolution: both dynamic tiers have the same
-            // texture dimensions, independent of the distant static tier.
-            Shader.SetGlobalFloat("_WireDynRes", dynRes);
 
-            _maps = new RenderTexture(keepRes, keepRes, 0, RenderTextureFormat.RHalf)
-            {
-                dimension = TextureDimension.CubeArray,
-                volumeDepth = 6 * (nativeOnly ? 1 : slots),
-                useMipMap = false,
-                filterMode = FilterMode.Point,
-                name = "WireShadowMaps"
-            };
-            _face = new RenderTexture(res, res, 16, RenderTextureFormat.RHalf)
-            {
-                dimension = TextureDimension.Cube,
-                useMipMap = false,
-                filterMode = FilterMode.Point,
-                name = "WireShadowFace"
-            };
-            if (!_maps.Create() || !_face.Create())
-            {
-                Plugin.Log.LogError("Couldn't create the shadow cache textures.");
-                return false;
-            }
-            Shader.SetGlobalTexture(MapsId, _maps);
-            ReleaseFaces();
-            _faceBack = FaceRT(res, 16, true, "WireShadowFaceBack");
-            _farFaceBack = FaceRT(farRes, 16, true, "WireFarShadowFaceBack");
-            _flatFront = FaceRT(res, 0, false, "WireShadowFlatFront");
-            _flatBack = FaceRT(res, 0, false, "WireShadowFlatBack");
-            _farFlatFront = FaceRT(farRes, 0, false, "WireFarShadowFlatFront");
-            _farFlatBack = FaceRT(farRes, 0, false, "WireFarShadowFlatBack");
-            _stage = StageRT(keepRes, "WireShadowStage");
-            _farStage = StageRT(keepFarRes, "WireFarShadowStage");
-
-            // Sized maps: what's left of the memory share after the moving maps and scratch faces.
-            _tiered = false;
-            if (tiered)
-            {
-                long r2 = (long)res * res, h2 = r2 / 4, e2 = r2 / 64;
-                long other = Need(res, 0, 0, farRes, _fitNearMoving + _fitFarMoving, true) + 52 * (h2 + e2);
-                int vram = SystemInfo.graphicsMemorySize;
-                long budget = vram > 0 ? ((long)(vram * VramShare) << 20) - other : long.MaxValue / 4;
-                _tiered = SetUpTiers(System.Math.Max(budget, 0L));
-                if (!_tiered)
-                {
-                    ReleaseTiers();
-                    _tiersFailed = true;
-                    // the rest of this build is the near/far way, which works without them
-                    Plugin.Log.LogWarning("Couldn't make the sized shadow map pools; using the near/far ones.");
-                }
-            }
-            else ReleaseTiers();
-
+            // Moving shadows: drawn into one scratch cube, kept only as depth (EnsureNativeMovingTier).
+            // The colour arrays the shader still declares stay tiny.
             ReleaseNativeMovingResources();
             if (_dynMaps != null) _dynMaps.Release();
             if (_farDynMaps != null) _farDynMaps.Release();
-            if (_dynFace != null) { _dynFace.Release(); _dynFace = null; }
             if (_movScratch != null) { _movScratch.Release(); Destroy(_movScratch); _movScratch = null; }
-            int dynKeep = nativeOnly ? 16 : dynRes;
-            _dynMaps = new RenderTexture(dynKeep, dynKeep, 0, RenderTextureFormat.RGHalf)
+            _dynMaps = CubeArray(16, 1, RenderTextureFormat.RGHalf, "WireDynShadowMaps");
+            _farDynMaps = CubeArray(16, 1, RenderTextureFormat.RGHalf, "WireFarDynShadowMaps");
+            _movScratch = CubeArray(res, 1, RenderTextureFormat.RGHalf, "WireMovingScratch");
+            if (!_dynMaps.IsCreated() || !_farDynMaps.IsCreated() || !_movScratch.IsCreated())
             {
-                dimension = TextureDimension.CubeArray, volumeDepth = 6 * (nativeOnly ? 1 : _dynNearCapacity), useMipMap = false,
-                filterMode = FilterMode.Point, name = "WireDynShadowMaps"
-            };
-            // Moving shadows always use the full-size existing map tier:
-            // distant 256px source maps produced oversized silhouette texels.
-            // The static distant cache remains at farRes.
-            _farDynMaps = new RenderTexture(dynKeep, dynKeep, 0, RenderTextureFormat.RGHalf)
-            {
-                dimension = TextureDimension.CubeArray, volumeDepth = 6 * (nativeOnly ? 1 : _dynFarCapacity), useMipMap = false,
-                filterMode = FilterMode.Point, name = "WireFarDynShadowMaps"
-            };
-            if (!_farDynMaps.Create())
-            {
-                Plugin.Log.LogError("Couldn't create distant moving-shadow maps at " + dynRes + " px.");
-                return false;
-            }
-            Shader.SetGlobalTexture(FarDynMapsId, _farDynMaps);
-            // Only the camera path draws through this cube; the direct draws don't use it.
-            bool cameraPath = !Plugin.DirectMovingDraw;
-            if (cameraPath)
-            {
-                _dynFace = new RenderTexture(dynRes, dynRes, 16, RenderTextureFormat.RGHalf)
-                {
-                    dimension = TextureDimension.Cube, useMipMap = false, filterMode = FilterMode.Point, name = "WireDynShadowFace"
-                };
-                _dynFace.Create();
-            }
-            if (nativeOnly)
-                _movScratch = CubeArray(dynRes, 1, RenderTextureFormat.RGHalf, "WireMovingScratch");
-            if (!_dynMaps.Create() || (_dynFace != null && !_dynFace.IsCreated()) || (nativeOnly && !_movScratch.IsCreated()))
-            {
-                Plugin.Log.LogError("Couldn't create moving-shadow maps at " + dynRes + " px.");
+                Plugin.Log.LogError("Couldn't create moving-shadow maps at " + res + " px.");
                 return false;
             }
             Shader.SetGlobalTexture(DynMapsId, _dynMaps);
+            Shader.SetGlobalTexture(FarDynMapsId, _farDynMaps);
             System.Array.Clear(_dynActive, 0, _dynActive.Length);
             System.Array.Clear(_dynFacesLast, 0, _dynFacesLast.Length);
 
@@ -2185,28 +1682,16 @@ namespace WiresShadows
                 _camera = go.AddComponent<Camera>();
                 _camera.enabled = false;
                 _camera.clearFlags = CameraClearFlags.SolidColor;
-                _camera.backgroundColor = new Color(60000f, 0, 0, 0);
+                _camera.backgroundColor = new Color(60000f, 60000f, 0, 0);
                 _camera.renderingPath = RenderingPath.Forward;
                 _camera.allowHDR = false;
                 _camera.allowMSAA = false;
                 _camera.useOcclusionCulling = false;
-                _camera.SetReplacementShader(DistanceShader, "RenderType");
+                _camera.SetReplacementShader(FrontBackShader, "RenderType");
                 _staticCb = new CommandBuffer { name = "WireUntaggedCasters" };
                 _camera.AddCommandBuffer(CameraEvent.AfterForwardOpaque, _staticCb);
             }
             _camera.cullingMask = StaticLayerMask = StaticMask();
-            if (_dynCamera == null)
-            {
-                var go = new GameObject("WireDynShadowCamera") { hideFlags = HideFlags.HideAndDontSave };
-                DontDestroyOnLoad(go);
-                _dynCamera = go.AddComponent<Camera>();
-                _dynCamera.CopyFrom(_camera);
-                // Both RGHalf channels must mean empty at the camera's clear colour.
-                _dynCamera.backgroundColor = new Color(60000f, 60000f, 0f, 0f);
-                _dynCamera.enabled = false;
-                _dynCamera.SetReplacementShader(DistanceShader, "RenderType");
-            }
-            _dynCamera.cullingMask = MovingMask();
             return true;
         }
 
@@ -2553,14 +2038,10 @@ namespace WiresShadows
             _nativeMovingActive[farSlot] = 0f;
             _pickupInvalidFaces[farSlot] = 0;
             FreeDynSlot(farSlot);
-            _nativeFaceMasks[farSlot] = 0;
-            _nativeOwners[farSlot] = null;
             FreeSlotMap(farSlot); // sized maps: the candidate's map is already on the near slot
 
             // The candidate's native comparison map contains the completed
             // high-res data. Preserve it by transferring ownership, not clearing.
-            if (_nativeOwners[nearSlot] == candidate)
-                _nativeOwners[nearSlot] = original;
             _slots[nearSlot] = original;
             original.Slot = nearSlot;
             original.Center = candidate.Center;
@@ -2749,9 +2230,7 @@ namespace WiresShadows
                 _dynFacesLast[t.Slot] = 0;
                 _nativeMovingActive[t.Slot] = 0f;
                 FreeDynSlot(t.Slot);
-                _nativeFaceMasks[t.Slot] = 0;
-                _nativeOwners[t.Slot] = null;
-                FreeSlotMap(t.Slot);
+                KeepOrFree(t, t.Slot); // a finished map is kept for when this light comes back (Keep)
             }
             if (t.Ready) t.ReleasedFrame = Time.frameCount;
             AbortStage(t);
@@ -2785,8 +2264,6 @@ namespace WiresShadows
 
         private void ReleaseAll()
         {
-            System.Array.Clear(_nativeFaceMasks, 0, MaxSlots);
-            System.Array.Clear(_nativeOwners, 0, MaxSlots);
             System.Array.Clear(_pickupInvalidFaces, 0, _pickupInvalidFaces.Length);
             System.Array.Clear(_nativeMovingActive, 0, MaxSlots);
             UploadNativeMovingActive();
@@ -2795,8 +2272,6 @@ namespace WiresShadows
             System.Array.Clear(_nativeActive, 0, MaxSlots);
             Shader.SetGlobalFloatArray(NativeActiveId, _nativeActive);
             // Direct shader reset bypasses UploadArrayIfChanged: force next sync.
-            _hasUploadedNativeStaticActive = false;
-            _hasUploadedNativeStaticRanges = false;
             Shader.SetGlobalFloat(CountId, 0);
         }
         // Only upload actual source positions when they change.
@@ -2842,35 +2317,7 @@ namespace WiresShadows
             Shader.SetGlobalVectorArray(LightsId, _slotData);
             Shader.SetGlobalFloat(CountId, _slots.Length);
             Shader.SetGlobalFloat(NearCountId, _near);
-            if (_tiered) { UploadTierMaps(); return; } // sized maps: where each slot's map is
-            int active = 0;
-            for (int sl = 0; sl < MaxSlots; sl++)
-            {
-                Tracked t = sl < _slots.Length ? _slots[sl] : null;
-                bool ready = Plugin.NativeDepthPcf && !_nativeFailed && t != null &&
-                    t.Light != null && t.Ready && _nativeOwners[sl] == t &&
-                    _nativeFaceMasks[sl] == 63 &&
-                    (sl < _near ? _nativeNearMaps != null && _nativeNearMaps.IsCreated()
-                                : _nativeFarMaps != null && _nativeFarMaps.IsCreated());
-                _nativeActive[sl] = ready ? 1f : 0f;
-                _nativeInvRanges[sl] = ready ? 1f / t.NativeCacheRange : 0f;
-                if (ready) active++;
-            }
-            UploadArrayIfChanged(NativeActiveId, _nativeActive,
-                _uploadedNativeStaticActive, ref _hasUploadedNativeStaticActive);
-            UploadArrayIfChanged(NativeRangesId, _nativeInvRanges,
-                _uploadedNativeStaticRanges, ref _hasUploadedNativeStaticRanges);
-            if (active > 0 && !_nativeReportedReady)
-            {
-                Plugin.Note("[native-depth] ACTIVE on all eligible cached-shadow slots (" +
-                    active + " currently ready, others populate via cached face renders).");
-                _nativeReportedReady = true;
-            }
-            else if (active == 0 && _nativeReportedReady)
-            {
-                _nativeReportedReady = false;
-                Plugin.Note("[native-depth] INACTIVE: all-native comparison awaiting maps or disabled.");
-            }
+            UploadTierMaps(); // where each slot's map is
         }
         // ---- Moving casters ----
 
@@ -2920,17 +2367,12 @@ namespace WiresShadows
                 if (!reassignedForTurn && _active && (loading || TeleportStreaming()))
                     Reassign();
             }
-            if (_shrinkPools && _active)
-            {
-                _shrinkPools = false;
-                ShrinkMovingPools();
-            }
             if (Swings.Count > 0)
                 UpdateSwings();
             UpdateStandHandoffs(); // Dropped items no longer need a static-map handoff.
             UpdateGhost();
             if (!_active || !Plugin.UseShader.Value || !Plugin.CachedShadows ||
-                _dynMaps == null || _dynCamera == null || !Plugin.MovingCasters ||
+                _dynMaps == null || _movScratch == null || !Plugin.MovingCasters ||
                 _slots.Length == 0)
                 return;
             List<Character> characters = Character.GetAllCharacters();
@@ -3000,6 +2442,7 @@ namespace WiresShadows
             if (Time.frameCount % 60 == 0)
             {
                 Items.RemoveAll(it => it == null);
+                ReviewResting();
                 CleanupDroppedItems();
             }
             Vector3 cameraPosition = main.transform.position;
@@ -3256,7 +2699,6 @@ namespace WiresShadows
             // 2048px faces and native depth enabled. Batch newly needed
             // physical cubes per tier to avoid repeated growth/copies in
             // the SAME frame after teleporting into a densely lit area.
-            ReserveNewMovingCubes(newNearCubes, newFarCubes);
             // Allocate/retain a physical cube only for a light with active
             // moving casters; completed faces are never downsampled.
             _movingDenied.Clear();
@@ -3300,8 +2742,8 @@ namespace WiresShadows
                 DynTarget(sl, out RenderTexture dynMaps, out int pl);
                 // Native-only: drawn into the scratch cube and converted into the depth array right
                 // after, in the same command buffer, before the next light draws there.
-                RenderTexture drawMaps = _builtNativeOnly ? _movScratch : dynMaps;
-                int drawBase = _builtNativeOnly ? 0 : pl * 6;
+                RenderTexture drawMaps = _movScratch;
+                const int drawBase = 0;
                 int draw = DynDraw[sl];
                 bool nativeMoving = Plugin.NativeMovingDepthPcf && EnsureNativeMovingTier(sl < _near);
                 if (nativeMoving && _dynFacesLast[sl] == 0)
@@ -3316,20 +2758,8 @@ namespace WiresShadows
                 // Faces drawn last frame but not now are cleared; when a slot
                 // starts using its moving map, all its other faces are too.
                 int toClear = (faces != 0 && _dynFacesLast[sl] == 0 ? 63 : _dynFacesLast[sl]) & ~faces;
-                if (draw != 0 && Plugin.DirectMovingDraw && DrawMovingDirect(t, pl, draw, DynOrigin[sl], sl * 6, _dynFacesLast[sl] == 0, _dynFacesLast[sl] == 0 ? 0 : DynPartial[sl]))
-                {
-                }
-                else if (draw != 0 && !Plugin.DirectMovingDraw) // both tiers have equal full-size moving faces
-                {
-                    _dynCamera.transform.position = DynOrigin[sl];
-                    _dynCamera.nearClipPlane = NearPlane(t);
-                    _dynCamera.farClipPlane = Mathf.Max(1f, Range(t));
-                    Shader.SetGlobalVector(CenterId, DynOrigin[sl]);
-                    if (_dynCamera.RenderToCubemap(_dynFace, draw))
-                        for (int f = 0; f < 6; f++)
-                            if ((draw & (1 << f)) != 0)
-                                Graphics.CopyTexture(_dynFace, f, 0, dynMaps, pl * 6 + f, 0);
-                }
+                if (draw != 0)
+                    DrawMovingDirect(t, pl, draw, DynOrigin[sl], sl * 6, _dynFacesLast[sl] == 0, _dynFacesLast[sl] == 0 ? 0 : DynPartial[sl]);
                 for (int f = 0; f < 6; f++)
                     if ((toClear & (1 << f)) != 0)
                     {
@@ -3355,7 +2785,7 @@ namespace WiresShadows
                                 ? _nativeMovingTouched[sl * 6 + f] : default;
                             // Native-only: a drawn face with nothing drawn on it this time has no
                             // new pixels in the scratch cube (what's there is another light's).
-                            if (_builtNativeOnly && drawn && (touched.width <= 0 || touched.height <= 0))
+                            if (drawn && (touched.width <= 0 || touched.height <= 0))
                                 continue;
                             QueueNativeMovingFace(t, drawMaps, drawBase + f, pl, f, touched);
                         }
@@ -3501,8 +2931,8 @@ namespace WiresShadows
             if (_combine == null)
                 _combine = new Material(CombineShader) { hideFlags = HideFlags.HideAndDontSave };
             bool fullSize = t.Slot < _near;
-            RenderTexture maps = _builtNativeOnly ? _movScratch : fullSize ? _dynMaps : _farDynMaps;
-            if (_builtNativeOnly) slice = 0; // the scratch cube: converted into this light's cube after
+            RenderTexture maps = _movScratch;
+            slice = 0; // the scratch cube: converted into this light's cube after
             if (s_gsPass == -2)
             {
                 s_gsPass = SystemInfo.supportsGeometryShaders ? _distMaterial.FindPass("WIREGS") : -1;
@@ -3938,16 +3368,25 @@ namespace WiresShadows
                 // Animated every frame: always redrawn (a pose check misses arms and legs).
                 AddGroup(c.transform.position + Vector3.up, 1.2f, Time.frameCount, true, rs, true, KindCharacter);
             }
-            foreach (ItemDrop it in Items)
+            for (int i = 0; i < Items.Count; i++)
             {
+                ItemDrop it = Items[i];
                 if (it == null || !it.isActiveAndEnabled) continue;
                 Transform tr = it.transform;
                 Vector3 pos = tr.position;
                 if ((pos - cam).sqrMagnitude > far2) continue;
                 DropCaster d = GetDrop(it, pos);
-                if (d.Mounted) continue;
-                if (!d.Placed && it.IsPiece()) PlaceDrop(d);
-                if (d.Placed) continue;
+                if (!d.Mounted && !d.Placed && it.IsPiece()) PlaceDrop(d);
+                if (d.Mounted || d.Placed)
+                {
+                    // resting for good: off the every-frame list
+                    d.CurrentPosition = pos;
+                    Resting.Add(it);
+                    Items[i] = Items[Items.Count - 1];
+                    Items.RemoveAt(Items.Count - 1);
+                    i--;
+                    continue;
+                }
                 // Sleeping bodies may also move via ZDO/mod updates. Compare
                 // against the LAST observed pose (even during transitions),
                 // so continuously network-moved items never falsely settle.
@@ -4200,7 +3639,7 @@ namespace WiresShadows
                         continue;
                     if (t.Face >= 0) { job = t; jobInView = fillCam != null && !t.Ready && InView(t); break; }
                     if (!((t.DoorFaces != 0 && t.Ready && !t.Dirty) ||
-                          (t.Dirty && (Time.time >= t.DirtyAt || Loading()))))
+                          (t.Dirty && (Time.time >= t.DirtyAt || Loading()) && Time.time >= t.WaitUntil)))
                         continue;
                     if (fillCam == null)
                     {
@@ -4294,7 +3733,10 @@ namespace WiresShadows
         // Fill-in window after world load / teleport: missing maps in view first.
         private static float _fillUntil = -10f;
         private const float FillSeconds = 8f;
-        private const int FillFacesPerFrame = 3;
+        // After arriving: maps that have to be built go at the usual one face a frame, spread out
+        // (kept maps of an unchanged base come back without any, Keep). It was three a frame,
+        // a couple of seconds of lag on getting home.
+        private const int FillFacesPerFrame = 1;
         private static readonly Plane[] FillFrustum = new Plane[6];
 
         private static bool InView(Tracked t) =>
@@ -4360,22 +3802,38 @@ namespace WiresShadows
                 // A full refresh supersedes any partial door-face updates.
                 t.DoorFaces = 0;
                 t.DoorPrepared = false;
-                int tier = t.Slot < _near ? 0 : 1;
-                // A ready map MUST NEVER receive face-by-face in-place updates.
-                // If another light owns the single spare tier cube, defer this
-                // refresh until that light has published all six faces.
-                // The previous path silently fell back to t.Staged=false and
-                // rendered each new face over the VISIBLE old map. During the
-                // six-frame interval its shadow volume mixed incompatible
-                // capture states (especially when native depth was active).
-                // Sized maps (Tiers): every render goes into a new cube of its own, so none waits.
-                if (!_tiered && t.Ready && _stageOwner[tier] != null &&
-                    _stageOwner[tier] != t)
-                {
-                    t.DirtyAt = Time.time + 0.025f;
+                // Its surroundings still loading in (after a portal): not yet (AreaWait).
+                if (!ReadyToRender(t))
                     return;
+                // Every render goes into a new cube of its own (Tiers): the old map stays on screen
+                // until the new one is done, so none waits for another.
+                if (_tiered)
+                {
+                    // Its map from before it unloaded, if nothing in its reach changed (Keep).
+                    Vector3 c0 = RestingPosition(t.Light);
+                    float r0 = Mathf.Max(1f, Range(t));
+                    // Nothing built, broken, dropped or opened anywhere since its last fingerprint
+                    // and it hasn't moved (a size change): the same one, no search.
+                    int hash = t.Ready && t.CasterHash != 0 && t.HashVersion == WorldVersion && t.HashCenter == c0
+                        ? t.CasterHash : CasterHash(c0, r0);
+                    t.HashVersion = WorldVersion;
+                    t.HashCenter = c0;
+                    if (!t.Ready && TryReuseKept(t, c0, r0, hash))
+                    {
+                        t.Dirty = false;
+                        t.Face = -1;
+                        t.Staged = false;
+                        t.Ready = true;
+                        t.Fade = 1f;
+                        t.RootPos = t.Light.transform.root.position;
+                        t.RootRot = t.Light.transform.root.rotation;
+                        if (t.PromotionFrom != null) CompleteNearPromotion(t);
+                        else UpdateGlobals();
+                        return;
+                    }
+                    t.PendingHash = hash;
                 }
-                if (_tiered && !StartTierRender(t))
+                if (!StartTierRender(t))
                 {
                     t.DirtyAt = Time.time + 0.25f; // no room yet: tried again (oversized maps are shrinking)
                     return;
@@ -4385,7 +3843,6 @@ namespace WiresShadows
                 t.Staged = t.Ready;
                 t.StagedNativeReady = false;
                 if (t.Staged) t.PublishedCenterBeforeStage = t.Center;
-                if (t.Staged && !_tiered) _stageOwner[tier] = t;
                 // Still sample the original/resting source. Flame wobble is
                 // permanently disabled, and vanilla brightness still flickers.
                 t.Center = RestingPosition(t.Light);
@@ -4432,26 +3889,17 @@ namespace WiresShadows
                 PriorShadowModes.Add(r.shadowCastingMode);
                 r.shadowCastingMode = ShadowCastingMode.On;
             }
-            bool near = t.Slot < _near;
-            // Sized maps: the scratch faces of the size this map is (the render's, or the one on
-            // screen for a door's single face).
+            // The scratch face of this map's size (the render's, or the one on screen for a door's
+            // single face): the front (R) and back (G) in one camera render (OnePass).
             bool rendering = t.RenderCube >= 0;
-            int tierNow = !_tiered ? -1 : rendering ? t.RenderTier : (int)_mapTier[t.Slot];
-            RenderTexture face = _tiered ? _tierFace[tierNow] : near ? _face : _farFace;
-            // Two passes: surfaces facing the light, then facing away; the map
-            // keeps the midpoint (see WireShadowCombine).
-            RenderTexture back = _tiered ? _tierBack[tierNow] : near ? _faceBack : _farFaceBack;
+            int tierNow = rendering ? t.RenderTier : (int)_mapTier[t.Slot];
             // Always the full-detail models: the cube camera picks LODs by its own view (wide,
             // small target), which swapped detailed pieces (the spice rack's herbs and frame)
             // for their simplified LOD in the cached shadow.
             float lodBias = QualitySettings.lodBias;
             QualitySettings.lodBias = 10000f;
-            _camera.SetReplacementShader(FrontShader, "RenderType");
-            DrawUntagged(t, ref _frontMat, FrontShader, true);
-            bool ok = _camera.RenderToCubemap(face, 1 << t.Face);
-            _camera.SetReplacementShader(BackShader, "RenderType");
-            DrawUntagged(t, ref _backMat, BackShader, false);
-            ok &= _camera.RenderToCubemap(back, 1 << t.Face);
+            DrawUntaggedOnePass(t);
+            bool ok = _camera.RenderToCubemap(_tierRG[tierNow], 1 << t.Face);
             QualitySettings.lodBias = lodBias;
             Shader.SetGlobalFloat(NearCutId, 0f);
             _staticCb.Clear();
@@ -4460,84 +3908,18 @@ namespace WiresShadows
             for (int i = 0; i < ChangedShadowMode.Count; i++)
                 if (ChangedShadowMode[i] != null)
                     ChangedShadowMode[i].shadowCastingMode = PriorShadowModes[i];
-
-            if (ok)
-            {
-                RenderTexture a = _tiered ? _tierFlatFront[tierNow] : near ? _flatFront : _farFlatFront;
-                RenderTexture b = _tiered ? _tierFlatBack[tierNow] : near ? _flatBack : _farFlatBack;
-                Graphics.CopyTexture(face, t.Face, 0, a, 0, 0);
-                Graphics.CopyTexture(back, t.Face, 0, b, 0, 0);
-                if (_tiered)
-                {
-                    TierFace(t, t.Face, rendering);
-                    return;
-                }
-                if (_builtNativeOnly)
-                {
-                    // the map is kept only as comparison depth: combined straight into it
-                    CacheNativeFace(t, null, 0, near, near ? _resolution : _farResolution, a, b);
-                    return;
-                }
-                if (_combine == null)
-                    _combine = new Material(CombineShader) { hideFlags = HideFlags.HideAndDontSave };
-                if (_combineCb == null)
-                    _combineCb = new CommandBuffer { name = "WireShadowCombine" };
-                _combineCb.Clear();
-                RenderTexture target = t.Staged ? (near ? _stage : _farStage) : near ? _maps : _farMaps;
-                int slice = t.Staged ? t.Face : (near ? t.Slot : t.Slot - _near) * 6 + t.Face;
-                _combineCb.SetRenderTarget(new RenderTargetIdentifier(target, 0, CubemapFace.Unknown, slice));
-                _combineCb.SetGlobalTexture(FrontId, a);
-                _combineCb.SetGlobalTexture(BackId, b);
-                _combineCb.DrawProcedural(Matrix4x4.identity, _combine, 0, MeshTopology.Triangles, 3);
-                Graphics.ExecuteCommandBuffer(_combineCb);
-                CacheNativeFace(t, target, slice, near, target.width, null, null);
-            }
+            if (!ok) return;
+            Graphics.CopyTexture(_tierRG[tierNow], t.Face, 0, _tierFlatRG[tierNow], 0, 0);
+            TierFaceOnePass(t, t.Face, rendering);
         }
 
         private void FinishMap(Tracked t)
         {
-            bool near = t.Slot < _near;
             {
                 t.Face = -1;
-                if (_tiered)
-                {
-                    // the new cube on screen, the old one freed
-                    PublishTierMap(t);
-                    t.Staged = false;
-                    t.StagedNativeReady = false;
-                }
-                else if (t.Staged)
-                {
-                    // Swap the finished map in, all six faces at once.
-                    RenderTexture stage = near ? _stage : _farStage;
-                    int first = (near ? t.Slot : t.Slot - _near) * 6;
-                    if (!_builtNativeOnly) // native-only keeps no colour copy
-                        for (int f = 0; f < 6; f++)
-                            Graphics.CopyTexture(stage, f, 0, near ? _maps : _farMaps, first + f, 0);
-                    // Publish the PCF cube at the SAME handoff as RHalf.
-                    // No intermediate partially converted depth faces escape.
-                    RenderTexture nativeStage = near ? _nativeNearStage : _nativeFarStage;
-                    RenderTexture nativeMaps = near ? _nativeNearMaps : _nativeFarMaps;
-                    if (Plugin.NativeDepthPcf && t.StagedNativeReady &&
-                        nativeStage != null && nativeMaps != null && nativeStage.IsCreated())
-                    {
-                        for (int f = 0; f < 6; f++)
-                            Graphics.CopyTexture(nativeStage, f, 0, nativeMaps, first + f, 0);
-                        _nativeOwners[t.Slot] = t;
-                        _nativeFaceMasks[t.Slot] = 63;
-                        t.NativeCacheRange = t.StagedNativeRange;
-                    }
-                    else
-                    {
-                        // Manual comparison is compatible with the newly
-                        // published RHalf shadow. Never sample an old PCF cube
-                        // against the new RHalf map if staging was unavailable.
-                        _nativeFaceMasks[t.Slot] = 0;
-                    }
-                    t.StagedNativeReady = false;
-                    _stageOwner[near ? 0 : 1] = null;
-                    t.Staged = false;
-                }
+                // the new cube on screen, the old one freed
+                PublishTierMap(t);
+                t.Staged = false;
                 if (!t.Ready || t.Instant)
                     t.Fade = !t.Ready && !t.Instant && !Loading() ? 0f : 1f;
                 t.Instant = false;
@@ -4843,7 +4225,14 @@ namespace WiresShadows
             if (t.Tiny) return t.Light.transform.root;
             Piece p = t.Light.GetComponentInParent<Piece>();
             if (p != null) return p;
-            return t.Item ? t.Light.transform.root : null;
+            if (t.Item) return t.Light.transform.root;
+            // The same torches placed by the world, not built (the crypt's green ground torches,
+            // CastleKit_*): no Piece, but their own saved object. Not a whole dungeon or location
+            // the light happens to sit in.
+            ZNetView nv = t.Light.GetComponentInParent<ZNetView>();
+            if (nv != null && nv.GetComponent<DungeonGenerator>() == null && nv.GetComponent<Location>() == null)
+                return nv;
+            return null;
         }
 
         // Preserve vanilla's authored self-shadowing and near plane for any
@@ -5017,6 +4406,7 @@ namespace WiresShadows
     {
         private static void Postfix(ItemDrop __instance)
         {
+            ShadowCache.WorldVersion++;
             ShadowCache.RegisterPiece(__instance);
             ShadowCache.Items.Add(__instance);
             var lifecycle = __instance.GetComponent<DropLifecycle>();
@@ -5119,7 +4509,7 @@ namespace WiresShadows
         // Re-render once the door has swung.
         private static void Postfix(Door __instance, bool __state)
         {
-            if (__state) ShadowCache.DoorMoved(__instance);
+            if (__state) { ShadowCache.WorldVersion++; ShadowCache.DoorMoved(__instance); }
         }
     }
 

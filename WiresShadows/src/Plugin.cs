@@ -19,7 +19,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.1.5";
+        public const string Version = "0.1.6";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -108,15 +108,14 @@ namespace WiresShadows
                 {
                     if (s.name == "Hidden/WireToonDeferredShading") _shader = s;
                     else if (s.name == "Hidden/WireShadowDistance") ShadowCache.DistanceShader = s;
-                    else if (s.name == "Hidden/WireShadowFront") ShadowCache.FrontShader = s;
-                    else if (s.name == "Hidden/WireShadowBack") ShadowCache.BackShader = s;
+                    else if (s.name == "Hidden/WireShadowFrontBack") ShadowCache.FrontBackShader = s;
                     else if (s.name == "Hidden/WireShadowCombine") ShadowCache.CombineShader = s;
                     else if (s.name == "Hidden/WireShadowNativeDepthCopy") ShadowCache.NativeCopyShader = s;
                     else if (s.name == "Hidden/WireAOApply") AmbientOcclusion.BounceShader = s;
                 }
             }
             if (_shader == null || !_shader.isSupported || ShadowCache.DistanceShader == null ||
-                ShadowCache.FrontShader == null || ShadowCache.BackShader == null || ShadowCache.CombineShader == null)
+                ShadowCache.CombineShader == null)
             {
                 Logger.LogError("Shaders not found or not supported. The game's own lighting stays.");
                 return;

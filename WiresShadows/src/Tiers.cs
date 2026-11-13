@@ -28,9 +28,6 @@ namespace WiresShadows
         private readonly float[] _mapTier = new float[MaxSlots];
         private readonly float[] _mapCube = new float[MaxSlots];
         private long _poolBudget;
-        // Scratch faces per size (front, back, their flat copies); sizes 0 and 2 reuse the near and far ones.
-        private readonly RenderTexture[] _tierFace = new RenderTexture[TierCount], _tierBack = new RenderTexture[TierCount],
-            _tierFlatFront = new RenderTexture[TierCount], _tierFlatBack = new RenderTexture[TierCount];
         private static readonly int[] TierIds =
         {
             Shader.PropertyToID("_WireTier0"), Shader.PropertyToID("_WireTier1"),
@@ -44,28 +41,17 @@ namespace WiresShadows
         private int TierRes(int tier) => Mathf.Max(1, _resolution >> tier);
         private long CubeBytes(int tier) { long r = TierRes(tier); return 6L * r * r * 2; } // 16-bit depth
 
-        private bool _tiersFailed; // couldn't make the pools once: the near/far arrays from then on
+        private bool _tiersFailed; // couldn't make the pools once: the game's own shadows from then on
         private bool WantTiered(bool nativeOnly) =>
             nativeOnly && !_tiersFailed && LightingShader != null && LightingShader.FindPropertyIndex("_WireTieredShader") >= 0;
 
-        // From EnsureResources, after the near/far scratch faces exist.
+        // From EnsureResources.
         private bool SetUpTiers(long budget)
         {
             ReleaseTiers();
             _poolBudget = budget;
             for (int k = 0; k < TierCount; k++)
             {
-                if (k == 0) { _tierFace[k] = _face; _tierBack[k] = _faceBack; _tierFlatFront[k] = _flatFront; _tierFlatBack[k] = _flatBack; }
-                else if (TierRes(k) == _farResolution) { _tierFace[k] = _farFace; _tierBack[k] = _farFaceBack; _tierFlatFront[k] = _farFlatFront; _tierFlatBack[k] = _farFlatBack; }
-                else
-                {
-                    int r = TierRes(k);
-                    _tierFace[k] = new RenderTexture(r, r, 16, RenderTextureFormat.RHalf) { dimension = TextureDimension.Cube, useMipMap = false, filterMode = FilterMode.Point, name = "WireTierFace" + k };
-                    _tierFace[k].Create();
-                    _tierBack[k] = FaceRT(r, 16, true, "WireTierFaceBack" + k);
-                    _tierFlatFront[k] = FaceRT(r, 0, false, "WireTierFlatFront" + k);
-                    _tierFlatBack[k] = FaceRT(r, 0, false, "WireTierFlatBack" + k);
-                }
                 // one cube to start with, so every pool is bound
                 _poolUsed[k].Clear();
                 if (!GrowPool(k, 1, true)) return false;
@@ -73,6 +59,7 @@ namespace WiresShadows
             for (int s = 0; s < MaxSlots; s++) { _mapTier[s] = -1f; _mapCube[s] = -1f; }
             Shader.SetGlobalVector(TierResId, new Vector4(TierRes(0), TierRes(1), TierRes(2), TierRes(3)));
             Shader.SetGlobalFloat(TieredId, 1f);
+            MakeOnePassFaces();
             Plugin.Log.LogInfo("Shadow maps sized by screen: " + TierRes(0) + "/" + TierRes(1) + "/" + TierRes(2) + "/" + TierRes(3) +
                 " px, up to " + (_poolBudget >> 20) + " MB for them.");
             return true;
@@ -80,16 +67,12 @@ namespace WiresShadows
 
         private void ReleaseTiers()
         {
+            _kept.Clear(); // their pools go below
+            ReleaseOnePassFaces();
             for (int k = 0; k < TierCount; k++)
             {
                 if (_pool[k] != null) { _pool[k].Release(); Destroy(_pool[k]); _pool[k] = null; }
                 _poolUsed[k].Clear();
-                // only the ones made here (sizes 1 and 3), not the near/far ones reused
-                if (_tierFace[k] != null && _tierFace[k] != _face && _tierFace[k] != _farFace)
-                {
-                    _tierFace[k].Release(); _tierBack[k].Release(); _tierFlatFront[k].Release(); _tierFlatBack[k].Release();
-                }
-                _tierFace[k] = _tierBack[k] = _tierFlatFront[k] = _tierFlatBack[k] = null;
             }
             for (int s = 0; s < MaxSlots; s++) { _mapTier[s] = -1f; _mapCube[s] = -1f; }
             Shader.SetGlobalFloat(TieredId, 0f);
@@ -157,9 +140,16 @@ namespace WiresShadows
             for (int c = 0; c < used.Count; c++)
                 if (!used[c]) { used[c] = true; return c; }
             int n = used.Count;
-            if (!GrowPool(tier, Mathf.Max(n + 1, n * 2)) && !GrowPool(tier, n + 1)) return -1;
-            used[n] = true;
-            return n;
+            if (GrowPool(tier, Mathf.Max(n + 1, n * 2)) || GrowPool(tier, n + 1))
+            {
+                used[n] = true;
+                return n;
+            }
+            // no memory left: kept maps of unloaded lights make room, oldest first (Keep)
+            if (DropOldestKept(tier))
+                for (int c = 0; c < used.Count; c++)
+                    if (!used[c]) { used[c] = true; return c; }
+            return -1;
         }
 
         private void FreeCube(int tier, int cube)
@@ -229,6 +219,7 @@ namespace WiresShadows
             _mapTier[sl] = t.RenderTier;
             _mapCube[sl] = t.RenderCube;
             t.NativeCacheRange = t.RenderRange;
+            t.CasterHash = t.PendingHash;
             t.RenderCube = -1;
         }
 
@@ -246,24 +237,6 @@ namespace WiresShadows
             _mapCube[sl] = -1f;
         }
 
-        // One face into the light's cube: what DrawFace rendered, combined straight into depth.
-        private void TierFace(Tracked t, int face, bool rendering)
-        {
-            int tier = rendering ? t.RenderTier : (int)_mapTier[t.Slot];
-            int cube = rendering ? t.RenderCube : (int)_mapCube[t.Slot];
-            if (tier < 0 || cube < 0) return;
-            if (_combine == null)
-                _combine = new Material(CombineShader) { hideFlags = HideFlags.HideAndDontSave };
-            if (_nativeCopyCb == null)
-                _nativeCopyCb = new CommandBuffer { name = "Wire's Shadows native depth conversion" };
-            _nativeCopyCb.Clear();
-            _nativeCopyCb.SetRenderTarget(new RenderTargetIdentifier(_pool[tier], 0, CubemapFace.Unknown, cube * 6 + face));
-            _nativeCopyCb.SetGlobalFloat(NativeInvRangeId, 1f / (rendering ? t.RenderRange : t.NativeCacheRange));
-            _nativeCopyCb.SetGlobalTexture(FrontId, _tierFlatFront[tier]);
-            _nativeCopyCb.SetGlobalTexture(BackId, _tierFlatBack[tier]);
-            _nativeCopyCb.DrawProcedural(Matrix4x4.identity, _combine, 3, MeshTopology.Triangles, 3);
-            Graphics.ExecuteCommandBuffer(_nativeCopyCb);
-        }
 
         private void UploadTierMaps()
         {

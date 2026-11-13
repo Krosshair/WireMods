@@ -1,3 +1,11 @@
+## 0.1.6
+- Leaner: the mod keeps its shadow maps one way only (sized by the screen, kept as depth, both sides in one render). The two older ways it carried as fallbacks are gone (about 750 lines, a third of the lighting shader and three shaders), and so are their textures. A GPU that can't do this keeps the game's own point-light shadows.
+- Coming home is smooth: shadow maps are kept when their lights unload, and a light that loads back in with nothing changed around it gets its map back without rendering. Maps that do have to be built are spread out over time.
+- Less lag after a portal: the game keeps loading a base in for a few seconds after the loading screen, and every piece that appeared made the lights around it render again. A light now waits until everything around it has loaded (the same check the portal itself waits on), then renders once.
+- Shadow maps render in half the work: the surfaces facing a light and the ones facing away are drawn in one pass instead of two.
+- Food, meads and items on stands are no longer checked every frame.
+- Fixed: torches placed by the world (the green ground torches at swamp crypts) were shaded by their own model; like built ones, they no longer are.
+
 ## 0.1.5
 - Less stutter arriving at a base through a portal: shadow memory is set aside once instead of growing (and copying every shadow map) several times over while the base loads in.
 - Shadow maps get smaller again as you move away from a light (they only ever grew before), so the memory follows what's on your screen.
