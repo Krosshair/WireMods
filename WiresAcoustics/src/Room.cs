@@ -192,6 +192,7 @@ namespace WiresAcoustics
                     r = Cost.Start();
                     Ambience.Pan(__instance, lt, Time.deltaTime);
                     float t = Time.time;
+                    GeometryEvents.Step(t); // building changes held while a base loads in
                     c = Cost.Start();
                     if (r != 0L) rest += c - r;
                     if (t >= s_nextVoice) { s_nextVoice = t + Interval; Occlusion.Voices(Hearing.At); }

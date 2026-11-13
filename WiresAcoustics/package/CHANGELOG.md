@@ -1,3 +1,6 @@
+## 0.5.6
+- Less lag after a portal: while the game is still loading a base in, the room is measured once when it's in instead of again for every piece that appears.
+
 ## 0.5.5
 - Fixed: the wind and the outside ambience moved in audible steps as you walked (closer to a wall, through a doorway): they were set five times a second and jumped half way each time. They glide smoothly now, at the same speed.
 
