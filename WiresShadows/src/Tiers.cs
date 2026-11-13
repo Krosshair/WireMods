@@ -73,8 +73,8 @@ namespace WiresShadows
             for (int s = 0; s < MaxSlots; s++) { _mapTier[s] = -1f; _mapCube[s] = -1f; }
             Shader.SetGlobalVector(TierResId, new Vector4(TierRes(0), TierRes(1), TierRes(2), TierRes(3)));
             Shader.SetGlobalFloat(TieredId, 1f);
-            Plugin.Note("[tiers] map sizes " + TierRes(0) + "/" + TierRes(1) + "/" + TierRes(2) + "/" + TierRes(3) +
-                " px, up to " + (_poolBudget >> 20) + " MB for them");
+            Plugin.Log.LogInfo("Shadow maps sized by screen: " + TierRes(0) + "/" + TierRes(1) + "/" + TierRes(2) + "/" + TierRes(3) +
+                " px, up to " + (_poolBudget >> 20) + " MB for them.");
             return true;
         }
 
@@ -131,6 +131,26 @@ namespace WiresShadows
             return true;
         }
 
+        // After each reassignment: each pool grown once to hold every map waiting to be rendered
+        // into it, not doubled again and again as they come (each growth is a new texture and a
+        // copy of every map in it; arriving at a base that was several in a few seconds).
+        private readonly int[] _waiting = new int[TierCount];
+        private void SizePoolsForWaiting()
+        {
+            System.Array.Clear(_waiting, 0, TierCount);
+            foreach (Tracked t in _slots)
+                if (t != null && t.Light != null && t.Dirty && t.RenderCube < 0)
+                    _waiting[Mathf.Clamp(t.WantTier, 0, TierCount - 1)]++;
+            for (int k = 0; k < TierCount; k++)
+            {
+                if (_waiting[k] == 0) continue;
+                int used = 0;
+                foreach (bool u in _poolUsed[k]) if (u) used++;
+                int need = used + _waiting[k];
+                if (need > _poolUsed[k].Count) GrowPool(k, need); // over the memory share: AllocCube falls back as before
+            }
+        }
+
         private int AllocCube(int tier)
         {
             List<bool> used = _poolUsed[tier];
@@ -156,9 +176,13 @@ namespace WiresShadows
             Vector3 lp = t.Light.transform.position;
             float dist = Vector3.Distance(lp, cam.transform.position);
             if (dist <= range) return 0; // inside its reach: its shadows can fill the screen
+            // One map texel no bigger than one screen pixel where its shadows come nearest the
+            // camera: at the edge of its reach (a texel there is range x 2 / size wide, a pixel
+            // at that distance (dist - range) x 2 tan(fov/2) / screen height). Measured from the
+            // light's centre it came out a size too small for shadows between you and the light.
             // Out of view it's sized as if you looked at it, so turning round doesn't show a
             // small map being swapped for a bigger one.
-            float px = range / (dist * Mathf.Tan(cam.fieldOfView * .5f * Mathf.Deg2Rad)) * cam.pixelHeight;
+            float px = range * cam.pixelHeight / ((dist - range) * Mathf.Tan(cam.fieldOfView * .5f * Mathf.Deg2Rad));
             int tier = 0;
             while (tier < TierCount - 1 && TierRes(tier + 1) >= px) tier++;
             return tier;

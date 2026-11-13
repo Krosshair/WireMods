@@ -2047,8 +2047,11 @@ namespace WiresShadows
             _ultra = ultra;
             far += ultra; // distant arrays hold the ultra-distant slots too
             _slots = new Tracked[slots + far];
-            _dynNearCapacity = InitialNear;
-            _dynFarCapacity = InitialFar;
+            // Moving-shadow pools at their full size from the start: the memory share already
+            // counts them whole (FitToMemory), and growing them as lights need them meant a new
+            // texture and a copy of every moving map, several times over on arriving at a base.
+            _dynNearCapacity = Mathf.Max(1, Mathf.Min(slots, _nearMovingCap));
+            _dynFarCapacity = Mathf.Max(1, Mathf.Min(far, _farMovingCap));
             ResetDynPool();
 
             // At least one slice so the shader always has a texture bound.
@@ -2437,13 +2440,20 @@ namespace WiresShadows
             // Sized maps: a light that now covers more of the screen than its map is sized for
             // re-renders bigger (its old map stays on screen till the new one is done).
             if (_tiered)
+            {
+                // And one that covers much less re-renders smaller: when it needs two sizes less than
+                // it has (one size of slack, so walking back and forth across where one size turns
+                // into the next doesn't re-render it every time).
                 foreach (Tracked t in _slots)
                     if (t != null && t.Ready && !t.Dirty && t.Face < 0 && t.PromotionTo == null && t.PromotionFrom == null &&
-                        _mapTier[t.Slot] >= 0f && t.WantTier < (int)_mapTier[t.Slot])
+                        _mapTier[t.Slot] >= 0f &&
+                        (t.WantTier < (int)_mapTier[t.Slot] || t.WantTier >= (int)_mapTier[t.Slot] + 2))
                     {
                         t.Dirty = true;
                         t.DirtyAt = Time.time;
                     }
+                SizePoolsForWaiting();
+            }
             }
             finally
             {
@@ -2915,7 +2925,6 @@ namespace WiresShadows
                 _shrinkPools = false;
                 ShrinkMovingPools();
             }
-            else if (_active) ShrinkWhenIdle();
             if (Swings.Count > 0)
                 UpdateSwings();
             UpdateStandHandoffs(); // Dropped items no longer need a static-map handoff.
@@ -4308,7 +4317,7 @@ namespace WiresShadows
                 return true;
             if (p.IsTeleporting())
             {
-                if (!_teleporting) _shrinkPools = true;
+                // (moving pools used to be shrunk here and grown back on arrival: they stay full size now)
                 _teleporting = true;
                 return true;
             }
@@ -4340,7 +4349,6 @@ namespace WiresShadows
         {
             _spawnedAt = Time.time;
             _fillUntil = Time.time + FillSeconds;
-            _shrinkPools = true;
             if (Instance != null)
                 Instance.Reassign();
         }

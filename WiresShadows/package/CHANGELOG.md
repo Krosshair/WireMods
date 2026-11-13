@@ -1,3 +1,8 @@
+## 0.1.5
+- Less stutter arriving at a base through a portal: shadow memory is set aside once instead of growing (and copying every shadow map) several times over while the base loads in.
+- Shadow maps get smaller again as you move away from a light (they only ever grew before), so the memory follows what's on your screen.
+- Fixed: shadows between you and a light further away could be low-res: a map's size was measured from the light, not from where its shadows come nearest the camera. One map texel is now no bigger than one screen pixel there.
+
 ## 0.1.4
 - Follows the game's Point light shadows setting. On the highest setting nothing changes. Off: no light shadows from the mod either. Low and the default: every light within the game's own shadow distance (20 m) gets its shadows, not just 1 or 3, and moving shadows get the same work per frame the game would spend on its 1 or 3 lights, nearest lights first. Better looking than vanilla at the same cost.
 - Recommended: set Point light shadows to the highest setting. That's what the mod is made for, and where it looks its best.
