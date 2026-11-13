@@ -1,3 +1,6 @@
+## 0.5.2
+- Fixed: walking up to a window with rain outside cut the rain in, and walking away cut it out again. The sound at each opening was tied to the opening's rank, so when a window became the bigger opening (or a new one turned up) its sound jumped across the room at full level. Each opening now keeps its own sound, a new one fades in where it is and a lost one fades out where it was. How closed in you are also glides over a second instead of stepping.
+
 ## 0.5.1
 - Fixed: sound got through closed buildings. Pieces snapped together often leave a hairline gap between their colliders, and the one ray from you to a sound could run through it as if the wall were open. Every line is now three rays 8 cm apart, and what two of them agree on counts. The mod was at fault.
 - Fixed: the room rays could take such a seam for a window or a door and route sounds through it. A gap counts as an opening only if the rays beside it get through too.

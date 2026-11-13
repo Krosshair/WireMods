@@ -34,9 +34,17 @@ namespace WiresAcoustics
             internal AcousticFilter F;
             internal float Level, Target, Width;
         }
-        private static readonly Copy[,] Copies = new Copy[Openings, 2]; // [opening, 0 ambience / 1 wind]
-        private static readonly Vector3[] At = new Vector3[Openings];
-        private static readonly bool[] Placed = new bool[Openings];
+        // Copies stay with their opening: an opening keeps its copy as long as it's found (matched by
+        // direction), a new one gets a free copy that fades in where it is, and one that's gone fades
+        // out where it was. (By rank instead, two openings swapping places, or a third one turning up,
+        // sent a copy flying across the room at full level: rain cutting in and out by a window.)
+        private const int Slots = 2 * Openings; // the ones in use, and as many fading out
+        private static readonly Copy[,] Copies = new Copy[Slots, 2]; // [slot, 0 ambience / 1 wind]
+        private static readonly Vector3[] At = new Vector3[Slots];
+        private static readonly Vector3[] Dir = new Vector3[Slots];
+        private static readonly bool[] Placed = new bool[Slots];
+        private static readonly bool[] Used = new bool[Slots];
+        private static float s_insideAt = -1f;
         private static GameObject s_root;
 
         private static void RememberPan(AudioSource src)
@@ -128,7 +136,12 @@ namespace WiresAcoustics
             AcousticFilter.AirWeather = EnvMan.IsFreezing() ? AcousticFilter.Freezing : EnvMan.IsCold() ? AcousticFilter.Cold : AcousticFilter.Warm;
             float s = Plugin.Occlusion.Value ? Mathf.Clamp(Plugin.OcclusionStrength.Value, 0f, 1.5f) : 0f;
             // inside from about a third closed in, fully from about two thirds
-            s_inside = s > 0f ? Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(.35f, .7f, enclosure)) : 0f;
+            // and glided there over a second (a room ray or two changing near a window moved it in
+            // steps, so the bed jumped)
+            float insideNow = s > 0f ? Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(.35f, .7f, enclosure)) : 0f;
+            float dt = s_insideAt < 0f ? 10f : Mathf.Clamp(Time.time - s_insideAt, 0f, .5f);
+            s_insideAt = Time.time;
+            s_inside = Mathf.MoveTowards(s_inside, insideNow, dt);
             float k = Mathf.Min(1f, s) * s_inside;
             s_gain = Mathf.Clamp(Mathf.Lerp(1f, Mathf.Pow(Room.WallBed, s), s_inside), 0f, 1f);
             s_cutoff = Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(Occlusion.WallCut), k));
@@ -154,24 +167,52 @@ namespace WiresAcoustics
                 Need(f);
             }
             // the openings
-            int n = Mathf.Min(Openings, Portals.List.Count);
+            int n = s_inside > 0f ? Mathf.Min(Openings, Portals.List.Count) : 0;
             Vector3 listener = Hearing.At;
-            for (int o = 0; o < Openings; o++)
+            for (int j = 0; j < Slots; j++) Used[j] = false;
+            for (int op = 0; op < n; op++)
             {
-                float level = 0f, width = 0f;
-                if (o < n && s_inside > 0f)
+                Portals.Portal p = Portals.List[op];
+                // the copy already at this opening (pointing the same way), else a silent one
+                int slot = -1;
+                float best = .8f;
+                for (int j = 0; j < Slots; j++)
                 {
-                    Portals.Portal p = Portals.List[o];
-                    Vector3 to = p.Point + p.Dir * OutsideBy;
-                    At[o] = Placed[o] ? Vector3.Lerp(At[o], to, .5f) : to;
-                    Placed[o] = true;
-                    level = Mathf.Sqrt(Mathf.Clamp01(p.Share)) * s_inside;
-                    width = Area.WidthAt(p.Radius, (At[o] - listener).magnitude);
+                    float dot = Vector3.Dot(Dir[j], p.Dir);
+                    if (!Used[j] && Placed[j] && Sounding(j) && dot > best) { best = dot; slot = j; }
                 }
-                else if (s_inside <= 0f) Placed[o] = false;
-                Play(o, 0, amb, level, width, listener);
-                Play(o, 1, wind, level, width, listener);
+                if (slot < 0)
+                    for (int j = 0; j < Slots; j++)
+                        if (!Used[j] && !Sounding(j)) { slot = j; Placed[j] = false; break; }
+                if (slot < 0) continue;
+                Used[slot] = true;
+                Vector3 to = p.Point + p.Dir * OutsideBy;
+                At[slot] = Placed[slot] ? Vector3.Lerp(At[slot], to, .5f) : to;
+                Dir[slot] = p.Dir;
+                Placed[slot] = true;
+                float level = Mathf.Sqrt(Mathf.Clamp01(p.Share)) * s_inside;
+                float width = Area.WidthAt(p.Radius, (At[slot] - listener).magnitude);
+                Play(slot, 0, amb, level, width, listener);
+                Play(slot, 1, wind, level, width, listener);
             }
+            for (int j = 0; j < Slots; j++)
+                if (!Used[j])
+                {
+                    Play(j, 0, amb, 0f, 0f, listener); // fades out where it is
+                    Play(j, 1, wind, 0f, 0f, listener);
+                    if (!Sounding(j)) Placed[j] = false;
+                }
+        }
+
+        // A slot whose copies are still heard (or fading).
+        private static bool Sounding(int j)
+        {
+            for (int w = 0; w < 2; w++)
+            {
+                Copy c = Copies[j, w];
+                if (c != null && c.Src != null && c.Src.isPlaying && (c.Level > 0f || c.Target > 0f)) return true;
+            }
+            return false;
         }
 
         // A loop as the bed through the walls: muffled from all round, no direction.
@@ -244,7 +285,7 @@ namespace WiresAcoustics
         // own level for its loop (its fades, the weather).
         private static void Fade(float dt)
         {
-            for (int o = 0; o < Openings; o++)
+            for (int o = 0; o < Slots; o++)
                 for (int w = 0; w < 2; w++)
                 {
                     Copy c = Copies[o, w];
@@ -315,8 +356,8 @@ namespace WiresAcoustics
         {
             RestorePlaced();
             RandomAmbients.Clear();
-            s_gain = 1f; s_cutoff = 22000f; s_inside = 0f; s_windLean = 0f;
-            for (int o = 0; o < Openings; o++)
+            s_gain = 1f; s_cutoff = 22000f; s_inside = 0f; s_windLean = 0f; s_insideAt = -1f;
+            for (int o = 0; o < Slots; o++)
             {
                 Placed[o] = false;
                 for (int w = 0; w < 2; w++)
@@ -340,10 +381,10 @@ namespace WiresAcoustics
             if (s_inside <= 0f) return "outside sound: as the game plays it";
             var sb = new System.Text.StringBuilder("outside sound: through the walls ");
             sb.Append(Db(s_gain)).Append(" dB at ").Append(s_cutoff.ToString("F0")).Append(" Hz");
-            for (int o = 0; o < Openings; o++)
+            for (int o = 0; o < Slots; o++)
             {
                 Copy c = Copies[o, 0];
-                if (c == null || c.Src == null || !c.Src.isPlaying) continue;
+                if (c == null || c.Src == null || !c.Src.isPlaying || c.Target <= 0f) continue;
                 sb.Append(", opening ").Append(o + 1).Append(' ').Append(Db(c.Target)).Append(" dB, ").Append((c.Width * 100f).ToString("F0")).Append("% wide");
             }
             return sb.ToString();

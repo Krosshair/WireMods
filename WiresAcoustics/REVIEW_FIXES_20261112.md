@@ -173,3 +173,5 @@ DN = one loop of its own (vol 2) + 20 wind variations every ~10 s. Every biome n
 
 ## 0.5.1 rays (2026-11-12)
 - Three rays per line (8 cm side/up), median by gain; room rays x3, a lone escaped ray with both twins hitting takes the nearer twin hit; SourceClearance .5 -> .05; MaxHits 8 -> 16, full buffer = at least a plank wall. Version 0.5.1, CHANGELOG + README judgement list, Nexus regenerated. Built 0/0, staged in stage_next (game running). Backup backup/RAYS051_20261112.
+
+## 0.5.2 draft (2026-11-13): window rain cut in/out: Ambience copies matched to openings by direction (4 slots: 2 in use + 2 fading), new ones fade in in place, lost ones fade out in place; s_inside glides (1 per second). CHANGELOG ## 0.5.2. Version constant not bumped. Backup backup/RAIN_WINDOW_20261113.
