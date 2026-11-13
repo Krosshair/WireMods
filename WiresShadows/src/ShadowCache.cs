@@ -453,7 +453,9 @@ namespace WiresShadows
                 // texture alpha is often something else (gloss).
                 // Items (on stands, placed food) are never cut: their textures' alpha is often
                 // something else too, and the moving maps draw them whole as well.
-                m.SetFloat("_WireClip", tex != null && !item && orig.HasProperty("_Cutoff") ? 1f : 0f);
+                bool clip = tex != null && !item && orig.HasProperty("_Cutoff");
+                m.SetFloat("_WireClip", clip ? 1f : 0f);
+                if (!clip) m.SetFloat("_Cutoff", 0f); // the shaders clip on any cutoff now
                 ClipMaterials[(orig, shader, item)] = m;
             }
             return m;
@@ -2210,6 +2212,7 @@ namespace WiresShadows
         }
 
         private const float OffscreenWeight = 3f;
+        private const float ScreenWeight = 4f;
         private const float NearCutoff = 12f;
         private const float TierMargin = 4f;
 
@@ -2389,6 +2392,17 @@ namespace WiresShadows
             float p = 0.42f * influenceGap + 0.28f * cameraDist;
             if (!GeometryUtility.TestPlanesAABB(ReassignFrustum, new Bounds(lp, Vector3.one * (range * 2f))))
                 p = p * OffscreenWeight + 2f;
+            else
+            {
+                // In view: how much of the screen its light (and so its shadows) covers.
+                // Inside its reach that's all of it; further out, its reach's size against
+                // the distance (about its share of the view). A big one on screen wins a
+                // full-size map over a smaller one at the same distance, and a faint light
+                // (low intensity) counts for less than a bright one of the same size.
+                float screen = cameraDist <= range ? 1f : Mathf.Clamp01(range / cameraDist);
+                float bright = Mathf.Clamp01(t.Light.intensity / 1.5f);
+                p -= ScreenWeight * screen * (0.5f + 0.5f * bright);
+            }
             return t.Tiny ? p + TinyRank : p;
         }
 
@@ -4119,12 +4133,18 @@ namespace WiresShadows
             // Two passes: surfaces facing the light, then facing away; the map
             // keeps the midpoint (see WireShadowCombine).
             RenderTexture back = near ? _faceBack : _farFaceBack;
+            // Always the full-detail models: the cube camera picks LODs by its own view (wide,
+            // small target), which swapped detailed pieces (the spice rack's herbs and frame)
+            // for their simplified LOD in the cached shadow.
+            float lodBias = QualitySettings.lodBias;
+            QualitySettings.lodBias = 10000f;
             _camera.SetReplacementShader(FrontShader, "RenderType");
             DrawUntagged(t, ref _frontMat, FrontShader, true);
             bool ok = _camera.RenderToCubemap(face, 1 << t.Face);
             _camera.SetReplacementShader(BackShader, "RenderType");
             DrawUntagged(t, ref _backMat, BackShader, false);
             ok &= _camera.RenderToCubemap(back, 1 << t.Face);
+            QualitySettings.lodBias = lodBias;
             Shader.SetGlobalFloat(NearCutId, 0f);
             _staticCb.Clear();
             foreach (Renderer r in ChangedForceOff)
@@ -4312,7 +4332,7 @@ namespace WiresShadows
                     if (StandVisuals.Contains(r) || DropVisuals.Contains(r) ||
                         flat || looseItem || SeeThrough(r))
                         t.Hide.Add(r);
-                    else if (r.shadowCastingMode == ShadowCastingMode.Off)
+                    else if (r.shadowCastingMode == ShadowCastingMode.Off || FarLod(r))
                         t.Hide.Add(r);
                     else
                     {
@@ -4466,6 +4486,25 @@ namespace WiresShadows
         // jack-o-turnip, an item's glow) skips its own model.
         // An item's light never: some (Brenna's trophy) reuse the carried torch's flame, whose
         // 1.47 m near plane was made to clear the hand holding it and left a 2 m light nothing to shade.
+        // A renderer only in a far LOD level of its LOD group (not in LOD 0). The camera
+        // pass gets LOD 0 by the forced bias, but the explicit and two-sided passes draw
+        // every renderer they're given, so these are left out there: the spice rack's
+        // simplified model (flat cards) was being drawn over its detailed one.
+        private static readonly List<LODGroup> s_lodGroups = new List<LODGroup>();
+        private static bool FarLod(Renderer r)
+        {
+            r.GetComponentsInParent(true, s_lodGroups);
+            if (s_lodGroups.Count == 0) return false;
+            LOD[] lods = s_lodGroups[0].GetLODs();
+            if (lods.Length < 2) return false;
+            foreach (Renderer l in lods[0].renderers)
+                if (l == r) return false;
+            for (int i = 1; i < lods.Length; i++)
+                foreach (Renderer l in lods[i].renderers)
+                    if (l == r) return true;
+            return false;
+        }
+
         private static bool OwnShades(Tracked t) =>
             !t.Item && (t.OriginalShadowLod || t.OriginalShadows != LightShadows.None);
 

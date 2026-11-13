@@ -1,3 +1,8 @@
+## 0.1.2
+- Lights whose light covers more of your screen (close, or big and bright in view) get full-size shadow maps first.
+- Sharper shadow edges close to a light: fine details (herbs, strings, small pots) no longer smear into blobs.
+- Fixed: see-through parts of pieces (the spice rack's herbs, leaves) cast solid card-shaped shadows in cached shadows instead of their real shape.
+
 ## 0.1.1
 - Faster moving shadows: only the part of a shadow map that changed is redrawn, each object is drawn once for every side of a light's map it touches, and the further out in a light's range the moving things are, the less often their shadows are redrawn (every frame close to the light, every 4th at the edge). You now cast a moving shadow out to a light's whole range.
 - Placed food and meads are part of the cached shadows instead of the moving ones, and a placed mead's glow is a light of its own.

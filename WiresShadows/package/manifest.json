@@ -1,7 +1,7 @@
 {
     "name": "WiresShadows",
     "description": "Real shadows for every light you place and no light through walls, running about as fast as vanilla.",
-    "version_number": "0.1.1",
+    "version_number": "0.1.2",
     "website_url": "",
     "dependencies": []
 }

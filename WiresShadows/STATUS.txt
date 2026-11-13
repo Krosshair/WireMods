@@ -467,3 +467,5 @@ Moving shadows: partial face redraws. Groups redrawn every frame (hash == frame:
 2026-11-13 AO radius back to vanilla 3 m (1 m lifted shade, Kajetan menu screenshot).
 2026-11-13 AO reduced to GTAO multi-bounce only, on the game post-effect path (albedo from _CameraGBufferTexture0); setting + deferred/radius/power/intensity/thickness removed. Needs bundle rebuild. Old shader in backup/FULL_REVIEW_20261113/WireAO_v1.
 2026-11-13 bundle with post-effect GTAO multi-bounce embedded.
+2026-11-13 LOD fix: lodBias 10000 during static cube renders (cauldron_ext LODGroups showed lod1 in cached shadows).
+2026-11-13 0.1.2 wip: Priority screen-coverage bonus (ScreenWeight 4); PCF offsets one texel (shader, needs bundle rebuild); FarLod skip; lodBias during static renders.
