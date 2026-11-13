@@ -19,13 +19,16 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.1.0";
+        public const string Version = "0.1.1";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
         internal static ManualLogSource Log;
         // Benchmark temporarily turns the cached path off; normal play always uses it.
         internal static bool CachedShadows = true;
+        // Moving shadows redrawn less often the fainter the light is where the moving things are
+        // (ShadowCache.FaintEvery). The benchmark compares it with every frame.
+        internal static bool FaintCut = true;
         internal const int Slots = 24;
         internal const int Resolution = 1024;
         internal const int FarSlots = 40;
@@ -87,7 +90,7 @@ namespace WiresShadows
             // Existing shadow fallbacks handle unsupported GPU formats.
 
             Benchmark = Setting("General", "Benchmark", false,
-                "Run the four-mode mod versus vanilla benchmark. Measures two rounds and resets automatically.");
+                "Measures the mod against vanilla where you stand (about a minute) and shows the frame times. Resets itself.");
             DebugLog = Setting("General", "Debug log", false,
                 "Writes what the mod is doing to the log (BepInEx/LogOutput.log). On by itself while a benchmark runs.");
             Benchmark.SettingChanged += (_, __) => { if (Benchmark.Value && GetComponent<Bench>() == null) gameObject.AddComponent<Bench>(); };
@@ -109,6 +112,7 @@ namespace WiresShadows
                     else if (s.name == "Hidden/WireShadowBack") ShadowCache.BackShader = s;
                     else if (s.name == "Hidden/WireShadowCombine") ShadowCache.CombineShader = s;
                     else if (s.name == "Hidden/WireShadowNativeDepthCopy") ShadowCache.NativeCopyShader = s;
+                    else if (s.name == "Hidden/WireAOApply") AmbientOcclusion.BounceShader = s;
                 }
             }
             if (_shader == null || !_shader.isSupported || ShadowCache.DistanceShader == null ||
@@ -146,7 +150,7 @@ namespace WiresShadows
             VpoCompat.Remove(_harmony, Logger, AccessTools.Method(typeof(LightFlicker), "Awake"), "ValheimPerformanceOptimizations.Patches.VPOLightFlicker");
 
             gameObject.AddComponent<ShadowCache>();
-            UseShader.SettingChanged += (_, __) => Apply();
+            UseShader.SettingChanged += (_, __) => { Apply(); AmbientOcclusion.Apply(); };
             Apply();
         }
 

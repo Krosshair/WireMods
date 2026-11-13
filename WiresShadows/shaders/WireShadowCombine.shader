@@ -17,8 +17,6 @@ Shader "Hidden/WireShadowCombine"
             #pragma target 4.5
             Texture2D<float> _WireFront;
             Texture2D<float> _WireBack;
-            float _WireCombineCut; // the light's near plane
-            float _WireFrontDepthTest; // debug A/B: 0 midpoint, 1 nearest front
             float4 vert(uint id : SV_VertexID) : SV_POSITION
             {
                 float2 p = float2((id << 1) & 2, id & 2);
@@ -41,10 +39,10 @@ Shader "Hidden/WireShadowCombine"
                 // and thin sheets must still block, even if a later front
                 // surface is visible along the same ray. Don't apply the old
                 // near-cut heuristic to legitimate back-facing surfaces.
-                // Nearest surface, as Unity stores it. Self-shadowing is handled
-                // on the receiving side (normal offset + depth bias in the
-                // lighting shader), so no midpoint/cap: nothing leaks behind blockers.
-                return min(f, b);
+                // Removed: the "back seen first just past the near cut" rule. _WireCombineCut
+                // was never set (always 0), so it dropped every back face within 0.5 m of a
+                // light, including real blockers whose front is inside the near plane.
+                return b < f ? b : min(0.5 * (f + b), f + cap);
             }
             ENDCG
         }
@@ -58,7 +56,6 @@ Shader "Hidden/WireShadowCombine"
             #pragma fragment frag
             #pragma target 4.5
             Texture2D<float2> _WireFrontBack;
-            float _WireFrontDepthTest;
             float4 vert(uint id : SV_VertexID) : SV_POSITION
             {
                 float2 p = float2((id << 1) & 2, id & 2);
@@ -67,7 +64,7 @@ Shader "Hidden/WireShadowCombine"
             float4 frag(float4 pos : SV_POSITION) : SV_Target
             {
                 float2 fb = _WireFrontBack.Load(int3(pos.xy, 0));
-                return min(fb.x, fb.y);
+                return fb.y < fb.x ? fb.y : min(0.5 * (fb.x + fb.y), fb.x + 0.35);
             }
             ENDCG
         }

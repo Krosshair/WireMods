@@ -2,17 +2,24 @@ using UnityEngine;
 
 namespace WiresShadows
 {
-    // Opt-in four-way frame-time test. One diagnostic mode keeps the complete
-    // WLO CPU and pixel shader path, but skips moving-shadow GPU submissions.
+    // Opt-in frame-time test in the same time as before (about 52 s), five modes, each twice:
+    //  0 the full mod;
+    //  1 the full mod with faint lights' moving shadows redrawn every frame (FaintCut off; on,
+    //    they're redrawn less often the further out in a light's range the moving things are);
+    //  2 the mod without its moving shadows (the cached ones only);
+    //  3 the cached shadows plus the game's own shadows for those lights, as vanilla draws its
+    //    moving shadows: 3 - 2 is what vanilla's way costs, 0 - 2 what ours does;
+    //  4 vanilla.
+    // A switch that has to redraw or fade shadows gets the full settle; the rest a short one.
     // No extra work is added outside the already-existing benchmark.
     internal sealed class Bench : MonoBehaviour
     {
-        private const float Window = 4f;
-        private const float Settle = 2.5f; // switching back re-renders the cached maps first
-        private const int Modes = 4, Rounds = 2;
-        // Paired ABBA full/skip sequence reduces temporal drift in the GPU
-        // comparison. Shader-only / vanilla are also paired in reverse order.
-        private static readonly int[] PhaseModes = { 0, 1, 1, 0, 2, 3, 3, 2 };
+        private const float Window = 3.9f;
+        private const float Settle = 2.5f, Quick = .5f;
+        private const int Modes = 5, Rounds = 2;
+        // Paired ABBA sequences reduce drift: full / moving-shadow skip, then shader-only / vanilla
+        // in reverse order. Every mode runs twice.
+        private static readonly int[] PhaseModes = { 0, 1, 1, 0, 2, 3, 3, 2, 4, 4 };
         private float _start;
         private float _settle;
         private int _phase;
@@ -21,7 +28,7 @@ namespace WiresShadows
         private readonly double[] _ms = new double[Modes];
         private bool _wasShader, _wasCached;
         private static readonly string[] ModeNames = {
-            "full mod", "mod without moving GPU submission", "shader only", "vanilla"
+            "full mod", "faint lights every frame", "cached shadows only", "cached + vanilla moving shadows", "vanilla"
         };
         private string _result;
         private float _doneAt;
@@ -44,16 +51,18 @@ namespace WiresShadows
                 ShadowCache.EndBenchmarkSampling();
                 _sampling = false;
             }
+            int before = phase > 0 ? PhaseModes[phase - 1] : 0;
             _phase = phase;
             int mode = PhaseModes[phase];
             // Changing skipped-GPU -> full invalidates stale faces once;
             // consecutive identical phases must NOT toggle the skip flag.
-            ShadowCache.BenchmarkSkipMovingGpu(mode == 1);
-            Plugin.UseShader.Value = mode != 3;
-            Plugin.CachedShadows = mode == 0 || mode == 1;
-            // Full and skipped-GPU blocks are now adjacent and paired;
-            // the normal settling window covers the face refresh on return.
-            _settle = Settle;
+            ShadowCache.BenchmarkSkipMovingGpu(mode == 2 || mode == 3);
+            ShadowCache.BenchmarkVanillaShadows(mode == 3);
+            Plugin.FaintCut = mode != 1;
+            Plugin.UseShader.Value = mode != 4;
+            Plugin.CachedShadows = mode != 4;
+            bool quick = mode == before || (mode <= 1 && before <= 1) || (mode == 2 && before <= 1);
+            _settle = quick ? Quick : Settle;
             _start = Time.realtimeSinceStartup;
             _sum = 0;
             _frames = 0;
@@ -93,15 +102,15 @@ namespace WiresShadows
             }
             if (_phase < PhaseModes.Length - 1) { Begin(_phase + 1); return; }
 
-            double full = _ms[0], skip = _ms[1], shader = _ms[2], off = _ms[3];
+            double full = _ms[0], wide = _ms[1], cached = _ms[2], van = _ms[3], off = _ms[4];
             // Paired mode delta is only a frame-time observation, NOT a
             // trustworthy GPU timer: other scene and pipeline work can vary.
             // It guides dedicated GPU profiling rather than replacing it.
             _result = string.Format(
-                "mod {0:0.00} ms ({1:0} fps), moving GPU skipped {2:0.00} ms ({3:0} fps), shader only {4:0.00} ms ({5:0} fps), vanilla {6:0.00} ms ({7:0} fps); full-minus-skip (not isolated GPU time) {8:+0.00;-0.00} ms, mod vs vanilla {9:+0.00;-0.00} ms.",
-                full, 1000 / full, skip, 1000 / skip, shader, 1000 / shader,
-                off, 1000 / off, full - skip, full - off);
-            Plugin.Log.LogInfo("Benchmark: " + _result + " " + SunCasters.Summary());
+                "mod {0:0.00} ms ({1:0} fps), faint lights every frame {2:0.00} ms, cached shadows only {3:0.00} ms, cached + vanilla moving {4:0.00} ms, vanilla {5:0.00} ms ({6:0} fps); faint lights redrawn less often {7:+0.00;-0.00} ms, our moving shadows {8:+0.00;-0.00} ms, vanilla's moving shadows {9:+0.00;-0.00} ms, mod vs vanilla {10:+0.00;-0.00} ms.",
+                full, 1000 / full, wide, cached, van, off, 1000 / off,
+                full - wide, full - cached, van - cached, full - off);
+            Plugin.Log.LogInfo("Benchmark: " + _result);
             _doneAt = Time.realtimeSinceStartup;
             Restore();
         }
@@ -121,6 +130,8 @@ namespace WiresShadows
                 _sampling = false;
             }
             ShadowCache.BenchmarkSkipMovingGpu(false);
+            ShadowCache.BenchmarkVanillaShadows(false);
+            Plugin.FaintCut = true;
             Plugin.UseShader.Value = _wasShader;
             Plugin.CachedShadows = _wasCached;
             Plugin.Benchmark.Value = false;
@@ -138,11 +149,11 @@ namespace WiresShadows
                 float t = Time.realtimeSinceStartup - _start;
                 string stage = t < _settle ? "settling" : "measuring " + Mathf.CeilToInt(_settle + Window - t) + " s";
                 int left = PhaseModes.Length - _phase - 1;
-                float remaining = Mathf.Max(0f, _settle + Window - t) + left * (Settle + Window);
+                float remaining = Mathf.Max(0f, _settle + Window - t) + left * (1.3f + Window);
                 text = "Wire's Shadows benchmark: " + ModeNames[PhaseModes[_phase]] + " (phase " + (_phase + 1) + "/" + PhaseModes.Length + "), " + stage +
                        "\nAbout " + Mathf.CeilToInt(remaining) + " s left. Keep the same view and position.";
             }
-            GUI.Box(new Rect(20, 20, 700, _result != null ? 190 : 95), text, _style);
+            GUI.Box(new Rect(20, 20, 700, _result != null ? 320 : 95), text, _style);
         }
     }
 }

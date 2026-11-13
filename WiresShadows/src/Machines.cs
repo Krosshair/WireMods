@@ -92,7 +92,7 @@ namespace WiresShadows
             var rs = new List<Renderer>();
             foreach (Transform root in roots)
                 foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
-                    if (!(r is ParticleSystemRenderer) && SunCasters.ModeOf(r) != ShadowCastingMode.Off &&
+                    if (!(r is ParticleSystemRenderer) && r.shadowCastingMode != ShadowCastingMode.Off &&
                         !SeeThrough(r) && !rs.Contains(r))
                         rs.Add(r);
             if (rs.Count == 0)

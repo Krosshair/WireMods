@@ -1,0 +1,33 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.0.75f1
+CRC: 2593683257
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: 62270ee312d392a5cb55d87537819a11
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: 4afb0d898c1c22a5e88248733bd69457
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: d6e8724270d87ac9020f7aef163626e6
+HashAppended: 0
+ClassTypes:
+- Class: 21
+  Script: {instanceID: 0}
+- Class: 48
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Assets/Shaders/WireShadowDistanceInstanced.mat
+- Assets/Shaders/WireShadowNativeDepthCopy.shader
+- Assets/Shaders/WireShadowBackInstanced.mat
+- Assets/Shaders/WireShadowCombine.shader
+- Assets/Shaders/WireShadowDistance.shader
+- Assets/Shaders/WireShadowBack.shader
+- Assets/Shaders/WireFabricDepthMerge.shader
+- Assets/Shaders/WireToonDeferredShading.shader
+- Assets/Shaders/WireAO/WireAOApply.shader
+- Assets/Shaders/WireShadowFrontInstanced.mat
+- Assets/Shaders/WireShadowFront.shader
+Dependencies: []

@@ -1,7 +1,7 @@
 {
     "name": "WiresShadows",
-    "description": "Real shadows for every light you place, no light through walls, and cheaper sun shadows. Runs as fast as vanilla, or faster.",
-    "version_number": "0.1.0",
+    "description": "Real shadows for every light you place and no light through walls, running about as fast as vanilla.",
+    "version_number": "0.1.1",
     "website_url": "",
     "dependencies": []
 }

@@ -1,0 +1,9 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.0.75f1
+CRC: 1625091683
+HashAppended: 0
+AssetBundleManifest:
+  AssetBundleInfos:
+    Info_0:
+      Name: wirelightocclusion
+      Dependencies: {}

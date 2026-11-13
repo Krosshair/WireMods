@@ -54,8 +54,8 @@ Shader "Hidden/WireShadowNativeDepthCopy"
             float frag(float4 pos : SV_POSITION) : SV_Depth
             {
                 float2 fb = _WireNativeMovingSource.Load(int3(pos.xy, 0)).rg;
-                // Nearest surface, same rule as the cached maps.
-                float distanceMeters = min(fb.x, fb.y);
+                // Identical midpoint/near-cap rule to WLO's moving shader.
+                float distanceMeters = fb.y < fb.x ? fb.y : min(0.5 * (fb.x + fb.y), fb.x + 0.35);
                 float normalized = saturate(distanceMeters * _WireNativeInvRange);
                 #if defined(UNITY_REVERSED_Z)
                     return 1.0 - normalized;

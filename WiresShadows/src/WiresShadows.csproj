@@ -12,6 +12,8 @@
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="wiresshadows.bundle" LogicalName="wiresshadows.bundle" />
+    <!-- Amplify Occlusion's MIT license, for the AO apply shader in the bundle (built from its source). -->
+    <EmbeddedResource Include="LICENSE_AmplifyOcclusion.txt" LogicalName="LICENSE_AmplifyOcclusion.txt" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
