@@ -1263,8 +1263,15 @@ namespace WiresNotificationOverhaul
                 return FallbackSelectionBlue;
             _nextSelectionColorLookup = Time.unscaledTime + 8f;
 
+            // Only the inventory's own UI, not every object in memory (Resources.FindObjectsOfTypeAll
+            // stalled the frame of a level-up). Looked at once it exists: whatever it has (or the
+            // fallback) is kept from then on.
+            InventoryGui gui = InventoryGui.instance;
+            if (gui == null)
+                return FallbackSelectionBlue;
+            _selectedBlue = FallbackSelectionBlue;
             InventoryElement[] elements =
-                Resources.FindObjectsOfTypeAll<InventoryElement>();
+                gui.GetComponentsInChildren<InventoryElement>(true);
             foreach (InventoryElement element in elements)
             {
                 if (element == null)

@@ -1,3 +1,7 @@
+## 1.1.11
+
+- Fixed: a stutter on skill level-ups (with FortifySkillsRedux): finding the inventory's blue to tint the level searched every object in memory, and again on later level-ups if it found none. It only looks in the inventory now, once.
+
 ## 1.1.10
 
 - Added contextual icons to hammer repair notifications using the actual building piece, with compact "Repaired" and "No repair needed" messages.

@@ -133,7 +133,7 @@ namespace WiresNotificationOverhaul
                     case "$msg_needspace":
                         return "Need space";
                     case "$msg_noteleportarea":
-                        return "No building here";
+                        return "Needs stone circle";
                     case "$msg_invalidplacement":
                         return "Invalid placement";
                     case "$msg_extensionmissingstation":
