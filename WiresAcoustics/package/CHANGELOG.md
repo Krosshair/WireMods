@@ -1,3 +1,8 @@
+## 0.5.4
+- Fixed: a wall muffled sounds far more than real walls do. Its high end was cut for a single filter stage, but the sound runs through two, so a wall took 25 dB extra at 2 kHz and 36 dB at 4 kHz instead of the measured 16 and 20. Machines and other bright sounds (the spinning wheel) vanished behind one wall; now they come through dull, as measured. Rain, wind and the sea through walls use the same filter and get the same fix.
+- Fixed: sound didn't come over a half wall. The way over a wall was tried at least 1 m above the line from you to the sound, which in a 2 m storey is in the ceiling, so it was always blocked and the sound only came through the wall. It's tried just over the wall's top edge now.
+- Added: sound also finds its way under something in the way (a raised floor, a table, the gap under a gate), as it already did over and round.
+
 ## 0.5.3
 - Changed: looping sounds (fires, forges, lava, machines) follow walls and doors as you move. Their wall check waited for the game's once-a-second update, so stepping through a door or behind a wall took up to a second to be heard. Now it runs when you or the sound move half a metre, a piece is built or removed, or a door opens or closes, and every 2 s otherwise.
 

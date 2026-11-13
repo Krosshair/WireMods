@@ -366,7 +366,12 @@ namespace WiresAcoustics
         // each wall after it 6 dB more and duller, so the next room is muffled, not silent. A choice
         // for the game, not from a source; the measurements above only set which walls are heavier.
         // Each wall's low-pass takes the measured shape's extra loss from 125 Hz to 2 kHz.
-        internal const float WallCut = 318.3f; // 2000 / sqrt(10^1.6 - 1): the measured shape's extra 16 dB from 125 Hz to 2 kHz
+        // The measured shape's extra 16 dB from 125 Hz to 2 kHz, through the filter that runs: two
+        // one-pole stages, each at WallCut x 1.5538 (AcousticFilter), so the loss is
+        // 20 lg(1 + (f / fs)^2). (1 + (2000/fs)^2) / (1 + (125/fs)^2) = 10^0.8 gives fs = 857.2 Hz,
+        // WallCut = 857.2 / 1.5538. It was 318.3 Hz, worked out for one stage: through the two that
+        // run, a wall took 25 dB extra at 2 kHz and 36 at 4 kHz instead of the measured 16 and 20.
+        internal const float WallCut = 551.7f;
         private const float MassCut = 50f;
         internal static float MassLaw(float m) => m <= 0f ? 1f : Mathf.Min(1f, Mathf.Pow(10f, 48f / 20f) / MassCut / m);
 

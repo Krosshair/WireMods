@@ -22,7 +22,7 @@ namespace WiresAcoustics
             internal bool Under, Reverb, Corners;
             internal int First, Routes;
             internal Portals.Portal P0, P1;
-            internal Vector3 C0, C1, C2, C3, C4;
+            internal Vector3 C0, C1, C2, C3, C4, C5;
         }
         private static readonly List<Req> Queue = new List<Req>(64);
         private static readonly Vector3[] Pts = new Vector3[Corners.Count];
@@ -117,7 +117,7 @@ namespace WiresAcoustics
                 {
                     Corners.Around(listener, r.To, r.F != null ? r.F.LastBlockDist : (r.To - listener).magnitude * .5f,
                                    r.F != null ? r.F.LastBlocker : null, Pts);
-                    r.C0 = Pts[0]; r.C1 = Pts[1]; r.C2 = Pts[2]; r.C3 = Pts[3]; r.C4 = Pts[4];
+                    r.C0 = Pts[0]; r.C1 = Pts[1]; r.C2 = Pts[2]; r.C3 = Pts[3]; r.C4 = Pts[4]; r.C5 = Pts[5];
                     foreach (Vector3 p in Pts) { Cast3(listener, p, q, ref c); Cast3(p, r.To, q, ref c); }
                     s_cornerRays += 2 * Corners.Count;
                 }
@@ -289,7 +289,7 @@ namespace WiresAcoustics
                     for (int k = 0; k < Corners.Count; k++, c += 6)
                     {
                         if (!on || f.LastOcc < .3f) continue;
-                        Vector3 p = k == 0 ? r.C0 : k == 1 ? r.C1 : k == 2 ? r.C2 : k == 3 ? r.C3 : r.C4;
+                        Vector3 p = k == 0 ? r.C0 : k == 1 ? r.C1 : k == 2 ? r.C2 : k == 3 ? r.C3 : k == 4 ? r.C4 : r.C5;
                         Occlusion.Block leg = Occlusion.Block.Clear;
                         float total = Walls(c, p, ref leg) + Walls(c + 3, r.To, ref leg);
                         Diffraction.Round(r.Listener, p, r.To, out float bg, out float bc);
