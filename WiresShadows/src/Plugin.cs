@@ -19,7 +19,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.1.3";
+        public const string Version = "0.1.4";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 

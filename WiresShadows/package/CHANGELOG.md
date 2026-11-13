@@ -1,3 +1,7 @@
+## 0.1.4
+- Follows the game's Point light shadows setting. On the highest setting nothing changes. Off: no light shadows from the mod either. Low and the default: every light within the game's own shadow distance (20 m) gets its shadows, not just 1 or 3, and moving shadows get the same work per frame the game would spend on its 1 or 3 lights, nearest lights first. Better looking than vanilla at the same cost.
+- Recommended: set Point light shadows to the highest setting. That's what the mod is made for, and where it looks its best.
+
 ## 0.1.3
 - Uses far less video memory (about 2 GB down to well under 1 GB on a big card). Each shadow map is sized by how much of your screen its light covers, the way games size theirs: a light far away gets a small map, one you're standing in gets the full size. Maps are kept once, as 16-bit depth, instead of twice.
 - Fits your graphics card: the shadow maps take at most a fifth of its memory, and moving shadows give way first on smaller cards. A party of players near many lights could fill the memory and slow everything to a crawl.

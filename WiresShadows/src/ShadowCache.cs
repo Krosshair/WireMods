@@ -2241,7 +2241,8 @@ namespace WiresShadows
 
         private void Reassign()
         {
-            if (!Plugin.CachedShadows || !Plugin.UseShader.Value || DistanceShader == null || !EnsureResources())
+            // the game's point-light shadows set to Off: none from the mod either (GameLevel)
+            if (!Plugin.CachedShadows || !Plugin.UseShader.Value || DistanceShader == null || GameOff || !EnsureResources())
             {
                 SetActive(false);
                 ReleaseAll();
@@ -2331,7 +2332,8 @@ namespace WiresShadows
                 if (!_framePending && _dynPhysical[sl] >= 0 &&
                     _dynFacesLast[sl] == 0 && _dynActive[sl] <= 0f)
                     FreeDynSlot(sl);
-                if (_slots[sl] != null && _slots[sl].Reach > (sl >= UltraStart ? ultraDist : maxDist) + KeepMargin)
+                if (_slots[sl] != null && (_slots[sl].Reach > (sl >= UltraStart ? ultraDist : maxDist) + KeepMargin ||
+                                           BeyondGame(_slots[sl], at, KeepMargin)))
                     Release(_slots[sl]);
             }
             // The existing coroutine budgets new shadow-map faces; avoid
@@ -2361,6 +2363,8 @@ namespace WiresShadows
                     }
                     continue;
                 }
+                if (BeyondGame(t, at, 0f))
+                    continue; // past the distance the game's own setting gives shadows at
                 if (t.Reach > maxDist)
                 {
                     // Past the distant tier's reach: an ultra-distant slot, if one is free
@@ -3225,6 +3229,19 @@ namespace WiresShadows
                     UploadNativeMovingActive();
                 }
                 return;
+            }
+            // The game's point-light shadow setting below its highest: vanilla's per-frame work only.
+            if (GameLimited)
+            {
+                HoldToGameBudget(DynCandidates, DynDraw, cameraPosition);
+                if (DynCandidates.Count == 0)
+                {
+                    if (releasedAnyMovingMaps) { UploadDynActive(); UploadNativeMovingActive(); }
+                    return;
+                }
+                newNearCubes = newFarCubes = 0; // only the ones drawn this frame need a cube
+                foreach (int sl in DynCandidates)
+                    if (_dynPhysical[sl] < 0 && DynFaces[sl] != 0) { if (sl < _near) newNearCubes++; else newFarCubes++; }
             }
             // GPU pool growth can involve gigabytes of texture copies with
             // 2048px faces and native depth enabled. Batch newly needed
