@@ -11,7 +11,7 @@ namespace WiresAldr
     {
         public const string Guid = "wire.valheim.heimvoxtr";
         public const string Name = "Wire's Aldr";
-        public const string Version = "1.1.0";
+        public const string Version = "1.2.0";
         private static readonly ConfigSync Sync = new ConfigSync(Guid)
         {
             DisplayName = Name,

@@ -6,7 +6,7 @@
     <NoWarn>$(NoWarn);8632</NoWarn>
     <AssemblyName>WiresAldr</AssemblyName>
     <RootNamespace>WiresAldr</RootNamespace>
-    <BepInExCore Condition="'$(BepInExCore)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Default\BepInEx\core</BepInExCore>
+    <BepInExCore Condition="'$(BepInExCore)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Enngard\BepInEx\core</BepInExCore>
     <ValheimManaged Condition="'$(ValheimManaged)' == ''">D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed</ValheimManaged>
   </PropertyGroup>
   <ItemGroup>

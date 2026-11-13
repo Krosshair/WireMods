@@ -1,0 +1,2 @@
+## 1.2.0
+- Higher star levels as you conquer the world: a biome's creatures can roll one more star for its own boss and for every boss after it. The Black Forest goes up to 3 stars after the Elder and 4 after Bonemass; the Meadows reach 10 after the Deep North's boss. Every extra star needs its own roll, so the higher ones stay rare. Only creatures native to the biome, not raids or fish, and a location's own level limits still apply.
