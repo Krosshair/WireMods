@@ -1,3 +1,10 @@
+## 0.1.3
+- Uses far less video memory (about 2 GB down to well under 1 GB on a big card). Each shadow map is sized by how much of your screen its light covers, the way games size theirs: a light far away gets a small map, one you're standing in gets the full size. Maps are kept once, as 16-bit depth, instead of twice.
+- Fits your graphics card: the shadow maps take at most a fifth of its memory, and moving shadows give way first on smaller cards. A party of players near many lights could fill the memory and slow everything to a crawl.
+- Faster lighting on the GPU: pixels out of a light's reach and parts of a light with nothing moving skip their shadow work.
+- Moving shadows: the nearest lights get them first when there are more than fit, and their memory is freed again once things calm down.
+- Lights no longer switch from a low-res to a full-size shadow map while you look at them: the best lights get full-size maps before you get close.
+
 ## 0.1.2
 - Lights whose light covers more of your screen (close, or big and bright in view) get full-size shadow maps first.
 - Sharper shadow edges close to a light: fine details (herbs, strings, small pots) no longer smear into blobs.

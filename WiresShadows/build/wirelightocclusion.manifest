@@ -1,16 +1,16 @@
 ManifestFileVersion: 0
 UnityVersion: 6000.0.75f1
-CRC: 4114290843
+CRC: 564641190
 Hashes:
   AssetFileHash:
     serializedVersion: 2
-    Hash: 6823640dd977c943af3f0a9d36308cda
+    Hash: 8219bb429c0c241bfca4d0545a7589b5
   TypeTreeHash:
     serializedVersion: 2
     Hash: 4afb0d898c1c22a5e88248733bd69457
   IncrementalBuildHash:
     serializedVersion: 2
-    Hash: fed0e04ab1470ddf2c19b970d6b84732
+    Hash: d5679df125c8f1fb7b0b172348386cc6
 HashAppended: 0
 ClassTypes:
 - Class: 21
@@ -22,6 +22,7 @@ Assets:
 - Assets/Shaders/WireShadowDistanceInstanced.mat
 - Assets/Shaders/WireShadowNativeDepthCopy.shader
 - Assets/Shaders/WireShadowBackInstanced.mat
+- Assets/Shaders/WireShadowFluxInstanced.mat
 - Assets/Shaders/WireShadowCombine.shader
 - Assets/Shaders/WireShadowDistance.shader
 - Assets/Shaders/WireShadowBack.shader
