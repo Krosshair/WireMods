@@ -75,6 +75,7 @@ namespace WiresAcoustics
         internal static void Pan(AudioMan man, Transform listener, float dt)
         {
             Fade(dt);
+            Glide(man, dt);
             Vector3 windFrom = Vector3.zero;
             float windAmount = 0f;
             if (Plugin.Occlusion.Value && EnvMan.instance != null)
@@ -139,14 +140,10 @@ namespace WiresAcoustics
             // and glided there over a second (a room ray or two changing near a window moved it in
             // steps, so the bed jumped)
             float insideNow = s > 0f ? Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(.35f, .7f, enclosure)) : 0f;
-            float dt = s_insideAt < 0f ? 10f : Mathf.Clamp(Time.time - s_insideAt, 0f, .5f);
+            if (s_insideAt < 0f) s_inside = insideNow; // the first measurement: straight there
             s_insideAt = Time.time;
-            s_inside = Mathf.MoveTowards(s_inside, insideNow, dt);
-            float k = Mathf.Min(1f, s) * s_inside;
-            s_gain = Mathf.Clamp(Mathf.Lerp(1f, Mathf.Pow(Room.WallBed, s), s_inside), 0f, 1f);
-            s_cutoff = Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(Occlusion.WallCut), k));
+            s_insideTarget = insideNow;
             AudioSource amb = AmbientLoop(man), wind = WindLoop(man);
-            Bed(amb);
             // the wind in the lee of things: quieter and down to its low rumble, out of the gusts
             // (sheltered: 12 dB less, low-passed at 800 Hz; by ear, no source)
             Vector3 windFrom = WindFrom();
@@ -156,9 +153,9 @@ namespace WiresAcoustics
                 exposure = Room.Exposure(windFrom, out Vector3 way);
                 s_windWay = way.sqrMagnitude > 0f ? Vector3.Slerp(s_windWay.sqrMagnitude > 0f ? s_windWay : way, way, .5f) : windFrom;
             }
-            s_exposure = Mathf.Lerp(s_exposure, exposure, .5f);
-            float k2 = Mathf.Min(1f, s);
-            Bed(wind, Mathf.Lerp(1f, Mathf.Lerp(.25f, 1f, s_exposure), k2), Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(Mathf.Lerp(800f, 22000f, s_exposure)), k2)));
+            s_exposureTarget = exposure;
+            s_bedGain = s_windGain = -1f; // applied again at least this often (a filter may have been reset)
+            // the beds themselves glide every frame (Glide), not in steps at each measurement
             for (int i = RandomAmbients.Count - 1; i >= 0; i--)
             {
                 AcousticFilter f = RandomAmbients[i];
@@ -237,6 +234,39 @@ namespace WiresAcoustics
 
         private static float s_exposure = 1f;
         private static Vector3 s_windWay;
+        private static float s_insideTarget, s_exposureTarget = 1f;
+        private static float s_bedGain = -1f, s_bedCut = -1f, s_windGain = -1f, s_windCut = -1f;
+
+        // How closed in you are and how much wind reaches you are measured 5 times a second; set
+        // straight from those, the ambience and wind stepped (each measurement half way there, then
+        // the filter's 0.15 s glide, then nothing till the next): "stepping through tiers". They
+        // glide every frame now at the same speed: closed in at most a whole step a second as
+        // before, the wind's exposure half way every 0.2 s as before, as a smooth curve
+        // (time constant 0.2 s / ln 2).
+        private const float ExposureTau = .2885f;
+        private static void Glide(AudioMan man, float dt)
+        {
+            s_inside = Mathf.MoveTowards(s_inside, s_insideTarget, dt);
+            s_exposure += (s_exposureTarget - s_exposure) * (1f - Mathf.Exp(-dt / ExposureTau));
+            float s = Plugin.Occlusion.Value ? Mathf.Clamp(Plugin.OcclusionStrength.Value, 0f, 1.5f) : 0f;
+            float k = Mathf.Min(1f, s) * s_inside;
+            s_gain = Mathf.Clamp(Mathf.Lerp(1f, Mathf.Pow(Room.WallBed, s), s_inside), 0f, 1f);
+            s_cutoff = Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(Occlusion.WallCut), k));
+            float k2 = Mathf.Min(1f, s);
+            float windGain = Mathf.Lerp(1f, Mathf.Lerp(.25f, 1f, s_exposure), k2);
+            float windCut = Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(Mathf.Lerp(800f, 22000f, s_exposure)), k2));
+            // only while something is changing
+            if (Mathf.Abs(s_gain - s_bedGain) > 1e-4f || Mathf.Abs(s_cutoff - s_bedCut) > .5f)
+            {
+                s_bedGain = s_gain; s_bedCut = s_cutoff;
+                Bed(AmbientLoop(man));
+            }
+            if (Mathf.Abs(s_gain * windGain - s_windGain) > 1e-4f || Mathf.Abs(Mathf.Min(windCut, s_cutoff) - s_windCut) > .5f)
+            {
+                s_windGain = s_gain * windGain; s_windCut = Mathf.Min(windCut, s_cutoff);
+                Bed(WindLoop(man), windGain, windCut);
+            }
+        }
         private static Vector3 WindFrom()
         {
             if (EnvMan.instance == null) return Vector3.zero;

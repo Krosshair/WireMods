@@ -1,3 +1,6 @@
+## 0.5.5
+- Fixed: the wind and the outside ambience moved in audible steps as you walked (closer to a wall, through a doorway): they were set five times a second and jumped half way each time. They glide smoothly now, at the same speed.
+
 ## 0.5.4
 - Fixed: a wall muffled sounds far more than real walls do. Its high end was cut for a single filter stage, but the sound runs through two, so a wall took 25 dB extra at 2 kHz and 36 dB at 4 kHz instead of the measured 16 and 20. Machines and other bright sounds (the spinning wheel) vanished behind one wall; now they come through dull, as measured. Rain, wind and the sea through walls use the same filter and get the same fix.
 - Fixed: sound didn't come over a half wall. The way over a wall was tried at least 1 m above the line from you to the sound, which in a 2 m storey is in the ceiling, so it was always blocked and the sound only came through the wall. It's tried just over the wall's top edge now.
