@@ -48,6 +48,15 @@ namespace WiresAI
         private static float LeaderScore(Individual p) =>
             p == null ? -9f : p.Courage + .5f * p.Aggression + .3f * p.Stars;
 
+        // For other mods (Wire's Aldr gives a spawned pack's leader a star): the score packs pick
+        // their leader by, or NaN when this creature has no personality or packs are off.
+        public static float PackLeaderScore(Character c)
+        {
+            if (Instance == null || !Instance.Active || !Instance._groups.Value || c == null ||
+                !Phys.TryGetValue(c, out Physical p) || p.Individual == null) return float.NaN;
+            return LeaderScore(p.Individual);
+        }
+
         // A retreating packmate wakes up the others nearby.
         private static void AlertPack(Behavior b)
         {

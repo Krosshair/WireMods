@@ -12,7 +12,7 @@ namespace WiresAI
     public sealed partial class WiresAIPlugin : BaseUnityPlugin
     {
         public const string Guid = "kajetan.valheim.wiresai";
-        public const string Version = "0.1.1";
+        public const string Version = "0.1.2";
         // Required on server and clients, gameplay settings follow the server.
         private static readonly ServerSync.ConfigSync Sync = new ServerSync.ConfigSync(Guid)
         {

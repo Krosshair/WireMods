@@ -14,10 +14,10 @@ Every creature is its own individual, the same one every time it loads (saved wi
 - Bosses and named characters keep their vanilla stats and are the same every time.
 
 ## Fighting
-- **Postures:** commit, probe, hesitate or briefly back off, based on personality, mood (rage, fear, confidence), health and who's winning.
+- **Postures:** commit, probe, hesitate or briefly back off, based on personality, mood (rage, fear, confidence), health and who's winning. Running away is a last resort; getting hurt makes them angry more than scared.
 - **Packs:** creatures that spawned together fight together. They have a leader, take turns instead of all swinging at once, spread fear or courage to each other, regroup at a packmate when hurt, and react when a packmate dies.
 - **Positioning:** flank around a blocking player, come from the other side when a packmate is already on you, back off and come back at a better angle, wait out of reach when they can't get to you, hover at the edge of reach waiting for a whiff. Archers keep their distance and step sideways for a clear shot, casters stay behind their friends.
-- **Physicality:** they size you up. A creature that can overpower you (bigger, hits harder, breaks through your block) stops dancing around and just presses in. One you outmatch plays more carefully.
+- **Physicality:** they size you up. A creature that can overpower you (bigger, hits harder, breaks through your block) stops dancing around and just presses in. They can't tell how strong your gear is though, so strong creatures stay confident even when you outclass them.
 - **Openings:** rolling, eating or drinking, whiffing a swing, or getting staggered can get punished. Clever ones learn within a fight: roll a lot and they wait it out, parry a lot and they start delaying their swings.
 
 ## Bosses

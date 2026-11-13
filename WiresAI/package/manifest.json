@@ -1,7 +1,7 @@
 {
     "name": "WiresAI",
     "description": "Smarter, more individual creatures. Each one has its own body and personality, packs fight together, enemies read your openings and habits, and bosses get smarter as they get desperate. Done but not fully tested yet.",
-    "version_number": "0.1.1",
+    "version_number": "0.1.2",
     "website_url": "",
     "dependencies": []
 }

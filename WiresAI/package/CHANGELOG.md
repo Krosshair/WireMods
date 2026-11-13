@@ -1,3 +1,6 @@
+## 0.1.2
+- Wire's Aldr gives its extra leader star to the pack's own leader.
+
 ## 0.1.1
 - Balance: enemies are far less likely to run away. Fleeing now needs a real reason (badly hurt, outnumbered or truly scared), and anger cancels it.
 - Balance: enemies can't tell how strong you are. Your weapon and health no longer make them doubt themselves, so strong enemies stay confident, even trolls when you're in the Ashlands. Body size still counts.
