@@ -158,7 +158,7 @@ namespace WiresSmoothUI
                 return;
             }
 
-            if (weapon.m_shared.m_skillType == Skills.SkillType.Crossbows)
+            if (IsCrossbowLike(weapon))
             {
                 RenderCrossbow(hud, player, weapon);
                 return;
@@ -531,7 +531,7 @@ namespace WiresSmoothUI
                 return;
             }
 
-            if (skill == Skills.SkillType.Crossbows)
+            if (IsCrossbowLike(weapon))
             {
                 HideRing(Hud.instance);
                 return;
@@ -584,7 +584,7 @@ namespace WiresSmoothUI
             Skills.SkillType skill = weapon.m_shared.m_skillType;
 
             if (skill == Skills.SkillType.Bows ||
-                skill == Skills.SkillType.Crossbows)
+                IsCrossbowLike(weapon))
                 return AttackGroup.None;
 
             if (skill == Skills.SkillType.Spears)
@@ -726,6 +726,21 @@ namespace WiresSmoothUI
         {
             return skill == Skills.SkillType.ElementalMagic ||
                    skill == Skills.SkillType.BloodMagic;
+        }
+
+        // Crossbows, and anything else that loads like one: the grappling hook (no skill of
+        // its own, but a reload before each shot). Magic stays out (Dundr has its own path).
+        private static bool IsCrossbowLike(ItemDrop.ItemData weapon)
+        {
+            if (weapon == null || weapon.m_shared == null)
+                return false;
+            Skills.SkillType skill = weapon.m_shared.m_skillType;
+            if (skill == Skills.SkillType.Crossbows)
+                return true;
+            return !IsMagicSkill(skill) &&
+                   weapon.m_shared.m_attack != null &&
+                   weapon.m_shared.m_attack.m_requiresReload &&
+                   IsProjectileAttack(weapon.m_shared.m_attack);
         }
 
         private static bool IsDundr(ItemDrop.ItemData weapon)

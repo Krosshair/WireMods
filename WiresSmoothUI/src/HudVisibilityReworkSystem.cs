@@ -1405,6 +1405,24 @@ namespace WiresSmoothUI
                 dt);
         }
 
+        private int _lastCdevSelected = -1;
+        private static System.Reflection.PropertyInfo s_cdevSelected;
+        private static bool s_cdevLooked;
+
+        // CDEV's gamepad quick slot selection, -1 when none (or no CDEV).
+        private static int CdevSelected()
+        {
+            if (!s_cdevLooked)
+            {
+                s_cdevLooked = true;
+                System.Type t = AccessTools.TypeByName("CDEV.EquipmentSlots.GamepadQuickSlots");
+                s_cdevSelected = t != null ? AccessTools.Property(t, "Selected") : null;
+            }
+            if (s_cdevSelected == null) return -1;
+            try { return (int)s_cdevSelected.GetValue(null); }
+            catch { s_cdevSelected = null; return -1; }
+        }
+
         private void BindCdevQuickSlots()
         {
             bool alive = _cdevGates.Count > 0;
@@ -1462,6 +1480,18 @@ namespace WiresSmoothUI
             {
                 _hotbarRevealUntil =
                     Mathf.Max(_hotbarRevealUntil, Time.unscaledTime + 1f);
+            }
+
+            // CDEV.EquipmentSlots takes the hotbar buttons while its quick slots are selected
+            // (they read as not pressed after its HotkeyBar step), so moving through them is
+            // seen by its selection changing instead.
+            int cdevSelected = CdevSelected();
+            if (cdevSelected != _lastCdevSelected)
+            {
+                if (WiresSmoothUIPlugin.HotbarCycle.Value && ZInput.IsGamepadActive())
+                    _hotbarRevealUntil =
+                        Mathf.Max(_hotbarRevealUntil, Time.unscaledTime + 1f);
+                _lastCdevSelected = cdevSelected;
             }
 
             bool equipActionActive =

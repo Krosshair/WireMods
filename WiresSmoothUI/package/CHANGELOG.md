@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.9
+
+* The grappling hook gets the crossbow reticle: it fills while reloading and stays full while loaded.
+* Fixed: with a controller, moving into CDEV.EquipmentSlots quick slots didn't bring back a hidden hotbar.
+
 ## 0.6.8
 
 * Fixed the build menu's category list and tab labels growing a little every time you switched build tabs.
