@@ -134,6 +134,12 @@ namespace WiresAcoustics
         // is set. Unflagged loops need our existing batched geometry tick.
         internal bool NativeReverbLoop;
         internal float StartedAt, LastOcc, LastBlockDist;
+        // A playing loop's wall check runs when something changed, not on a clock (Occlusion.WatchLoop):
+        // where you and it were at its last check, when, and which world change it had seen.
+        internal bool WatchLoop;
+        internal Vector3 CheckedFrom, CheckedAt;
+        internal float CheckedTime = -1e6f;
+        internal int CheckedGen;
         internal Collider LastBlocker; // prior confirmed obstruction, for bounded real-edge diffraction
         internal float LastDist = 1e6f;            // from the listener (Directions, Occlusion), for Budget
         internal bool InBudget;                    // in Budget's list of playing sounds

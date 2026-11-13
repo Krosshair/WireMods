@@ -23,6 +23,7 @@ namespace WiresAcoustics
         private static bool s_pending;
         private const float SlowEvery = .25f;
         private static float s_slowNext;
+        private static Vector3 s_jobEar; // your head when the job was scheduled: the sounds' positions are worked back from it
 
         private struct Job : IJobParallelForTransform
         {
@@ -95,6 +96,8 @@ namespace WiresAcoustics
                         if (f.AreaRadius > 0f) f.Width = Mathf.Max(f.BaseWidth, Area.WidthAt(f.AreaRadius, r.w));
                     }
                     if (slow && f.Placed) f.AirCutoff = AcousticFilter.AirAt(er.w);
+                    // a playing loop: its wall check again if you or it moved, or a building changed
+                    if (f.WatchLoop) Occlusion.WatchLoop(f, s_jobEar - new Vector3(er.x, er.y, er.z) * er.w, s_jobEar, now);
                     // heard through an opening or round a corner: from there
                     if (f.Hrtf && f.Kind != AcousticFilter.Kinds.Ambient)
                     {
@@ -106,6 +109,7 @@ namespace WiresAcoustics
             }
             Apply();
             if (List.Count == 0) return;
+            s_jobEar = Hearing.At;
             s_job = new Job { Pos = listener.position, Ear = Hearing.At, InvRot = Quaternion.Inverse(listener.rotation), Dirs = s_dirs, Ears = s_ears }.ScheduleReadOnly(s_taa, 16); // read-only: never holds up the game moving things
             JobHandle.ScheduleBatchedJobs();
             s_pending = true;

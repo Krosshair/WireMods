@@ -3,8 +3,8 @@ using UnityEngine;
 
 namespace WiresAcoustics
 {
-    // Sounds behind walls, buildings or hills. Checked when a sound starts and once a second for
-    // looping ones (the game's own reverb update, ZSFX.UpdateReverb): one ray from the listener to the
+    // Sounds behind walls, buildings or hills. Checked when a sound starts (the game's ZSFX.UpdateReverb),
+    // and a looping one again whenever you or it move or a building changes (WatchLoop): one ray from the listener to the
     // sound, every solid thing in between is a layer. Each layer muffles (low-pass) and quietens it,
     // and in the room's reverb (ReverbSend). Also sets
     // each sound's reverb send from the measured space instead of distance alone.
@@ -18,7 +18,7 @@ namespace WiresAcoustics
         private static readonly float[] Cutoff = { 22000f, 1500f, 800f, 500f };
         internal const float SourceClearance = .05f; // a ray stops just short of the sound (what makes it is left out by Counts)
         internal const float Twin = .08f; // the two rays beside each line: a seam between pieces is a centimetre or two
-        private static int s_checked, s_muffled, s_added, s_missingNativeLoopRechecks;
+        private static int s_checked, s_muffled, s_added, s_loopChecks;
         private static float s_worstOcc;
         private static string s_worst;
 
@@ -125,7 +125,8 @@ namespace WiresAcoustics
                 f.Set(gain, cutoff, true);
                 if (occ >= .3f && f.Active) Batch.Enqueue(f, to, under, reverb);
             }
-            else if (f.Active) Batch.Enqueue(f, to, under, reverb);
+            // the game's once-a-second call for a playing loop: a watched loop is checked on its own (WatchLoop)
+            else if (f.Active && !f.WatchLoop) Batch.Enqueue(f, to, under, reverb);
             // Direction is ours (AcousticFilter): Unity's panning is flattened to "both ears equally".
             if (hrtf)
             {
@@ -590,9 +591,10 @@ namespace WiresAcoustics
             try { return ZsfxSpread(z); } catch { return src.spread; }
         }
 
-        // Twice a second (Room's tick): sounds that don't get the game's once-a-second update are
-        // rechecked on worker threads: one-off sounds still playing after 0.4 s (a long roar moving
-        // behind a wall), other placed sources (Others) and the menu's.
+        // Twice a second (Room's tick): one-off sounds still playing after 0.4 s (a long roar moving
+        // behind a wall), other placed sources (Others) and the menu's are rechecked on worker threads.
+        // Playing loops are only marked here (WatchLoop); their checks come from Directions when
+        // something changed.
         // Other placed sources also get the HRTF here when they're playing (their filter comes from
         // the prefab, see Prefabs).
         internal static void Recheck(Vector3 listener)
@@ -601,7 +603,9 @@ namespace WiresAcoustics
             float now = Time.time;
             foreach (AcousticFilter f in AcousticFilter.Live)
             {
-                if (f == null || f.Source == null || f.Voice || f.Cue || f.Kind == AcousticFilter.Kinds.Ocean || f.Kind == AcousticFilter.Kinds.Ambient || f.Kind == AcousticFilter.Kinds.Outside) continue;
+                if (f == null) continue;
+                f.WatchLoop = false;
+                if (f.Source == null || f.Voice || f.Cue || f.Kind == AcousticFilter.Kinds.Ocean || f.Kind == AcousticFilter.Kinds.Ambient || f.Kind == AcousticFilter.Kinds.Outside) continue;
                 AudioSource src = f.Source;
                 if (!src.isPlaying || src.spatialBlend < .5f) continue;
                 if (f.Kind == AcousticFilter.Kinds.Other && hrtf && !f.Hrtf) { f.TakePanning(src.spread); f.Hrtf = true; }
@@ -613,26 +617,45 @@ namespace WiresAcoustics
                 Budget.Note(f, (f.transform.position - listener).magnitude);
                 if (!f.Active) continue; // past the count: left to Unity until it's among the nearest
                 if (!occlusion) continue;
-                // Vanilla ZSFX.CustomUpdate refreshes loop reverb ONLY when
-                // m_distanceReverb is true. Loops that opt out must still
-                // receive our wall checks when their geometry/door changes.
-                if (f.Kind == AcousticFilter.Kinds.Sfx &&
-                    (now - f.StartedAt < .4f || (src.loop && f.NativeReverbLoop))) continue;
-                if (f.Kind == AcousticFilter.Kinds.Sfx && src.loop && !f.NativeReverbLoop)
-                    s_missingNativeLoopRechecks++;
+                if (src.loop) { f.WatchLoop = true; continue; }
+                if (f.Kind == AcousticFilter.Kinds.Sfx && now - f.StartedAt < .4f) continue;
                 Vector3 at = f.transform.position;
                 f.InWater = Underwater.ListenerBelow && Underwater.Below(at);
                 Batch.Enqueue(f, at, Underwater.Muffles(at, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
             }
         }
 
+        // A playing loop is checked again when it could sound different: you or it moved half a metre,
+        // a piece or door changed, or 2 s went by (anything the hooks miss: terrain, other mods). At
+        // most every 0.1 s, so loading a base (thousands of pieces waking) doesn't check every frame.
+        // The distances and times are judgement values, no source.
+        // Every frame from Directions, which already has where you and it are: no work when nothing changed.
+        internal static int WorldGen;
+        internal static void WorldChanged() => WorldGen++;
+        private const float LoopMoved = .5f, LoopMinGap = .1f, LoopFallback = 2f;
+
+        internal static void WatchLoop(AcousticFilter f, Vector3 at, Vector3 ear, float now)
+        {
+            float since = now - f.CheckedTime;
+            if (since < LoopMinGap || !f.Active) return; // past the count: left to Unity, as in Recheck
+            if (since < LoopFallback && f.CheckedGen == WorldGen &&
+                (ear - f.CheckedFrom).sqrMagnitude < LoopMoved * LoopMoved &&
+                (at - f.CheckedAt).sqrMagnitude < LoopMoved * LoopMoved) return;
+            AudioSource src = f.Source;
+            if (src == null || !src.isPlaying) { f.WatchLoop = false; return; }
+            Vector3 p = f.transform.position;
+            f.InWater = Underwater.ListenerBelow && Underwater.Below(p);
+            Batch.Enqueue(f, p, Underwater.Muffles(p, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
+            s_loopChecks++;
+        }
+
         internal static string Summary()
         {
             string s = "sounds checked " + s_checked + ", muffled " + s_muffled + (s_worst != null ? " (most: " + s_worst + ")" : "") +
                 ", filters added late " + s_added +
-                ", non-native-reverb loop rechecks " + s_missingNativeLoopRechecks +
+                ", loop checks " + s_loopChecks +
                 "; " + AudioProvenance.Summary() + "; " + AcousticFilter.Format();
-            s_checked = s_muffled = s_added = s_missingNativeLoopRechecks = 0;
+            s_checked = s_muffled = s_added = s_loopChecks = 0;
             s_worstOcc = 0f; s_worst = null;
             return s;
         }

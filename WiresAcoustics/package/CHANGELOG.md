@@ -1,3 +1,6 @@
+## 0.5.3
+- Changed: looping sounds (fires, forges, lava, machines) follow walls and doors as you move. Their wall check waited for the game's once-a-second update, so stepping through a door or behind a wall took up to a second to be heard. Now it runs when you or the sound move half a metre, a piece is built or removed, or a door opens or closes, and every 2 s otherwise.
+
 ## 0.5.2
 - Fixed: walking up to a window with rain outside cut the rain in, and walking away cut it out again. The sound at each opening was tied to the opening's rank, so when a window became the bigger opening (or a new one turned up) its sound jumped across the room at full level. Each opening now keeps its own sound, a new one fades in where it is and a lost one fades out where it was. How closed in you are also glides over a second instead of stepping.
 

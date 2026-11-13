@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace WiresAcoustics
 {
-    // Wall checks for sounds already playing (looping sounds once a second, longer one-off sounds and
+    // Wall checks for sounds already playing (looping sounds when you, they or the buildings change, longer one-off sounds and
     // other placed sources twice a second, voice chat 5 times a second), and the paths round walls
     // for a sound that just started behind them, batched onto worker threads like the room rays:
     // queued during the frame, cast together, read the next frame. All hits along each
@@ -50,6 +50,10 @@ namespace WiresAcoustics
         internal static void Enqueue(AcousticFilter f, Vector3 to, bool under, bool reverb)
         {
             if (f == null) return;
+            f.CheckedFrom = Hearing.At;
+            f.CheckedAt = to;
+            f.CheckedTime = Time.time;
+            f.CheckedGen = Occlusion.WorldGen;
             // A completely faded placed SFX/other source cannot be heard,
             // independent of how blocked it is. Continue updating the
             // direction/fade; raycast when it approaches audibility again.
