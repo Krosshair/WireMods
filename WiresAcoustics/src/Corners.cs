@@ -77,6 +77,7 @@ namespace WiresAcoustics
             internal readonly Vector3[] Edges = new Vector3[Dirs]; // by way along the wall (Dir)
             internal readonly bool[] Has = new bool[Dirs];
             internal int Pending;  // ways still being probed (each its own small piece, Batch)
+            internal float StartedAt; // when this pass was sent
             internal int Version;  // which probe pass a piece's result belongs to
         }
         internal const int Slots = 2;

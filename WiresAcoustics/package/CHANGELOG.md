@@ -1,3 +1,15 @@
+## 0.5.10
+- Fixed: a voice behind a half wall started from an opening across the room (a window, a doorway) each time someone began to talk, and moved over the wall a moment later. A sound now keeps where it was heard from until every way round its walls has been looked for.
+
+## 0.5.9
+- Fixed: over a half wall, with you or the sound right by it, a sound was heard round the wall's end instead of over it.
+- Fixed: the sea sounded from under you on an island, a point or a pier; it now comes from the shore's direction and sounds wider the more the sea surrounds you. Rivers and ponds no longer pull the sea's sound to them.
+- Fixed: a ship or cart between you and a sound shut it out almost entirely; something in the way now muffles a sound once, not once for each of its parts.
+- Fixed: fences and stake walls (stake walls, stone and wood fences, the fence gate) didn't block sound.
+- Fixed: adding fuel to or lighting a small fire (a torch, a sconce) was much quieter than the game plays it.
+- Fixed: the blast furnace deadened the room's reverb like a fur rug.
+- Fixed: particles of an animation's sound effect could be dragged along with the moving body.
+
 ## 0.5.8
 - Fixed: pieces round you could vanish and pop back in over and over (looking like the game switching detail levels) while the game streamed things in.
 - Fixed: at a base full of sounds, a sound could take a second or more to change after you stepped out from behind a wall (or behind one). The loudest sounds (as loud as they'd be with nothing in the way) are now checked first, then the nearest, and a sound waiting for its check is only queued once. All of the mod's work each frame now shares one 0.5 ms budget (those checks had 0.25 ms of their own): what's needed every frame goes first, and the checks take what's left. Searching a wall for its gaps is done in small pieces, and setting up the next checks stops when the frame's time is up, so no single frame gets the whole load.

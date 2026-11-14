@@ -21,7 +21,7 @@ namespace WiresAcoustics
             internal AcousticFilter F;
             internal Vector3 To, Listener;
             internal float Loud; // how loud with nothing in the way, for the order (Tidy)
-            internal bool Under, Reverb, Corners, Probe, Started; // Started: this check sent probes for its walls
+            internal bool Under, Reverb, Corners, Probe, Started, Waiting; // Started: this check sent probes for its walls; Waiting: some still on their way
             internal int Slot, Dir, K, Version; // a probe piece: which record, which way, how many, which pass
             internal Vector3 At, N;             // and where on which wall
             internal int First, Routes, EdgeN;
@@ -190,6 +190,7 @@ namespace WiresAcoustics
                         Corners.Record rec = f.Records[slot];
                         for (int d = 0; d < Corners.Dirs; d++)
                             if (rec.Has[d]) s_edges[edgesAt * Corners.MaxEdges + r.EdgeN++] = rec.Edges[d];
+                        if (rec.Pending > 0 && Time.time - rec.StartedAt < 1f) r.Waiting = true;
                     }
                 }
                 Fly(ref m, r);
@@ -269,6 +270,7 @@ namespace WiresAcoustics
             rec.Gen = Occlusion.WorldGen;
             rec.Version++;
             rec.Pending = Corners.Dirs;
+            rec.StartedAt = Time.time;
             for (int d = 0; d < Corners.Dirs; d++)
             {
                 rec.Has[d] = false;
@@ -496,6 +498,11 @@ namespace WiresAcoustics
                 // alone would muffle it for a moment before the way round is found. Kept as it was;
                 // the probes check it again as soon as they find an edge (or finish).
                 if (on && r.Started && r.EdgeN == 0 && occ >= .3f) { Occlusion.Own = null; continue; }
+                // Its walls' probes still on their way (Waiting): the edges found so far aren't all
+                // there is. Heard round whatever was known, a voice behind a half wall came from a
+                // window across the room first and moved over the wall a moment later. Kept as it was
+                // till they're in (they check it again then); never longer than a second.
+                if (on && r.Waiting && occ >= .3f) { Occlusion.Own = null; continue; }
                 Occlusion.Wall(direct, out float gain, out float cutoff);
                 bool routed = false;
                 Vector3 heard = r.To;
