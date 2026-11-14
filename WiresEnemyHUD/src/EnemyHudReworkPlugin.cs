@@ -16,7 +16,7 @@ namespace EnemyHudRework
     {
         public const string PluginGuid = "kajetan.valheim.enemyhudrework";
         public const string PluginName = "Wire's Enemy HUD";
-        public const string PluginVersion = "0.9.4";
+        public const string PluginVersion = "0.9.5";
 
         private const string StaggerZdoKey = "EnemyHudRework_Stagger";
         private const float HealthHeightMultiplier = 2f;
@@ -135,6 +135,7 @@ namespace EnemyHudRework
             public RectTransform NameRect;
             public Vector2 NameOriginalPosition;
             public string OriginalNameText;
+            public string RawName; // the game's hover name OriginalNameText was made from
             public Color NormalNameColor;
 
             public GameObject HealthValueObject;
@@ -735,6 +736,19 @@ namespace EnemyHudRework
 
             if (state.NameText != null)
             {
+                // The creature's name as the game has it now: a tame renamed shows its new name
+                // (the game writes it every frame from GetHoverName; the one kept from when the
+                // nameplate was made was written over it). Localized only when it changes. The
+                // debug boss keeps the name it was given.
+                if (!state.IsDebug && state.Character != null && Localization.instance != null)
+                {
+                    string raw = state.Character.GetHoverName();
+                    if (!string.Equals(raw, state.RawName, System.StringComparison.Ordinal))
+                    {
+                        state.RawName = raw;
+                        state.OriginalNameText = Localization.instance.Localize(raw);
+                    }
+                }
                 string source = state.OriginalNameText ?? state.NameText.text ?? "";
                 string wanted = source;
                 if (_uppercaseNames.Value)

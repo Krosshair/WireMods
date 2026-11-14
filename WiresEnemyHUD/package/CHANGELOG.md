@@ -1,3 +1,7 @@
+## 0.9.5
+
+Fixed: renaming a tame didn't change its nameplate.
+
 ## 0.9.4
 
 Player nameplate status effects now use six specific priority groups, within the existing four-icon limit: Rested (always first); active Forsaken powers; active potion buffs (such as Ratatosk and Lightfoot); potion cooldowns (such as healing and stamina); Wet, Cold and Freezing; and finally Encumbered, Tarred and Harpooned. Other effects, including permanent equipment bonuses, are not shown.
