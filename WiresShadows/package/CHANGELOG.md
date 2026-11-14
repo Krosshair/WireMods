@@ -1,3 +1,10 @@
+## 0.1.10
+- Less lag placing and breaking: the shadow updates round a change no longer all run inside that one frame (up to 12 ms seen); a little each frame instead, nearest first. Lights out of view update when they come into view.
+- Fixed: picking up or eating placed food lagged like placing a feast did: every light round it searched everything in its reach again.
+- Less stutter walking round a base: a light's shadow map that only changes size no longer searches its surroundings again, and re-ranking the lights no longer draws a shadow face in the same frame.
+- New, experimental: Tiled lights (General, off by default). Every point light in one pass instead of one pass each.
+- New: Timing log (General, off by default). What the mod's own work costs per frame, in the log every 5 seconds.
+
 ## 0.1.8
 - Fixed: pieces round you could vanish and pop back in while the game streamed things in, when a light switched on as its piece appeared.
 - The chunks a broken piece falls apart into cast moving shadows while they fall, as they do with the game's own shadows.

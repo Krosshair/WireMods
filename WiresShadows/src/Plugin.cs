@@ -19,7 +19,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.1.9";
+        public const string Version = "0.1.10";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -44,6 +44,8 @@ namespace WiresShadows
         internal const bool ParticleShadows = true; // effects' particles cast moving shadows
         internal static ConfigEntry<bool> Benchmark;
         internal static ConfigEntry<bool> DebugLog;
+        internal static ConfigEntry<bool> TiledLights;
+        internal static ConfigEntry<bool> TimingLog;
         internal static bool BenchRunning; // the log is on while the benchmark runs
         internal static bool Debug => BenchRunning || (DebugLog != null && DebugLog.Value);
         internal static void Note(string text) { if (Debug) Log.LogInfo(text); }
@@ -90,6 +92,10 @@ namespace WiresShadows
 
             Benchmark = Setting("General", "Benchmark", false,
                 "Measures the mod against vanilla where you stand (about a minute) and shows the frame times. Resets itself.");
+            TiledLights = Setting("General", "Tiled lights", false,
+                "Experimental. Every point light in one pass instead of one pass each. Off: the game's way, one at a time.");
+            TimingLog = Setting("General", "Timing log", false,
+                "Every 5 seconds, what the mod's own work costs per frame (average and worst), in the log (BepInEx/LogOutput.log).");
             DebugLog = Setting("General", "Debug log", false,
                 "Writes what the mod is doing to the log (BepInEx/LogOutput.log). On by itself while a benchmark runs.");
             Benchmark.SettingChanged += (_, __) => { if (Benchmark.Value && GetComponent<Bench>() == null) gameObject.AddComponent<Bench>(); };
@@ -111,7 +117,10 @@ namespace WiresShadows
                     else if (s.name == "Hidden/WireShadowCombine") ShadowCache.CombineShader = s;
                     else if (s.name == "Hidden/WireShadowNativeDepthCopy") ShadowCache.NativeCopyShader = s;
                     else if (s.name == "Hidden/WireAOApply") AmbientOcclusion.BounceShader = s;
+                    else if (s.name == "Hidden/WireTiledLights") ShadowCache.TiledShader = s;
                 }
+                foreach (ComputeShader cs in bundle.LoadAllAssets<ComputeShader>())
+                    if (cs.name == "WireTiledLights") ShadowCache.TiledCompute = cs;
             }
             if (_shader == null || !_shader.isSupported || ShadowCache.DistanceShader == null ||
                 ShadowCache.CombineShader == null)

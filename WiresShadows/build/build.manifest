@@ -1,9 +1,12 @@
 ManifestFileVersion: 0
 UnityVersion: 6000.0.75f1
-CRC: 274350891
+CRC: 323909534
 HashAppended: 0
 AssetBundleManifest:
   AssetBundleInfos:
     Info_0:
       Name: wirelightocclusion
+      Dependencies: {}
+    Info_1:
+      Name: wirereflections
       Dependencies: {}

@@ -1,0 +1,23 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.0.75f1
+CRC: 2500950312
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: 1ea1d4ec0a508abd38c984e90aa55086
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: bb8521372c98e74594d3b7eb1b0a7a88
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: 4ea14e3c45cf12e9b6606692e9864e03
+HashAppended: 0
+ClassTypes:
+- Class: 48
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Assets/Shaders/WireNoDeferredReflections.shader
+- Assets/Shaders/WireProxy.shader
+- Assets/Shaders/WireReflections.shader
+Dependencies: []
