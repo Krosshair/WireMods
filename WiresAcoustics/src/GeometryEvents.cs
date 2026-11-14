@@ -1,4 +1,5 @@
 using HarmonyLib;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace WiresAcoustics
@@ -43,8 +44,32 @@ namespace WiresAcoustics
             float now = Time.time;
             if (now - s_loadedAt < Recheck) return s_loaded;
             s_loadedAt = now;
-            s_loaded = ZNetScene.instance == null || ZoneSystem.instance == null || ZNetScene.instance.IsAreaReady(Hearing.At);
+            s_loaded = AreaReady(Hearing.At);
             return s_loaded;
+        }
+
+        // The game's ZNetScene.IsAreaReady, with a list of its own. The game's fills ZNetScene's own
+        // working list (m_tempCurrentObjects), the one its streaming is in the middle of using when a
+        // piece appears (CreateDestroyObjects: create from it, then remove whatever isn't on it), and
+        // this is asked from inside a piece appearing. Its list emptied and refilled with a smaller
+        // area there, the game removed everything that had dropped off it and streamed it back in
+        // the next frame: pieces vanishing and coming back.
+        private static readonly List<ZDO> AreaObjects = new List<ZDO>();
+        private static readonly System.Func<ZNetScene, ZDO, bool> PrefabValid =
+            HarmonyLib.AccessTools.MethodDelegate<System.Func<ZNetScene, ZDO, bool>>(HarmonyLib.AccessTools.Method(typeof(ZNetScene), "IsPrefabZDOValid"));
+        internal static bool AreaReady(Vector3 point)
+        {
+            ZNetScene scene = ZNetScene.instance;
+            if (scene == null || ZoneSystem.instance == null || ZDOMan.instance == null) return true;
+            Vector2s zone = ZoneSystem.GetZone(point);
+            if (!ZoneSystem.instance.IsZoneLoaded(zone)) return false;
+            AreaObjects.Clear();
+            ZDOMan.instance.FindSectorObjects(zone, new SimulationDistance(1, 0), AreaObjects);
+            bool ready = true;
+            foreach (ZDO zdo in AreaObjects)
+                if (PrefabValid(scene, zdo) && scene.FindInstance(zdo) == null) { ready = false; break; }
+            AreaObjects.Clear();
+            return ready;
         }
 
         // From Room's tick: the held changes, once the area is in.

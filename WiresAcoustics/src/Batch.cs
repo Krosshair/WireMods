@@ -20,19 +20,17 @@ namespace WiresAcoustics
         {
             internal AcousticFilter F;
             internal Vector3 To, Listener;
-            internal bool Under, Reverb, Corners, Retry;
-            internal int First, Routes, EdgeN, ProbeFirst, KNear, KFar, SlotNear, SlotFar;
+            internal float Loud; // how loud with nothing in the way, for the order (Tidy)
+            internal bool Under, Reverb, Corners, Probe, Started; // Started: this check sent probes for its walls
+            internal int Slot, Dir, K, Version; // a probe piece: which record, which way, how many, which pass
+            internal Vector3 At, N;             // and where on which wall
+            internal int First, Routes, EdgeN;
             internal Portals.Portal P0, P1;
-            internal Corners.Walls W;
         }
         private static readonly List<Req> Queue = new List<Req>(64);
         private static Req[] s_flight = new Req[64];
         private static Vector3[] s_edges = new Vector3[64 * Corners.MaxEdges]; // the edges each check tried
         private static int s_flightCount, s_applied;
-        // Main-thread time for reading results, per frame. The mod's whole main-thread share is to stay
-        // under 0.5 ms a frame; reading a batch is most of it, so it gets half and stops there, carrying
-        // on next frame. A frame budget chosen against that limit, not from a source.
-        private static readonly long SliceTicks = System.Diagnostics.Stopwatch.Frequency / 4000; // 0.25 ms
         private static NativeArray<RaycastCommand> s_cmds;
         private static NativeArray<RaycastHit> s_hits;
         private static JobHandle s_job;
@@ -59,16 +57,24 @@ namespace WiresAcoustics
             f.CheckedAt = to;
             f.CheckedTime = Time.time;
             f.CheckedGen = Occlusion.WorldGen;
-            // A completely faded placed SFX/other source cannot be heard,
-            // independent of how blocked it is. Continue updating the
-            // direction/fade; raycast when it approaches audibility again.
-            // Preserve last blockage and effect state to avoid a transition.
+            // A placed sound too quiet to hear even with nothing in the way (under -60 dB, where
+            // Budget mutes sounds) can't be heard however blocked it is: no check. Its direction and
+            // fade keep updating, and it's checked again once it could be heard; its last state is
+            // kept meanwhile, so nothing jumps.
             if ((f.Kind == AcousticFilter.Kinds.Sfx ||
                  f.Kind == AcousticFilter.Kinds.Other) &&
-                f.Placed && f.DistanceGain < 1e-4f &&
+                f.Placed && Budget.Open(f) < .001f &&
                 !AcousticFilter.GlobalActive)
             {
                 s_silentRaysSkipped++;
+                return;
+            }
+            // Your own sounds: nothing in the way (Occlusion.Mine), no rays.
+            if (Occlusion.Mine(f.transform, f))
+            {
+                f.Set(under ? Underwater.Gain : 1f, under ? Underwater.Cutoff : 22000f, false);
+                f.LastOcc = 0f;
+                f.Routed = false;
                 return;
             }
             // No wall processing requested: don't submit ANY geometry rays.
@@ -86,67 +92,111 @@ namespace WiresAcoustics
                                 Corners = f.LastOcc >= .3f });
         }
 
-        // Probe rays per frame, at most (each probe is two short rays). A burst of sounds going
+        // Probe rays per batch, at most (each probe is two short rays). A burst of sounds going
         // behind new walls at once (a door shut, walking into a base) is spread over the next frames
-        // instead of all landing in one: a frame budget chosen for the game, not from a source.
+        // instead of all landing in one: a budget chosen for the game, not from a source.
         private const int ProbeBudget = 1024;
         private static readonly List<Req> Later = new List<Req>(16);
+
+        // Before a batch is cast: each sound's check once (its latest: walking, every loop is queued
+        // again each half metre, and while results were still being read the same sound piled up),
+        // and the loudest first (as loud as it would reach you with nothing in the way, Budget.Open:
+        // the machine you're stepping out to is the one muffled right now), the nearest of equally
+        // loud ones first, so the results read within a frame's budget (Apply) are the ones you hear
+        // change. At a base of 60 to 70 sounds the machine beside you could wait behind every far
+        // one, a second and more. Probe pieces waiting from an earlier batch go first.
+        private static readonly HashSet<AcousticFilter> Seen = new HashSet<AcousticFilter>();
+        private static readonly System.Comparison<Req> Loudest = (a, b) =>
+        {
+            if (a.Probe != b.Probe) return a.Probe ? -1 : 1;
+            int c = b.Loud.CompareTo(a.Loud);
+            return c != 0 ? c : a.F.LastDist.CompareTo(b.F.LastDist);
+        };
+        private static void Tidy()
+        {
+            Seen.Clear();
+            int keep = Queue.Count;
+            for (int i = Queue.Count - 1; i >= 0; i--)
+            {
+                Req r = Queue[i];
+                if (r.F == null || (!r.Probe && !Seen.Add(r.F))) { Queue[i] = Queue[--keep]; Queue.RemoveAt(keep); continue; }
+                r.Loud = Budget.Open(r.F);
+                Queue[i] = r;
+            }
+            Queue.Sort(Loudest);
+        }
 
         // Every frame, from the game's audio update.
         internal static void Step(Vector3 listener)
         {
-            if (s_pending) { s_job.Complete(); s_pending = false; s_applied = 0; }
-            // the last batch's results, as far as this frame's slice goes; the next batch is only cast
-            // once they're all read (its hits go in the same buffer)
-            if (s_flightCount > 0 && !Apply()) return;
-            int n = Queue.Count;
-            if (n == 0) return;
-            if (s_flight.Length < n)
+            if (s_pending)
             {
-                int fl = Mathf.NextPowerOfTwo(Mathf.Max(64, n));
-                s_flight = new Req[fl];
-                s_edges = new Vector3[fl * Corners.MaxEdges];
+                // its raycasts still running on the worker threads: read next frame, not waited for
+                if (!s_job.IsCompleted) return;
+                s_job.Complete();
+                s_pending = false;
+                s_applied = 0;
             }
+            // the last batch's results, as far as this frame's budget goes; the next batch is only
+            // cast once they're all read (its hits go in the same buffer)
+            if (s_flightCount > 0 && !Apply()) return;
+            if (Queue.Count == 0 || Frame.Over) return; // the next batch only with time left this frame
+            Tidy();
+            int n = Queue.Count;
             int routes = Mathf.Min(Portals.Routes, Portals.List.Count);
             int cmds = 0, m = 0, budget = ProbeBudget;
             for (int i = 0; i < n; i++)
             {
+                // out of this frame's time: the rest of the line waits for the next batch
+                if (m > 0 && Frame.Over) { for (; i < n; i++) Later.Add(Queue[i]); break; }
                 Req r = Queue[i];
+                if (r.Probe)
+                {
+                    if (2 * r.K > budget && budget < ProbeBudget) { Later.Add(r); continue; }
+                    budget -= 2 * r.K;
+                    Fly(ref m, r);
+                    cmds += 2 * r.K;
+                    continue;
+                }
                 r.Routes = r.Corners ? routes : 0;
-                r.EdgeN = r.KNear = r.KFar = 0;
-                r.SlotNear = r.SlotFar = -1;
+                r.EdgeN = 0;
+                int edgesAt = m;
                 if (r.Corners && r.F != null)
                 {
                     AcousticFilter f = r.F;
                     if (f.Records == null) { f.Records = new Corners.Record[Corners.Slots]; for (int s = 0; s < Corners.Slots; s++) f.Records[s] = new Corners.Record(); }
-                    r.W = f.Walls;
-                    // each wall in the way: a kept probe pass that covers it, or a slot to probe it into
-                    int mN = r.W.Near ? Corners.Match(f.Records, r.W.NearAt, r.W.NearN) : -1;
-                    int mF = r.W.Far ? Corners.Match(f.Records, r.W.FarAt, r.W.FarN) : -1;
-                    if (r.W.Near && mN < 0) { r.SlotNear = mF == 0 ? 1 : 0; r.KNear = Corners.Probes(listener, r.W.NearAt, r.To, r.W.NearGain); }
-                    if (r.W.Far && mF < 0)
+                    Corners.Walls w = f.Walls;
+                    // each wall in the way: a probe pass that covers it, or a slot to probe it into
+                    int mN = w.Near ? Corners.Match(f.Records, w.NearAt, w.NearN) : -1;
+                    int mF = w.Far ? Corners.Match(f.Records, w.FarAt, w.FarN) : -1;
+                    if (w.Near && mN < 0)
                     {
-                        int taken = mN >= 0 ? mN : r.SlotNear;
-                        r.SlotFar = taken == 0 ? 1 : 0;
-                        r.KFar = Corners.Probes(listener, r.W.FarAt, r.To, r.W.FarGain);
+                        mN = mF == 0 ? 1 : 0;
+                        StartProbes(f, r, mN, w.NearAt, w.NearN, Corners.Probes(listener, w.NearAt, r.To, w.NearGain));
+                        r.Started = true;
                     }
-                    int rays = 2 * Corners.Dirs * (r.KNear + r.KFar);
-                    if (rays > budget && budget < ProbeBudget) { Later.Add(Queue[i]); continue; }
-                    budget -= rays;
-                    // the edges kept for the walls already probed: listener -> edge -> sound
+                    if (w.Far && mF < 0)
+                    {
+                        mF = mN == 0 ? 1 : 0;
+                        StartProbes(f, r, mF, w.FarAt, w.FarN, Corners.Probes(listener, w.FarAt, r.To, w.FarGain));
+                        r.Started = true;
+                    }
+                    // the edges found so far: listener -> edge -> sound
+                    EnsureFlight(m + 1);
                     for (int s = 0; s < 2; s++)
                     {
                         int slot = s == 0 ? mN : mF;
                         if (slot < 0) continue;
                         Corners.Record rec = f.Records[slot];
-                        for (int k = 0; k < rec.Count; k++) s_edges[m * Corners.MaxEdges + r.EdgeN++] = rec.Edges[k];
+                        for (int d = 0; d < Corners.Dirs; d++)
+                            if (rec.Has[d]) s_edges[edgesAt * Corners.MaxEdges + r.EdgeN++] = rec.Edges[d];
                     }
                 }
-                s_flight[m++] = r;
-                cmds += 3 * (1 + r.Routes) + 6 * r.EdgeN + 2 * Corners.Dirs * (r.KNear + r.KFar);
+                Fly(ref m, r);
+                cmds += 3 * (1 + r.Routes) + 6 * r.EdgeN;
             }
             Queue.Clear();
-            Queue.AddRange(Later); // over the budget: next frame
+            Queue.AddRange(Later); // over a budget: next batch
             Later.Clear();
             if (m == 0) return;
             if (!s_cmds.IsCreated || s_cmds.Length < cmds)
@@ -163,6 +213,13 @@ namespace WiresAcoustics
                 Req r = s_flight[i];
                 r.Listener = listener;
                 r.First = c;
+                if (r.Probe)
+                {
+                    Probe(r.At, r.N, r.Dir, r.K, q, ref c);
+                    s_cornerRays += 2 * r.K;
+                    s_flight[i] = r;
+                    continue;
+                }
                 if (r.Routes > 0) r.P0 = Portals.List[0];
                 if (r.Routes > 1) r.P1 = Portals.List[1];
                 Cast3(listener, r.To, q, ref c);
@@ -176,17 +233,48 @@ namespace WiresAcoustics
                     Cast3(listener, e, q, ref c);
                     Cast3(e, r.To, q, ref c);
                 }
-                // and the probes along the walls not probed yet
-                r.ProbeFirst = c;
-                if (r.KNear > 0) Probe(r.W.NearAt, r.W.NearN, r.KNear, q, ref c);
-                if (r.KFar > 0) Probe(r.W.FarAt, r.W.FarN, r.KFar, q, ref c);
-                s_cornerRays += 2 * r.EdgeN + 2 * Corners.Dirs * (r.KNear + r.KFar);
+                s_cornerRays += 2 * r.EdgeN;
                 s_flight[i] = r;
             }
             s_flightCount = m;
             s_job = RaycastCommand.ScheduleBatch(s_cmds.GetSubArray(0, c), s_hits.GetSubArray(0, c * MaxHits), 8, MaxHits);
             JobHandle.ScheduleBatchedJobs();
             s_pending = true;
+        }
+
+        private static void EnsureFlight(int n)
+        {
+            if (s_flight.Length >= n) return;
+            int fl = Mathf.NextPowerOfTwo(Mathf.Max(64, n));
+            System.Array.Resize(ref s_flight, fl);
+            System.Array.Resize(ref s_edges, fl * Corners.MaxEdges);
+        }
+
+        private static void Fly(ref int m, Req r)
+        {
+            EnsureFlight(m + 1);
+            s_flight[m++] = r;
+        }
+
+        // A wall not probed yet: its record set up now (so the next check doesn't probe it again),
+        // and one small piece per way along it, each read as its own result (a whole pass at once
+        // took up to 450 rays in one go, a quarter of a millisecond and more), in the line for the
+        // next batch.
+        private static void StartProbes(AcousticFilter f, Req check, int slot, Vector3 at, Vector3 n, int k)
+        {
+            Corners.Record rec = f.Records[slot];
+            rec.Valid = true;
+            rec.At = at; rec.N = n;
+            rec.Span = k * Corners.Spacing;
+            rec.Gen = Occlusion.WorldGen;
+            rec.Version++;
+            rec.Pending = Corners.Dirs;
+            for (int d = 0; d < Corners.Dirs; d++)
+            {
+                rec.Has[d] = false;
+                Later.Add(new Req { F = f, To = check.To, Under = check.Under, Reverb = check.Reverb, Probe = true,
+                                    Slot = slot, Dir = d, K = k, At = at, N = n, Version = rec.Version });
+            }
         }
 
         // One line as three rays: itself and the two beside it (Occlusion.Lines).
@@ -198,42 +286,42 @@ namespace WiresAcoustics
             s_cmds[c++] = Cast(from + up, to + up, q);
         }
 
-        // Probes across a wall, each way along it: two rays through it, Twin either side of the point.
-        private static void Probe(Vector3 at, Vector3 n, int count, QueryParameters q, ref int c)
+        // Probes across a wall, one way along it: two rays through it, Twin either side of each point.
+        private static void Probe(Vector3 at, Vector3 n, int dir, int count, QueryParameters q, ref int c)
         {
             Vector3 across = n * Occlusion.SameWall;
-            for (int d = 0; d < Corners.Dirs; d++)
+            Vector3 d = Corners.Dir(n, dir), twin = d * Occlusion.Twin;
+            for (int i = 0; i < count; i++)
             {
-                Vector3 dir = Corners.Dir(n, d), twin = dir * Occlusion.Twin;
-                for (int i = 0; i < count; i++)
-                {
-                    Vector3 p = Corners.Probe(at, dir, i);
-                    s_cmds[c++] = Cast(p + across + twin, p - across + twin, q);
-                    s_cmds[c++] = Cast(p + across - twin, p - across - twin, q);
-                }
+                Vector3 p = Corners.Probe(at, d, i);
+                s_cmds[c++] = Cast(p + across + twin, p - across + twin, q);
+                s_cmds[c++] = Cast(p + across - twin, p - across - twin, q);
             }
         }
 
-        // One wall's probe pass, kept in its slot: the first open place each way along it.
-        private static int Keep(Corners.Record rec, Vector3 at, Vector3 n, int count, Vector3 to, ref int c)
+        // A probe piece read: the first open place that way along the wall, into its record (if the
+        // record is still that pass). An edge found, or the wall's last piece read, checks the sound
+        // again, so a gap is heard straight away.
+        private static void ReadProbe(Req r)
         {
-            rec.Valid = true;
-            rec.At = at; rec.N = n;
-            rec.Span = count * Corners.Spacing;
-            rec.Gen = Occlusion.WorldGen;
-            rec.Count = 0;
-            for (int d = 0; d < Corners.Dirs; d++)
+            AcousticFilter f = r.F;
+            if (f.Records == null) return;
+            Corners.Record rec = f.Records[r.Slot];
+            if (rec.Version != r.Version || !rec.Valid) return;
+            Vector3 d = Corners.Dir(r.N, r.Dir);
+            int c = r.First;
+            bool found = false;
+            for (int i = 0; i < r.K; i++, c += 2)
             {
-                Vector3 dir = Corners.Dir(n, d);
-                bool got = false;
-                for (int i = 0; i < count; i++, c += 2)
-                {
-                    if (got || !Open(c, to) || !Open(c + 1, to)) continue;
-                    rec.Edges[rec.Count++] = Corners.Probe(at, dir, i);
-                    got = true;
-                }
+                if (!Open(c, r.To) || !Open(c + 1, r.To)) continue;
+                rec.Edges[r.Dir] = Corners.Probe(r.At, d, i);
+                rec.Has[r.Dir] = true;
+                found = true;
+                break;
             }
-            return rec.Count;
+            rec.Pending--;
+            if (found || rec.Pending <= 0)
+                Queue.Add(new Req { F = f, To = r.To, Under = r.Under, Reverb = r.Reverb, Corners = true });
         }
 
         // Nothing solid (a wall, the ground, rock) on a probe ray.
@@ -338,7 +426,7 @@ namespace WiresAcoustics
         private static bool Apply()
         {
             bool on = Plugin.Occlusion.Value;
-            long until = System.Diagnostics.Stopwatch.GetTimestamp() + SliceTicks;
+            long until = Frame.Until;
             int start = s_applied;
             for (; s_applied < s_flightCount; s_applied++)
             {
@@ -349,6 +437,13 @@ namespace WiresAcoustics
                 s_flight[i].F = null;
                 AcousticFilter f = r.F;
                 if (f == null) continue;
+                if (r.Probe)
+                {
+                    Occlusion.Own = f.ShapeRoot != null ? f.ShapeRoot.root : null;
+                    if (on) ReadProbe(r);
+                    Occlusion.Own = null;
+                    continue;
+                }
                 float occ = 0f;
                 Occlusion.Own = f.ShapeRoot != null ? f.ShapeRoot.root : null;
                 Occlusion.Block direct = Occlusion.Block.Clear;
@@ -395,21 +490,10 @@ namespace WiresAcoustics
                     if (Consider(total, leg, Corners.LengthGain(r.Listener, p, r.To), bg, bc, p, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
                         bestKind = 2;
                 }
-                // New probe passes kept for next time (each wall into its slot). If they found edges,
-                // checked again next frame with them, so a gap is heard straight away; with no edges
-                // tried this time, this result (the wall alone) isn't applied at all.
-                if (r.Corners && on && f.Records != null && r.KNear + r.KFar > 0)
-                {
-                    c = r.ProbeFirst;
-                    int found = 0;
-                    if (r.KNear > 0) found += Keep(f.Records[r.SlotNear], r.W.NearAt, r.W.NearN, r.KNear, r.To, ref c);
-                    if (r.KFar > 0) found += Keep(f.Records[r.SlotFar], r.W.FarAt, r.W.FarN, r.KFar, r.To, ref c);
-                    if (found > 0 && !r.Retry && occ >= .3f)
-                    {
-                        Queue.Add(new Req { F = f, To = r.To, Under = r.Under, Reverb = r.Reverb, Corners = true, Retry = true });
-                        if (r.EdgeN == 0) { Occlusion.Own = null; continue; }
-                    }
-                }
+                // Its walls only just sent their probes (Started) and no edge is known yet: the wall
+                // alone would muffle it for a moment before the way round is found. Kept as it was;
+                // the probes check it again as soon as they find an edge (or finish).
+                if (on && r.Started && r.EdgeN == 0 && occ >= .3f) { Occlusion.Own = null; continue; }
                 Occlusion.Wall(direct, out float gain, out float cutoff);
                 bool routed = false;
                 Vector3 heard = r.To;
@@ -457,5 +541,21 @@ namespace WiresAcoustics
             Flush();
             if (s_cmds.IsCreated) { s_cmds.Dispose(); s_hits.Dispose(); }
         }
+    }
+}
+
+namespace WiresAcoustics
+{
+    // The mod's main-thread time each frame is kept under 0.5 ms, all of it together: what has to
+    // happen each frame (where sounds are, the room when it's due) goes first, and the wall checks'
+    // results (Batch) take what's left, the rest waiting for the next frame (always at least one, so
+    // nothing waits for ever). A sound starting is checked at once, outside this (a frame late would
+    // let its start through the wall).
+    internal static class Frame
+    {
+        private static readonly long Budget = System.Diagnostics.Stopwatch.Frequency / 2000; // 0.5 ms
+        internal static long Until;
+        internal static void Begin() => Until = System.Diagnostics.Stopwatch.GetTimestamp() + Budget;
+        internal static bool Over => System.Diagnostics.Stopwatch.GetTimestamp() > Until;
     }
 }

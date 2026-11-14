@@ -118,16 +118,21 @@ namespace WiresAcoustics
         // everything the mod does to it. Not its own volume: the game fades many sounds in from 0, and
         // a sound muted at its start would miss its first moments. Custom fall-off curves count as
         // full (reading them would cost more than this saves).
-        private static float Heard(AcousticFilter f)
+        private static float Heard(AcousticFilter f) => Open(f) * f.TargetGain;
+
+        // How loud it would reach you with nothing in the way (its fall-off, range and own level, not
+        // its muffling): what decides which sound's wall check is read first (Batch).
+        internal static float Open(AcousticFilter f)
         {
             AudioSource src = f.Source;
+            if (src == null) return 0f;
             float d = f.LastDist, fall = 1f;
             if (src.spatialBlend >= .5f)
             {
                 if (src.rolloffMode == AudioRolloffMode.Logarithmic) fall = d <= src.minDistance ? 1f : src.minDistance / d;
                 else if (src.rolloffMode == AudioRolloffMode.Linear) fall = Mathf.Clamp01((src.maxDistance - d) / Mathf.Max(.01f, src.maxDistance - src.minDistance));
             }
-            return fall * f.TargetGain * f.DistanceGain * f.SourceLevel;
+            return fall * f.DistanceGain * f.SourceLevel;
         }
 
         internal static void Clear()

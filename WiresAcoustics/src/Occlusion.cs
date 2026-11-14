@@ -89,7 +89,9 @@ namespace WiresAcoustics
             }
             Own = f != null && f.ShapeRoot != null ? f.ShapeRoot.root : null;
             Block block = Block.Clear;
-            float occ = starting && Plugin.Occlusion.Value ? Blocking(from, to, out block) : 0f;
+            // your own sounds (footsteps, swings, your gear): nothing stands between your head and
+            // your own body, so no check (three rays each, at every step)
+            float occ = starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f) ? Blocking(from, to, out block) : 0f;
             Own = null;
             s_checked++;
             if (occ > .05f) s_muffled++;
@@ -591,6 +593,8 @@ namespace WiresAcoustics
                 if (src.loop) { f.WatchLoop = true; continue; }
                 if (f.Kind == AcousticFilter.Kinds.Sfx && now - f.StartedAt < .4f) continue;
                 Vector3 at = f.transform.position;
+                // a longer one-off (a roar): checked again only when it could sound different, as loops
+                if (Unchanged(f, at, Hearing.At, now)) continue;
                 f.InWater = Underwater.ListenerBelow && Underwater.Below(at);
                 Batch.Enqueue(f, at, Underwater.Muffles(at, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
             }
@@ -639,13 +643,41 @@ namespace WiresAcoustics
 
         private const float LoopMoved = .5f, LoopMinGap = .1f, LoopFallback = 2f;
 
+        // Nothing it's heard through changed since its last check: you and it within half a metre of
+        // where you were, nothing built near the line between you, under 2 s ago.
+        private static bool Unchanged(AcousticFilter f, Vector3 at, Vector3 ear, float now) =>
+            now - f.CheckedTime < LoopFallback && !ChangedNear(f.CheckedGen, ear, at, Corners.Reach) &&
+            (ear - f.CheckedFrom).sqrMagnitude < LoopMoved * LoopMoved &&
+            (at - f.CheckedAt).sqrMagnitude < LoopMoved * LoopMoved;
+
+        // A sound of your own character's (its own, or one of its own made placed, PlayerSounds).
+        internal static bool Mine(Transform sound, AcousticFilter f)
+        {
+            Player p = Player.m_localPlayer;
+            if (p == null) return false;
+            Transform me = p.transform;
+            return s_myStep || (f != null && f.Player == me) || (sound != null && sound.IsChildOf(me));
+        }
+
+        // Footsteps are made at the foot, on their own (FootStep.DoEffect): yours are marked while
+        // they're made (their sound starts inside it).
+        private static bool s_myStep;
+        [HarmonyPatch(typeof(FootStep), "DoEffect")]
+        private static class MyStep
+        {
+            private static void Prefix(FootStep __instance)
+            {
+                Player p = Player.m_localPlayer;
+                s_myStep = p != null && __instance.transform.IsChildOf(p.transform);
+            }
+            private static System.Exception Finalizer(System.Exception __exception) { s_myStep = false; return __exception; }
+        }
+
         internal static void WatchLoop(AcousticFilter f, Vector3 at, Vector3 ear, float now)
         {
             float since = now - f.CheckedTime;
             if (since < LoopMinGap || !f.Active) return; // past the count: left to Unity, as in Recheck
-            if (since < LoopFallback && !ChangedNear(f.CheckedGen, ear, at, Corners.Reach) &&
-                (ear - f.CheckedFrom).sqrMagnitude < LoopMoved * LoopMoved &&
-                (at - f.CheckedAt).sqrMagnitude < LoopMoved * LoopMoved) return;
+            if (Unchanged(f, at, ear, now)) return;
             AudioSource src = f.Source;
             if (src == null || !src.isPlaying) { f.WatchLoop = false; return; }
             Vector3 p = f.transform.position;

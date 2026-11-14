@@ -157,6 +157,7 @@ namespace WiresAcoustics
             {
                 long t0 = Plugin.DebugLog.Value ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
                 int gc0 = t0 != 0L ? System.GC.CollectionCount(0) : 0;
+                Frame.Begin();
                 // Switched off while playing: hand every live sound back to the game, finish pending work.
                 bool on = Plugin.Enabled.Value, hrtf = on && Plugin.Hrtf.Value;
                 bool roomReverb = on && Plugin.RoomReverb.Value;
@@ -201,9 +202,6 @@ namespace WiresAcoustics
                     c = Cost.Start();
                     Budget.Step(t);
                     Cost.Add(ref Cost.Budget, c);
-                    c = Cost.Start();
-                    Batch.Step(Hearing.At);
-                    Cost.Add(ref Cost.Batch, c);
                     if (t >= s_nextScan)
                     {
                         s_nextScan = t + RescanEvery;
@@ -213,6 +211,13 @@ namespace WiresAcoustics
                     }
                 }
                 Run(__instance);
+                // last: the wall checks' results take what's left of the frame's budget (Frame)
+                if (Plugin.Enabled.Value && s_listener != null)
+                {
+                    long c = Cost.Start();
+                    Batch.Step(Hearing.At);
+                    Cost.Add(ref Cost.Batch, c);
+                }
                 Cost.AddTick(t0, gc0);
             }
 
