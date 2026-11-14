@@ -24,7 +24,7 @@ namespace WiresAcoustics
             GameObject go = Object.Instantiate(prefab, joint.position, joint.rotation);
             if (!Follow.Moves(__instance.transform)) return false;
             foreach (ZSFX z in go.GetComponentsInChildren<ZSFX>(true))
-                if (z.GetComponent("ParticleSystem") == null)
+                if (z.GetComponentInChildren<ParticleSystem>(true) == null) // its particles anywhere under it stay where they were made
                 {
                     if (Follow.Networked(z.gameObject)) Follow.Track(z.transform, joint); // never attach a networked object
                     else z.transform.SetParent(joint, true);

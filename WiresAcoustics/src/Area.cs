@@ -37,7 +37,11 @@ namespace WiresAcoustics
             }
             Voice(sound, owner);
             if (!s.Valid) return;
-            if (owner.GetComponent<Fireplace>() != null) f.SourceLevel = FireLevel(s.Half);
+            // the burning itself only: a fire piece's one sound of its own, its crackle (a looping
+            // source in the piece). Adding fuel and lighting it are effects made at it, as loud as
+            // the game made them whatever the fire's size.
+            if (owner.GetComponent<Fireplace>() != null && sound.IsChildOf(owner) && f.Source != null && f.Source.loop)
+                f.SourceLevel = FireLevel(s.Half);
             f.ShapeRoot = owner;
             f.ShapeCenter = s.Center;
             f.ShapeHalf = s.Half;

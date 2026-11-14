@@ -68,6 +68,7 @@ namespace WiresAcoustics
                 bool hrtf = Plugin.Hrtf.Value;
                 if (hrtf) f.TakePanning(src.spread);
                 f.Hrtf = hrtf;
+                f.Width = Mathf.Max(f.BaseWidth, Around); // the sea all round you: from all round
                 Budget.Note(f, (src.transform.position - l.transform.position).magnitude);
                 Shade(f, l.transform.position, src.transform.position);
             }
@@ -127,23 +128,58 @@ namespace WiresAcoustics
             s_pending = true;
         }
 
+        // Each direction's first water that is the sea, weighted by 1 / distance squared: the way the
+        // shore lies (the directions added as arrows) and how far (their distances averaged). Added as
+        // points instead, water on two sides cancelled out and put the sea under you (an island, a
+        // point, a pier). How much the arrows cancel is how much the sea is all round you: the sound
+        // gets that wide (Around).
         private static void Read()
         {
             float sea = ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : 30f;
-            Vector3 sum = Vector3.zero;
-            float weight = 0f;
+            Vector3 way = Vector3.zero, nearestDir = Vector3.zero;
+            float weight = 0f, dist = 0f, nearest = float.MaxValue;
             for (int d = 0; d < Dirs; d++)
                 for (int k = 0; k < Radii.Length; k++)
                 {
                     RaycastHit h = s_hits[d * Radii.Length + k];
-                    if (h.colliderInstanceID == 0 || h.point.y > sea - Wet) continue;
+                    if (h.colliderInstanceID == 0 || h.point.y > sea - Wet || !SeaZone(h.point)) continue;
+                    Vector3 flat = new Vector3(h.point.x - s_from.x, 0f, h.point.z - s_from.z);
+                    float r = flat.magnitude;
+                    if (r < .01f) break;
                     float w = 1f / (Radii[k] * Radii[k]);
-                    sum += new Vector3(h.point.x, sea + Surf, h.point.z) * w;
+                    way += flat / r * w;
+                    dist += r * w;
                     weight += w;
-                    break; // the first deep water point in this direction
+                    if (r < nearest) { nearest = r; nearestDir = flat / r; }
+                    break; // the first sea point in this direction
                 }
             s_have = weight > 0f;
-            if (s_have) s_point = sum / weight;
+            if (!s_have) return;
+            float pull = way.magnitude / weight; // 1: all one side, 0: all round you
+            Vector3 dir = way.sqrMagnitude > 1e-8f ? way.normalized : nearestDir;
+            Vector3 p = s_from + dir * (dist / weight);
+            s_point = new Vector3(p.x, sea + Surf, p.z);
+            Around = 1f - pull;
+        }
+
+        // How much the sea surrounds you (0 one side, 1 all round): how wide it sounds.
+        internal static float Around;
+
+        // The sea as the game itself has it for this sound (AudioMan.IsOceanZone): a zone whose middle
+        // lies deeper under the sea's surface than its m_oceanDepthTreshold. Rivers and ponds are at
+        // sea level too, but not that deep across a whole zone. Kept per zone (the ground never moves).
+        private static readonly System.Collections.Generic.Dictionary<Vector2s, bool> SeaZones = new System.Collections.Generic.Dictionary<Vector2s, bool>();
+        private static bool SeaZone(Vector3 p)
+        {
+            ZoneSystem zs = ZoneSystem.instance;
+            AudioMan man = AudioMan.instance;
+            if (zs == null || man == null) return true;
+            Vector2s zone = ZoneSystem.GetZone(p);
+            if (SeaZones.TryGetValue(zone, out bool sea)) return sea;
+            if (SeaZones.Count > 4096) SeaZones.Clear();
+            sea = zs.m_waterLevel - zs.GetGroundHeight(ZoneSystem.GetZonePos(zone)) > man.m_oceanDepthTreshold;
+            SeaZones[zone] = sea;
+            return sea;
         }
 
         internal static void Shutdown()

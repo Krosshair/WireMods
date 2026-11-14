@@ -252,6 +252,11 @@ namespace WiresAcoustics
         // wall, a beam, a pole) a few centimetres apart: one wall all the same, so anything built
         // within 0.6 m of the last wall counted is part of it.
         internal const float SameWall = .6f;
+        // While the two legs of a way round an edge are read (Batch): the edge. The edge sits on the
+        // wall's near face, and a leg leaving it steeply (you or the sound right by a half wall) would
+        // clip the wall's own top or end and count the way over as going through it.
+        internal static bool Round;
+        internal static Vector3 RoundAt;
         // Full: the ray had more hits than it could keep, and which ones Unity kept isn't defined, so
         // the wall among them may be one it dropped. A line through that much counts as through a wall
         // at least (as a plank wall, 15 dB).
@@ -266,12 +271,16 @@ namespace WiresAcoustics
             }
             b.LastWall = -10f;
             float occ = 0f;
+            s_groups = 0;
             for (int i = 0; i < n; i++)
             {
+                // a way round an edge touches that edge: the wall it bends round isn't in its way
+                if (Round && (hits[i].point - RoundAt).sqrMagnitude < SameWall * SameWall) continue;
                 Solids.Info s = Solids.Of(hits[i]);
                 if (s == null) continue;
                 float w = Counts(s, to);
                 if (w <= 0f) continue;
+                if (!s.Wall && !s.Ground) { Group(s, w); continue; } // an obstacle: once per object, below
                 if (!Layer(s, w, from, to, hits[i].distance, ref b)) continue;
                 if (s.Wall)
                 {
@@ -280,6 +289,19 @@ namespace WiresAcoustics
                     b.FarAt = hits[i].point; b.FarN = hits[i].normal; b.FarGain = s.First;
                 }
                 occ += w;
+            }
+            // Obstacles (a rock, furniture, a trunk, a ship, a cart): the sound goes over and round
+            // each object once, by the box of its colliders this line ran through. Bent once per
+            // collider, a longship (dozens of them) took the loss over and over and shut a sound out.
+            for (int g = 0; g < s_groups; g++)
+            {
+                if (Diffraction.RoundObstacle(GroupBox[g], from, to, out float gain, out float cut))
+                {
+                    b.BendGain *= gain;
+                    b.BendCut = Mathf.Min(b.BendCut, cut);
+                }
+                else b.Soft += GroupW[g]; // you or the sound inside its box: the old weight
+                occ += GroupW[g];
             }
             if (full && b.Walls == 0)
             {
@@ -420,9 +442,8 @@ namespace WiresAcoustics
             internal static Block Clear => new Block { Through = 1f, ThroughCut = 22000f, BendGain = 1f, BendCut = 22000f, LastWall = -10f };
         }
 
-        // One hit: a wall by what it measures, the ground marked for the ridge, anything else (a rock,
-        // furniture, a trunk) as something the sound goes over and round (Diffraction.RoundObstacle).
-        // False: part of the wall already counted.
+        // One hit: a wall by what it measures, the ground marked for the ridge. False: part of the
+        // wall already counted. Anything else is an obstacle (Group).
         internal static bool Layer(Solids.Info s, float w, Vector3 from, Vector3 to, float at, ref Block b)
         {
             if (s.Wall)
@@ -434,14 +455,31 @@ namespace WiresAcoustics
                 b.ThroughCut = b.Walls == 1 ? Mathf.Min(b.ThroughCut, s.Cut) : Mathf.Max(200f, b.ThroughCut * .7f);
                 return true;
             }
-            else if (s.Ground) { if (!b.Terrain) { b.Terrain = true; b.Soft += w; } } // undone by Ridge
-            else if (Diffraction.RoundObstacle(Solids.BoxOf(s), from, to, out float g, out float cut))
-            {
-                b.BendGain *= g;
-                b.BendCut = Mathf.Min(b.BendCut, cut);
-            }
-            else b.Soft += w; // you or the sound inside its box: the old weight
+            if (s.Ground && !b.Terrain) { b.Terrain = true; b.Soft += w; } // undone by Ridge
             return true;
+        }
+
+        // The obstacles on one line, by object (what each collider belongs to): its colliders' boxes
+        // together, and its weight once. A line holds at most MaxHits hits.
+        private static int s_groups;
+        private static readonly Transform[] GroupRoot = new Transform[MaxHits];
+        private static readonly Bounds[] GroupBox = new Bounds[MaxHits];
+        private static readonly float[] GroupW = new float[MaxHits];
+        private static void Group(Solids.Info s, float w)
+        {
+            Bounds box = Solids.BoxOf(s);
+            for (int g = 0; g < s_groups; g++)
+                if (GroupRoot[g] == s.Root)
+                {
+                    GroupBox[g].Encapsulate(box);
+                    GroupW[g] = Mathf.Max(GroupW[g], w);
+                    return;
+                }
+            if (s_groups >= MaxHits) return;
+            GroupRoot[s_groups] = s.Root;
+            GroupBox[s_groups] = box;
+            GroupW[s_groups] = w;
+            s_groups++;
         }
 
         // A hill in the way: sound goes over it, not through, so it's a barrier with the ridge as its

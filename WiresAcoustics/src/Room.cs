@@ -638,11 +638,25 @@ namespace WiresAcoustics
         {
             string n = wnt.gameObject.name.ToLowerInvariant();
             if (p != null && p.m_comfortGroup == Piece.ComfortGroup.Bed) return .77f;
-            if ((p != null && p.m_comfortGroup == Piece.ComfortGroup.Carpet) || n.Contains("rug") || n.Contains("hide") || n.Contains("fur") || n.Contains("pillow"))
+            if ((p != null && p.m_comfortGroup == Piece.ComfortGroup.Carpet) || Word(n, "rug") || Word(n, "hide") || Word(n, "fur") || Word(n, "pillow"))
                 return .37f;
-            if ((p != null && p.m_comfortGroup == Piece.ComfortGroup.Banner) || n.Contains("tapestry") || n.Contains("curtain") || n.Contains("cloth"))
+            if ((p != null && p.m_comfortGroup == Piece.ComfortGroup.Banner) || Word(n, "tapestry") || Word(n, "curtain") || Word(n, "cloth"))
                 return .35f;
             return .10f;
+        }
+
+        // A whole word of a name (the game's are joined by "_", "(Clone)" added): "rug_fur" has fur,
+        // "blastfurnace" doesn't.
+        private static bool Word(string name, string word)
+        {
+            for (int at = name.IndexOf(word, System.StringComparison.Ordinal); at >= 0; at = name.IndexOf(word, at + 1, System.StringComparison.Ordinal))
+            {
+                int end = at + word.Length;
+                bool startOk = at == 0 || !char.IsLetter(name[at - 1]);
+                bool endOk = end >= name.Length || !char.IsLetter(name[end]) || (name[end] == 's' && (end + 1 >= name.Length || !char.IsLetter(name[end + 1])));
+                if (startOk && endOk) return true;
+            }
+            return false;
         }
 
         // The natural ground, by the Nord2000 ground classes (effective flow resistivity in kPa s/m2,
@@ -793,6 +807,13 @@ namespace WiresAcoustics
             if (p == null) s.Structural = big;
             else if (p.m_category == Piece.PieceCategory.BuildingWorkbench || p.m_category == Piece.PieceCategory.BuildingStonecutter) s.Structural = true;
             else if (p.m_category == Piece.PieceCategory.DeepNorth) s.Structural = big;
+            // The game's Misc category holds its fences and stake walls (stake_wall, stone_fence,
+            // wood_fence and its gate, the blackwood and dvergr stake walls) among piles, stacks and
+            // fires; other mods' building pieces come in categories of their own. What tells a wall
+            // there is the game's own: it holds other pieces up (WearNTear.m_supports) and isn't a
+            // comfort piece (a hearth is a fire). A ship is a ship, not a wall.
+            else if ((p.m_category == Piece.PieceCategory.Misc || p.m_category >= Piece.PieceCategory.Max) && wnt != null)
+                s.Structural = big && wnt.m_supports && p.m_comfortGroup == Piece.ComfortGroup.None && c.GetComponentInParent<Ship>() == null;
             if (!s.Built && !s.Ground)
             {
                 // what the game itself calls a tree: cuttable trees, felled logs, and destructibles of the tree kind

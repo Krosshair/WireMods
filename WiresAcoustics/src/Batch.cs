@@ -485,7 +485,9 @@ namespace WiresAcoustics
                     if (!on || occ < .3f) continue;
                     Vector3 p = s_edges[i * Corners.MaxEdges + k];
                     Occlusion.Block leg = Occlusion.Block.Clear;
+                    Occlusion.Round = true; Occlusion.RoundAt = p;
                     float total = Walls(c, p, ref leg) + Walls(c + 3, r.To, ref leg);
+                    Occlusion.Round = false;
                     Diffraction.Round(r.Listener, p, r.To, out float bg, out float bc);
                     if (Consider(total, leg, Corners.LengthGain(r.Listener, p, r.To), bg, bc, p, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
                         bestKind = 2;
