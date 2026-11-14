@@ -972,7 +972,37 @@ namespace WiresShadows
             PlacedDrops.Add(d);
             _dropChangedFrame = Time.frameCount;
             MarkDropFaces(d.CurrentPosition);           // out of the moving maps now
-            QueueStaticItemChange(d.PlacedCenter, d.PlacedRadius); // into the cached ones
+            IntoCachedMaps(d);
+        }
+
+        // A placed item into the cached maps. It's a piece too, so its Piece.Awake already queued
+        // the faces it covers with the cheap patch (only what was placed is sorted in, the rest
+        // of each light's list kept); a light whose list is still good gets just this item's
+        // renderers added to it, as a full search would add them (FindCasters, PlacedDrops).
+        // Searching every light's whole reach again for one feast was the lag on placing it.
+        private static void IntoCachedMaps(DropCaster d)
+        {
+            ShadowCache c = Instance;
+            if (c == null || !c._active) return;
+            foreach (Tracked t in c._slots)
+            {
+                if (t == null || t.Light == null) continue;
+                float reach = Range(t) + d.PlacedRadius;
+                if ((t.Center - d.PlacedCenter).sqrMagnitude > reach * reach) continue;
+                if (t.Face >= 0 || !t.Ready || t.Dirty)
+                {
+                    // a full map on its way, or due: as before
+                    if (t.Face >= 0) { c.AbortStage(t); t.Face = -1; }
+                    t.Dirty = true;
+                    t.DirtyAt = Time.time;
+                    t.DoorPrepared = false;
+                    continue;
+                }
+                t.DoorFaces |= FacesFor(d.PlacedCenter - t.Center, d.PlacedRadius);
+                if (t.DoorPrepared && d.Item != t.Light.GetComponentInParent<ItemDrop>())
+                    foreach (Renderer r in d.Renderers) AddStaticItemRenderer(t, r);
+            }
+            c.WakeRenders();
         }
 
         private static void UnplaceDrop(DropCaster d)
