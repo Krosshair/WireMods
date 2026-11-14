@@ -215,7 +215,7 @@ namespace WiresAcoustics
                 if (Plugin.Enabled.Value && s_listener != null)
                 {
                     long c = Cost.Start();
-                    Batch.Step(Hearing.At);
+                    Batch.Step(Hearing.Eye); // walls and ways round them: from the camera (Hearing)
                     Cost.Add(ref Cost.Batch, c);
                 }
                 Cost.AddTick(t0, gc0);

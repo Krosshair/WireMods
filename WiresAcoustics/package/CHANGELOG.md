@@ -1,3 +1,6 @@
+## 0.5.11
+- What's in the way of a sound and the way round it (walls, windows, doorways, corners) are now worked out from the camera, like a sound's direction: you hear what you see from where you see it. How loud a sound is still goes by your character's head.
+
 ## 0.5.10
 - Fixed: a voice behind a half wall started from an opening across the room (a window, a doorway) each time someone began to talk, and moved over the wall a moment later. A sound now keeps where it was heard from until every way round its walls has been looked for.
 

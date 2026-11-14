@@ -97,7 +97,7 @@ namespace WiresAcoustics
                     }
                     if (slow && f.Placed) f.AirCutoff = AcousticFilter.AirAt(er.w);
                     // a playing loop: its wall check again if you or it moved, or a building changed
-                    if (f.WatchLoop) Occlusion.WatchLoop(f, s_jobEar - new Vector3(er.x, er.y, er.z) * er.w, s_jobEar, now);
+                    if (f.WatchLoop) Occlusion.WatchLoop(f, s_jobEar - new Vector3(er.x, er.y, er.z) * er.w, Hearing.Eye, now);
                     // heard through an opening or round a corner: from there
                     if (f.Hrtf && f.Kind != AcousticFilter.Kinds.Ambient)
                     {

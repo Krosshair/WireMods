@@ -53,7 +53,7 @@ namespace WiresAcoustics
         internal static void Enqueue(AcousticFilter f, Vector3 to, bool under, bool reverb)
         {
             if (f == null) return;
-            f.CheckedFrom = Hearing.At;
+            f.CheckedFrom = Hearing.Eye;
             f.CheckedAt = to;
             f.CheckedTime = Time.time;
             f.CheckedGen = Occlusion.WorldGen;

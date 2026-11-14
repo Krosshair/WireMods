@@ -63,7 +63,7 @@ namespace WiresAcoustics
             AudioListener listener = AudioMan.instance != null ? AudioMan.instance.GetActiveAudioListener() : null;
             if (listener == null) return;
 
-            Vector3 from = listener.transform.position, to = __instance.transform.position; // how far, what's in the way: from your head (the game's listener)
+            Vector3 from = listener.transform.position, to = __instance.transform.position; // how far: from your head (the game's listener); what's in the way: from the camera (Hearing.Eye)
             Vector3 d = to - from;
             float dist = d.magnitude;
             Mist.Undo(__instance, src, dist); // no pitch drop in the mist
@@ -91,7 +91,7 @@ namespace WiresAcoustics
             Block block = Block.Clear;
             // your own sounds (footsteps, swings, your gear): nothing stands between your head and
             // your own body, so no check (three rays each, at every step)
-            float occ = starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f) ? Blocking(from, to, out block) : 0f;
+            float occ = starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f) ? Blocking(Hearing.Eye, to, out block) : 0f; // what's in the way: from the camera (Hearing)
             Own = null;
             s_checked++;
             if (occ > .05f) s_muffled++;
@@ -632,7 +632,7 @@ namespace WiresAcoustics
                 if (f.Kind == AcousticFilter.Kinds.Sfx && now - f.StartedAt < .4f) continue;
                 Vector3 at = f.transform.position;
                 // a longer one-off (a roar): checked again only when it could sound different, as loops
-                if (Unchanged(f, at, Hearing.At, now)) continue;
+                if (Unchanged(f, at, Hearing.Eye, now)) continue;
                 f.InWater = Underwater.ListenerBelow && Underwater.Below(at);
                 Batch.Enqueue(f, at, Underwater.Muffles(at, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
             }
