@@ -136,7 +136,7 @@ namespace WiresAcoustics
                 for (int k = 0; k < Radii.Length; k++)
                 {
                     RaycastHit h = s_hits[d * Radii.Length + k];
-                    if (h.collider == null || h.point.y > sea - Wet) continue;
+                    if (h.colliderInstanceID == 0 || h.point.y > sea - Wet) continue;
                     float w = 1f / (Radii[k] * Radii[k]);
                     sum += new Vector3(h.point.x, sea + Surf, h.point.z) * w;
                     weight += w;

@@ -82,8 +82,6 @@ namespace WiresAcoustics
             // its start through the wall). If walls are in the way, the paths round them (openings,
             // corners) go to the worker threads (Batch) and it glides open if one is better. A playing
             // loop is checked there entirely and glides to its value.
-            float first = float.MaxValue;
-            Collider firstCollider = null;
             if (f != null)
             {
                 Area.Measure(f, __instance.transform);
@@ -91,7 +89,7 @@ namespace WiresAcoustics
             }
             Own = f != null && f.ShapeRoot != null ? f.ShapeRoot.root : null;
             Block block = Block.Clear;
-            float occ = starting && Plugin.Occlusion.Value ? Blocking(from, to, out first, out firstCollider, out block) : 0f;
+            float occ = starting && Plugin.Occlusion.Value ? Blocking(from, to, out block) : 0f;
             Own = null;
             s_checked++;
             if (occ > .05f) s_muffled++;
@@ -114,8 +112,7 @@ namespace WiresAcoustics
             {
                 f.StartedAt = Time.time;
                 f.LastOcc = occ;
-                f.LastBlockDist = first < float.MaxValue ? first : dist * .5f;
-                f.LastBlocker = firstCollider;
+                f.Walls = Corners.From(block);
                 Wall(block, out gain, out cutoff);
                 f.Routed = false;
                 f.RoutePoint = to;
@@ -181,15 +178,15 @@ namespace WiresAcoustics
             {
                 int n = Physics.RaycastNonAlloc(new Vector3(p.x, p.y + 150f, p.z), Vector3.down, OutHits, 300f, Room.Mask, QueryTriggerInteraction.Ignore);
                 float highest = float.MinValue;
-                Collider top = null;
+                int top = -1;
                 for (int i = 0; i < n; i++)
-                    if (OutHits[i].collider != null && OutHits[i].point.y > highest) { highest = OutHits[i].point.y; top = OutHits[i].collider; }
-                if (top == null) return;
+                    if (OutHits[i].colliderInstanceID != 0 && OutHits[i].point.y > highest) { highest = OutHits[i].point.y; top = i; }
+                if (top < 0) return;
                 float sea = ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : highest;
                 last = new Vector3(p.x, Mathf.Max(highest, sea) + CallHeight, p.z);
                 any = true;
                 Vector3 flat = p - Hearing.At; flat.y = 0f;
-                if (flat.sqrMagnitude < NotOver * NotOver && top.GetComponentInParent<WearNTear>() != null) continue; // a building right by you: further out
+                if (flat.sqrMagnitude < NotOver * NotOver && (Solids.Of(OutHits[top])?.Built ?? false)) continue; // a building right by you: further out
                 t.position = last;
                 return;
             }
@@ -205,28 +202,26 @@ namespace WiresAcoustics
         // hairline gap between their colliders, and one ray that happened to run along it got through
         // a closed wall as if it were open; three rays 8 cm apart can't all find it. A real gap a
         // sound gets through (a door left ajar) is wider than that.
-        internal static float Blocking(Vector3 from, Vector3 to, out float first, out Collider firstCollider, out Block block)
+        internal static float Blocking(Vector3 from, Vector3 to, out Block block)
         {
-            first = float.MaxValue; firstCollider = null; block = Block.Clear;
+            block = Block.Clear;
             if ((to - from).magnitude <= SourceClearance + .1f) return 0f;
             Lines(from, to, out Vector3 side, out Vector3 up);
             Block b0 = Block.Clear, b1 = Block.Clear, b2 = Block.Clear;
-            float o0 = One(from, to, to, ref b0, out float f0, out Collider c0);
-            float o1 = One(from + side, to + side, to, ref b1, out float f1, out Collider c1);
-            float o2 = One(from + up, to + up, to, ref b2, out float f2, out Collider c2);
+            float o0 = One(from, to, to, ref b0);
+            float o1 = One(from + side, to + side, to, ref b1);
+            float o2 = One(from + up, to + up, to, ref b2);
             int k = Median(b0, b1, b2);
             block = k == 0 ? b0 : k == 1 ? b1 : b2;
-            first = k == 0 ? f0 : k == 1 ? f1 : f2;
-            firstCollider = k == 0 ? c0 : k == 1 ? c1 : c2;
             return k == 0 ? o0 : k == 1 ? o1 : o2;
         }
 
-        private static float One(Vector3 from, Vector3 end, Vector3 to, ref Block b, out float first, out Collider firstCollider)
+        private static float One(Vector3 from, Vector3 end, Vector3 to, ref Block b)
         {
             Vector3 d = end - from;
             float dist = d.magnitude;
             int n = Physics.RaycastNonAlloc(from, d / dist, Hits, dist - SourceClearance, Room.Mask, QueryTriggerInteraction.Ignore);
-            float occ = Along(Hits, n, from, to, ref b, out first, out firstCollider, n >= Hits.Length);
+            float occ = Along(Hits, n, from, to, ref b, n >= Hits.Length);
             if (b.Terrain) Ridge(from, end, ref b);
             return occ;
         }
@@ -254,13 +249,12 @@ namespace WiresAcoustics
         // The hits on one line, nearest first, as layers. A wall in Valheim is several colliders (the
         // wall, a beam, a pole) a few centimetres apart: one wall all the same, so anything built
         // within 0.6 m of the last wall counted is part of it.
-        private const float SameWall = .6f;
+        internal const float SameWall = .6f;
         // Full: the ray had more hits than it could keep, and which ones Unity kept isn't defined, so
         // the wall among them may be one it dropped. A line through that much counts as through a wall
         // at least (as a plank wall, 15 dB).
-        internal static float Along(RaycastHit[] hits, int n, Vector3 from, Vector3 to, ref Block b, out float first, out Collider firstCollider, bool full)
+        internal static float Along(RaycastHit[] hits, int n, Vector3 from, Vector3 to, ref Block b, bool full)
         {
-            first = float.MaxValue; firstCollider = null;
             for (int i = 1; i < n; i++) // nearest first (Unity returns them in no order)
             {
                 RaycastHit h = hits[i];
@@ -272,13 +266,18 @@ namespace WiresAcoustics
             float occ = 0f;
             for (int i = 0; i < n; i++)
             {
-                Collider c = hits[i].collider;
-                if (c == null) continue;
-                float w = Counts(c, to);
+                Solids.Info s = Solids.Of(hits[i]);
+                if (s == null) continue;
+                float w = Counts(s, to);
                 if (w <= 0f) continue;
-                if (!Layer(c, w, from, to, hits[i].distance, ref b)) continue;
+                if (!Layer(s, w, from, to, hits[i].distance, ref b)) continue;
+                if (s.Wall)
+                {
+                    // the wall nearest each end, for the edges round them (Corners)
+                    if (!b.HasWall) { b.HasWall = true; b.NearAt = hits[i].point; b.NearN = hits[i].normal; b.NearGain = s.First; }
+                    b.FarAt = hits[i].point; b.FarN = hits[i].normal; b.FarGain = s.First;
+                }
                 occ += w;
-                if (hits[i].distance < first) { first = hits[i].distance; firstCollider = c; }
             }
             if (full && b.Walls == 0)
             {
@@ -295,40 +294,36 @@ namespace WiresAcoustics
         // (+30 cm) holds it, or anything the sound is actually inside. A wall, floor or roof right
         // next to a sound (a wall torch, a sconce) still counts: from the other side it's behind it.
         internal static Transform Own;
-        internal static float Counts(Collider c, Vector3 to)
+        internal static float Counts(Solids.Info s, Vector3 to)
         {
-            if (Own != null && c.transform.root == Own) return 0f;
-            Bounds b = c.bounds;
+            if (Own != null && s.Root == Own) return 0f;
+            Bounds b = Solids.BoxOf(s);
             b.Expand(.3f);
-            if (!b.Contains(to)) return Weight(c);
-            if (!Room.Structural(c)) return 0f;
-            return Inside(c, to) ? 0f : Weight(c);
+            if (!b.Contains(to)) return s.Weight;
+            if (!s.Structural) return 0f;
+            return Inside(s.C, to) ? 0f : s.Weight;
         }
 
         private static bool Inside(Collider c, Vector3 p)
         {
+            if (c == null) return false;
             // Closest point only exists for these (Unity): anything else just counts.
             bool ok = c is BoxCollider || c is SphereCollider || c is CapsuleCollider || (c is MeshCollider mc && mc.convex);
             if (!ok || !c.enabled || !c.gameObject.activeInHierarchy) return false;
             return (c.ClosestPoint(p) - p).sqrMagnitude < 1e-4f;
         }
 
-        private static readonly System.Collections.Generic.Dictionary<int, float> Weights = new System.Collections.Generic.Dictionary<int, float>();
-        private static float Weight(Collider c)
+        // What a collider is to a sound going through it, worked out once (Solids): how much it counts
+        // toward "something's in the way" (routing, the reverb boost, the debug log; a wall is a wall
+        // here, how much it lets through is the loss below, by material).
+        internal static void Classify(Solids.Info s, WearNTear part, int layer)
         {
-            int id = c.GetInstanceID();
-            if (Weights.TryGetValue(id, out float w)) return w;
-            if (Weights.Count > 8192) Weights.Clear();
-            WearNTear part = c.GetComponentInParent<WearNTear>();
-            // How much a layer counts toward "something's in the way" (routing, the reverb boost, the
-            // debug log). How much it lets through is LossOf's job, by material; here a wall is a wall.
-            if (part != null && Room.Structural(c)) w = 1f;
-            else if (part != null) w = .25f;
-            else if (Room.IsTree(c)) w = .1f; // a trunk shadows a sound a little, it doesn't hide it
-            else if (c.GetComponentInParent<Heightmap>() != null || c.gameObject.layer == LayerMask.NameToLayer("static_solid")) w = 1f;
-            else w = .3f;
-            Weights[id] = w;
-            return w;
+            if (part != null && s.Structural) s.Weight = 1f;
+            else if (part != null) s.Weight = .25f;
+            else if (s.Tree) s.Weight = .1f; // a trunk shadows a sound a little, it doesn't hide it
+            else if (s.Ground || layer == Solids.StaticSolid) s.Weight = 1f;
+            else s.Weight = .3f;
+            Loss(s, part);
         }
 
         // Walls in between as gain and low-pass cutoff (strength applied), between the table's steps.
@@ -375,78 +370,70 @@ namespace WiresAcoustics
         private const float MassCut = 50f;
         internal static float MassLaw(float m) => m <= 0f ? 1f : Mathf.Min(1f, Mathf.Pow(10f, 48f / 20f) / MassCut / m);
 
-        private struct Loss { internal float First, Cut; internal bool Wall; }
         private const float NextWall = .5f; // each wall after the first: 6 dB
-        private static readonly System.Collections.Generic.Dictionary<int, Loss> Losses = new System.Collections.Generic.Dictionary<int, Loss>();
-        private static Loss LossOf(Collider c)
+        // A wall's loss as the first one a sound comes through (amplitude) and its low-pass; anything
+        // that isn't a wall lets everything through (Solids, once per collider).
+        private static void Loss(Solids.Info s, WearNTear part)
         {
-            int id = c.GetInstanceID();
-            if (Losses.TryGetValue(id, out Loss l)) return l;
-            if (Losses.Count > 8192) Losses.Clear();
-            l = new Loss { First = 1f, Cut = 22000f };
-            WearNTear part = c.GetComponentInParent<WearNTear>();
-            if (part != null && Room.Structural(c) && part.name.IndexOf("grate", System.StringComparison.OrdinalIgnoreCase) < 0)
+            Collider c = s.C;
+            if (part == null || !s.Structural || part.name.IndexOf("grate", System.StringComparison.OrdinalIgnoreCase) >= 0) return;
+            float stc = -1f;
+            switch (part.m_materialType)
             {
-                float stc = -1f;
-                switch (part.m_materialType)
-                {
-                    case WearNTear.MaterialType.Stone:
-                    case WearNTear.MaterialType.Ashstone:
-                    case WearNTear.MaterialType.Marble: stc = 55f; break;
-                    case WearNTear.MaterialType.Iron:
-                    case WearNTear.MaterialType.Ice: break;
-                    default:
-                        if (c.GetComponentInParent<Door>() != null) stc = 30f;
-                        else
-                        {
-                            float t = Thickness(c);
-                            stc = t <= .078f ? 33f : t >= .175f ? 38f : Mathf.Lerp(33f, 38f, Mathf.Log(t / .078f) / Mathf.Log(.175f / .078f));
-                        }
-                        break;
-                }
-                // how heavy, as the measured loss at 125 Hz, into the game's 12 to 22 dB
-                float lowDb = stc > 0f ? stc - 9f : -20f * Mathf.Log10(Mathf.Max(1e-6f, MassLaw(Mass(c))));
-                float firstDb = Mathf.Clamp(15f + .5f * (lowDb - 24f), 12f, 22f);
-                l = new Loss { First = Mathf.Pow(10f, -firstDb / 20f), Cut = WallCut, Wall = true };
+                case WearNTear.MaterialType.Stone:
+                case WearNTear.MaterialType.Ashstone:
+                case WearNTear.MaterialType.Marble: stc = 55f; break;
+                case WearNTear.MaterialType.Iron:
+                case WearNTear.MaterialType.Ice: break;
+                default:
+                    if (c.GetComponentInParent<Door>() != null) stc = 30f;
+                    else
+                    {
+                        float t = Thickness(c);
+                        stc = t <= .078f ? 33f : t >= .175f ? 38f : Mathf.Lerp(33f, 38f, Mathf.Log(t / .078f) / Mathf.Log(.175f / .078f));
+                    }
+                    break;
             }
-            Losses[id] = l;
-            return l;
+            // how heavy, as the measured loss at 125 Hz, into the game's 12 to 22 dB
+            float lowDb = stc > 0f ? stc - 9f : -20f * Mathf.Log10(Mathf.Max(1e-6f, MassLaw(Mass(c, part))));
+            float firstDb = Mathf.Clamp(15f + .5f * (lowDb - 24f), 12f, 22f);
+            s.First = Mathf.Pow(10f, -firstDb / 20f);
+            s.Cut = WallCut;
+            s.Wall = true;
         }
-
-        internal static bool IsWall(Collider c) => LossOf(c).Wall;
-        // A wall's loss as the first one a sound comes through (amplitude), 0 if it isn't a wall.
-        internal static float FirstWall(Collider c) { Loss l = LossOf(c); return l.Wall ? l.First : 0f; }
 
         // What one line from the listener to a sound runs through.
         internal struct Block
         {
             internal float Soft;      // rocks, furniture, trees: the old weights (sound bends round them)
-            internal float Through;   // walls (amplitude, LossOf: the first one, then 6 dB each)
+            internal float Through;   // walls (amplitude, Loss: the first one, then 6 dB each)
             internal int Walls;       // how many walls counted
             internal float LastWall;  // how far along the line the last one was (SameWall)
             internal float ThroughCut; // and the lowest of their low-passes
             internal bool Terrain;    // the ground is in the way: a hill, worked out over its ridge
             internal float BendGain, BendCut; // the ridge's loss (Ridge)
+            internal bool HasWall;    // where the first and last walls were hit, and how much each takes
+            internal Vector3 NearAt, NearN, FarAt, FarN;
+            internal float NearGain, FarGain;
             internal static Block Clear => new Block { Through = 1f, ThroughCut = 22000f, BendGain = 1f, BendCut = 22000f, LastWall = -10f };
         }
 
         // One hit: a wall by what it measures, the ground marked for the ridge, anything else (a rock,
         // furniture, a trunk) as something the sound goes over and round (Diffraction.RoundObstacle).
         // False: part of the wall already counted.
-        internal static bool Layer(Collider c, float w, Vector3 from, Vector3 to, float at, ref Block b)
+        internal static bool Layer(Solids.Info s, float w, Vector3 from, Vector3 to, float at, ref Block b)
         {
-            Loss l = LossOf(c);
-            if (l.Wall)
+            if (s.Wall)
             {
                 if (at - b.LastWall < SameWall) return false;
                 b.LastWall = at;
                 b.Walls++;
-                b.Through *= b.Walls == 1 ? l.First : NextWall;
-                b.ThroughCut = b.Walls == 1 ? Mathf.Min(b.ThroughCut, l.Cut) : Mathf.Max(200f, b.ThroughCut * .7f);
+                b.Through *= b.Walls == 1 ? s.First : NextWall;
+                b.ThroughCut = b.Walls == 1 ? Mathf.Min(b.ThroughCut, s.Cut) : Mathf.Max(200f, b.ThroughCut * .7f);
                 return true;
             }
-            else if (IsGround(c)) { if (!b.Terrain) { b.Terrain = true; b.Soft += w; } } // undone by Ridge
-            else if (Diffraction.RoundObstacle(c.bounds, from, to, out float g, out float cut))
+            else if (s.Ground) { if (!b.Terrain) { b.Terrain = true; b.Soft += w; } } // undone by Ridge
+            else if (Diffraction.RoundObstacle(Solids.BoxOf(s), from, to, out float g, out float cut))
             {
                 b.BendGain *= g;
                 b.BendCut = Mathf.Min(b.BendCut, cut);
@@ -479,16 +466,6 @@ namespace WiresAcoustics
             b.BendCut = Mathf.Min(b.BendCut, c);
         }
 
-        private static readonly System.Collections.Generic.Dictionary<int, bool> Grounds = new System.Collections.Generic.Dictionary<int, bool>();
-        private static bool IsGround(Collider c)
-        {
-            int id = c.GetInstanceID();
-            if (Grounds.TryGetValue(id, out bool g)) return g;
-            if (Grounds.Count > 8192) Grounds.Clear();
-            g = c.GetComponentInParent<Heightmap>() != null;
-            Grounds[id] = g;
-            return g;
-        }
 
         // What's in the way as a gain and a low-pass (strength applied): soft layers by the table,
         // walls by what they measure, a hill by its ridge.
@@ -512,33 +489,22 @@ namespace WiresAcoustics
 
         // kg per square metre of a building piece (iron and ice walls, the mass law): its material's
         // density times its thickness (the thinnest side of its collider).
-        private static readonly System.Collections.Generic.Dictionary<int, float> Masses = new System.Collections.Generic.Dictionary<int, float>();
-        internal static float Mass(Collider c)
+        private static float Mass(Collider c, WearNTear part)
         {
-            int id = c.GetInstanceID();
-            if (Masses.TryGetValue(id, out float m)) return m;
-            if (Masses.Count > 8192) Masses.Clear();
-            m = 0f;
-            WearNTear part = c.GetComponentInParent<WearNTear>();
-            if (part != null && Room.Structural(c) && part.name.IndexOf("grate", System.StringComparison.OrdinalIgnoreCase) < 0)
+            float density;
+            switch (part.m_materialType)
             {
-                float density;
-                switch (part.m_materialType)
-                {
-                    case WearNTear.MaterialType.Stone:
-                    case WearNTear.MaterialType.Ashstone: density = 2400f; break; // stone masonry
-                    case WearNTear.MaterialType.Marble: density = 2700f; break;
-                    case WearNTear.MaterialType.Iron: density = 7870f; break;
-                    case WearNTear.MaterialType.Ice: density = 917f; break;
-                    case WearNTear.MaterialType.HardWood:
-                    case WearNTear.MaterialType.Timberwood:
-                    case WearNTear.MaterialType.Ancient: density = 700f; break; // hardwood
-                    default: density = 500f; break; // softwood (pine, spruce)
-                }
-                m = density * Thickness(c);
+                case WearNTear.MaterialType.Stone:
+                case WearNTear.MaterialType.Ashstone: density = 2400f; break; // stone masonry
+                case WearNTear.MaterialType.Marble: density = 2700f; break;
+                case WearNTear.MaterialType.Iron: density = 7870f; break;
+                case WearNTear.MaterialType.Ice: density = 917f; break;
+                case WearNTear.MaterialType.HardWood:
+                case WearNTear.MaterialType.Timberwood:
+                case WearNTear.MaterialType.Ancient: density = 700f; break; // hardwood
+                default: density = 500f; break; // softwood (pine, spruce)
             }
-            Masses[id] = m;
-            return m;
+            return density * Thickness(c);
         }
 
         private static float Thickness(Collider c)
@@ -635,15 +601,49 @@ namespace WiresAcoustics
         // most every 0.1 s, so loading a base (thousands of pieces waking) doesn't check every frame.
         // The distances and times are judgement values, no source.
         // Every frame from Directions, which already has where you and it are: no work when nothing changed.
-        internal static int WorldGen;
-        internal static void WorldChanged() => WorldGen++;
+        // A building change only counts for a loop if it's within Corners.Reach of the line from you to
+        // it (the furthest a way round is looked for): the game loads and unloads far-off pieces all
+        // the time as you move, and each of those used to recheck every loop.
+        internal static int WorldGen, DoorGen;
+        private const int Kept = 64;
+        private static readonly Vector3[] ChangeAt = new Vector3[Kept];
+        private static readonly bool[] ChangeAll = new bool[Kept];
+
+        // A piece built or removed, or a door turned, at "at"; everywhere at once when a base has
+        // just loaded in (GeometryEvents).
+        internal static void WorldChanged(Vector3 at, bool everywhere, bool door)
+        {
+            WorldGen++;
+            ChangeAt[WorldGen % Kept] = at;
+            ChangeAll[WorldGen % Kept] = everywhere;
+            if (door || everywhere) DoorGen++;
+        }
+
+        // Anything changed since "since" within "margin" of the line from a to b.
+        internal static bool ChangedNear(int since, Vector3 a, Vector3 b, float margin)
+        {
+            if (since == WorldGen) return false;
+            if (WorldGen - since >= Kept || since < 0) return true;
+            Vector3 ab = b - a;
+            float len2 = ab.sqrMagnitude;
+            for (int g = since + 1; g <= WorldGen; g++)
+            {
+                int k = g % Kept;
+                if (ChangeAll[k]) return true;
+                Vector3 p = ChangeAt[k];
+                float t = len2 > 1e-6f ? Mathf.Clamp01(Vector3.Dot(p - a, ab) / len2) : 0f;
+                if ((a + ab * t - p).sqrMagnitude <= margin * margin) return true;
+            }
+            return false;
+        }
+
         private const float LoopMoved = .5f, LoopMinGap = .1f, LoopFallback = 2f;
 
         internal static void WatchLoop(AcousticFilter f, Vector3 at, Vector3 ear, float now)
         {
             float since = now - f.CheckedTime;
             if (since < LoopMinGap || !f.Active) return; // past the count: left to Unity, as in Recheck
-            if (since < LoopFallback && f.CheckedGen == WorldGen &&
+            if (since < LoopFallback && !ChangedNear(f.CheckedGen, ear, at, Corners.Reach) &&
                 (ear - f.CheckedFrom).sqrMagnitude < LoopMoved * LoopMoved &&
                 (at - f.CheckedAt).sqrMagnitude < LoopMoved * LoopMoved) return;
             AudioSource src = f.Source;

@@ -20,17 +20,19 @@ namespace WiresAcoustics
         private static bool s_held;
         private static float s_heldSince, s_nextCheck;
 
-        private static void Changed()
+        private static void Changed(Vector3 at, bool door)
         {
             if (!Plugin.Enabled.Value) return;
-            if (!s_held && AreaLoaded()) { Apply(); return; }
+            if (!s_held && AreaLoaded()) { Apply(at, false, door); return; }
             if (!s_held) { s_held = true; s_heldSince = Time.time; }
         }
 
-        private static void Apply()
+        // Near enough to matter: the room is measured out to Room.MaxDistance, so a piece further
+        // off than that can't change it. Sounds are checked against where it was (Occlusion).
+        private static void Apply(Vector3 at, bool everywhere, bool door)
         {
-            Room.Invalidate();
-            Occlusion.WorldChanged();
+            if (everywhere || (at - Hearing.At).sqrMagnitude <= Room.MaxDistance * Room.MaxDistance) Room.Invalidate();
+            Occlusion.WorldChanged(at, everywhere, door);
         }
 
         // At most every 0.25 s: pieces appear up to 10 a frame while walking into new zones.
@@ -52,25 +54,25 @@ namespace WiresAcoustics
             s_nextCheck = now + Recheck;
             if (!AreaLoaded() && now - s_heldSince < GiveUp) return;
             s_held = false;
-            Apply();
+            Apply(Vector3.zero, true, true);
         }
 
         [HarmonyPatch(typeof(Piece), "Awake")]
         private static class Built
         {
-            private static void Postfix() => Changed();
+            private static void Postfix(Piece __instance) => Changed(__instance.transform.position, false);
         }
 
         [HarmonyPatch(typeof(Piece), "OnDestroy")]
         private static class Removed
         {
-            private static void Prefix() => Changed();
+            private static void Prefix(Piece __instance) => Changed(__instance.transform.position, false);
         }
 
         [HarmonyPatch(typeof(Door), "SetState")]
         private static class DoorChanged
         {
-            private static void Postfix() => Changed();
+            private static void Postfix(Door __instance) => Changed(__instance.transform.position, true);
         }
     }
 }

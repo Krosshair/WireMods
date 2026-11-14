@@ -107,6 +107,14 @@ namespace WiresAcoustics
             return Mathf.Max(0f, 5f + 20f * Mathf.Log10(x / Mathf.Tan(x)));
         }
 
+        // The detour round an edge that loses as much at 125 Hz as "gain" (amplitude). Past the
+        // formula's 20 dB cap, as far as it goes.
+        internal static float DetourFor(float gain)
+        {
+            for (int i = 0; i < Gains.Length; i++) if (Gains[i] <= gain) return i * Step;
+            return Max;
+        }
+
         // Round the edge at "edge" from the listener to the sound.
         internal static void Round(Vector3 listener, Vector3 edge, Vector3 sound, out float gain, out float cutoff)
         {

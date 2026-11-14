@@ -1,3 +1,8 @@
+## 0.5.7
+- Gaps in walls are found properly: the edges of a wall (a gap beside you, a window, the end of a wall, over a half wall) are searched for along the wall itself, at the wall nearest you and the one nearest the sound. Near a gap a sound is nearly as loud as in the open and heard from the gap, and it fades in gradually as you go behind the wall instead of being muffled by the first bit of wall in the way.
+- Fixed: turned or slanted walls hid the gaps beside them.
+- Faster: what the mod knows about each thing a sound passes (wall, ground, tree, furniture) is worked out once and kept, in one table big enough for a large base (the old ones emptied and started over at around 8000 pieces). The edges found round a wall are kept until the wall or the building near it changes. A building change only rechecks the sounds and the room it's near: the game loads and unloads far-off pieces all the time as you move, and each one used to recheck everything. The sound processing itself runs leaner on the audio thread.
+
 ## 0.5.6
 - Less lag after a portal: while the game is still loading a base in, the room is measured once when it's in instead of again for every piece that appears.
 

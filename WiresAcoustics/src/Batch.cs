@@ -11,7 +11,8 @@ namespace WiresAcoustics
     // queued during the frame, cast together, read the next frame. All hits along each
     // ray, up to 16. Every line is three rays, the line and two beside it, and what two of them
     // agree on counts (Occlusion.Blocking: a seam between pieces doesn't let a sound through). A sound that had walls in the way last time also gets one ray from each of the
-    // biggest openings (Portals) to it, and two per point around the blocker (Corners).
+    // biggest openings (Portals) to it, two lines per edge found round its walls, and the probes that
+    // find those edges for next time (Corners).
     internal static class Batch
     {
         private const int MaxHits = Occlusion.MaxHits;
@@ -19,15 +20,19 @@ namespace WiresAcoustics
         {
             internal AcousticFilter F;
             internal Vector3 To, Listener;
-            internal bool Under, Reverb, Corners;
-            internal int First, Routes;
+            internal bool Under, Reverb, Corners, Retry;
+            internal int First, Routes, EdgeN, ProbeFirst, KNear, KFar, SlotNear, SlotFar;
             internal Portals.Portal P0, P1;
-            internal Vector3 C0, C1, C2, C3, C4, C5;
+            internal Corners.Walls W;
         }
         private static readonly List<Req> Queue = new List<Req>(64);
-        private static readonly Vector3[] Pts = new Vector3[Corners.Count];
         private static Req[] s_flight = new Req[64];
-        private static int s_flightCount;
+        private static Vector3[] s_edges = new Vector3[64 * Corners.MaxEdges]; // the edges each check tried
+        private static int s_flightCount, s_applied;
+        // Main-thread time for reading results, per frame. The mod's whole main-thread share is to stay
+        // under 0.5 ms a frame; reading a batch is most of it, so it gets half and stops there, carrying
+        // on next frame. A frame budget chosen against that limit, not from a source.
+        private static readonly long SliceTicks = System.Diagnostics.Stopwatch.Frequency / 4000; // 0.25 ms
         private static NativeArray<RaycastCommand> s_cmds;
         private static NativeArray<RaycastHit> s_hits;
         private static JobHandle s_job;
@@ -73,7 +78,7 @@ namespace WiresAcoustics
                 f.Set(under ? Underwater.Gain : 1f,
                       under ? Underwater.Cutoff : 22000f, false);
                 f.LastOcc = 0f;
-                f.LastBlocker = null;
+                if (f.Records != null) foreach (Corners.Record rec in f.Records) rec.Valid = false;
                 f.Routed = false;
                 return;
             }
@@ -81,31 +86,83 @@ namespace WiresAcoustics
                                 Corners = f.LastOcc >= .3f });
         }
 
+        // Probe rays per frame, at most (each probe is two short rays). A burst of sounds going
+        // behind new walls at once (a door shut, walking into a base) is spread over the next frames
+        // instead of all landing in one: a frame budget chosen for the game, not from a source.
+        private const int ProbeBudget = 1024;
+        private static readonly List<Req> Later = new List<Req>(16);
+
         // Every frame, from the game's audio update.
         internal static void Step(Vector3 listener)
         {
-            if (s_pending) { s_job.Complete(); s_pending = false; Apply(); }
+            if (s_pending) { s_job.Complete(); s_pending = false; s_applied = 0; }
+            // the last batch's results, as far as this frame's slice goes; the next batch is only cast
+            // once they're all read (its hits go in the same buffer)
+            if (s_flightCount > 0 && !Apply()) return;
             int n = Queue.Count;
             if (n == 0) return;
+            if (s_flight.Length < n)
+            {
+                int fl = Mathf.NextPowerOfTwo(Mathf.Max(64, n));
+                s_flight = new Req[fl];
+                s_edges = new Vector3[fl * Corners.MaxEdges];
+            }
             int routes = Mathf.Min(Portals.Routes, Portals.List.Count);
-            int cmds = 0;
-            foreach (Req r in Queue) cmds += 3 * (1 + (r.Corners ? routes + 2 * Corners.Count : 0));
-            if (!s_cmds.IsCreated || s_cmds.Length < cmds || s_flight.Length < n)
+            int cmds = 0, m = 0, budget = ProbeBudget;
+            for (int i = 0; i < n; i++)
+            {
+                Req r = Queue[i];
+                r.Routes = r.Corners ? routes : 0;
+                r.EdgeN = r.KNear = r.KFar = 0;
+                r.SlotNear = r.SlotFar = -1;
+                if (r.Corners && r.F != null)
+                {
+                    AcousticFilter f = r.F;
+                    if (f.Records == null) { f.Records = new Corners.Record[Corners.Slots]; for (int s = 0; s < Corners.Slots; s++) f.Records[s] = new Corners.Record(); }
+                    r.W = f.Walls;
+                    // each wall in the way: a kept probe pass that covers it, or a slot to probe it into
+                    int mN = r.W.Near ? Corners.Match(f.Records, r.W.NearAt, r.W.NearN) : -1;
+                    int mF = r.W.Far ? Corners.Match(f.Records, r.W.FarAt, r.W.FarN) : -1;
+                    if (r.W.Near && mN < 0) { r.SlotNear = mF == 0 ? 1 : 0; r.KNear = Corners.Probes(listener, r.W.NearAt, r.To, r.W.NearGain); }
+                    if (r.W.Far && mF < 0)
+                    {
+                        int taken = mN >= 0 ? mN : r.SlotNear;
+                        r.SlotFar = taken == 0 ? 1 : 0;
+                        r.KFar = Corners.Probes(listener, r.W.FarAt, r.To, r.W.FarGain);
+                    }
+                    int rays = 2 * Corners.Dirs * (r.KNear + r.KFar);
+                    if (rays > budget && budget < ProbeBudget) { Later.Add(Queue[i]); continue; }
+                    budget -= rays;
+                    // the edges kept for the walls already probed: listener -> edge -> sound
+                    for (int s = 0; s < 2; s++)
+                    {
+                        int slot = s == 0 ? mN : mF;
+                        if (slot < 0) continue;
+                        Corners.Record rec = f.Records[slot];
+                        for (int k = 0; k < rec.Count; k++) s_edges[m * Corners.MaxEdges + r.EdgeN++] = rec.Edges[k];
+                    }
+                }
+                s_flight[m++] = r;
+                cmds += 3 * (1 + r.Routes) + 6 * r.EdgeN + 2 * Corners.Dirs * (r.KNear + r.KFar);
+            }
+            Queue.Clear();
+            Queue.AddRange(Later); // over the budget: next frame
+            Later.Clear();
+            if (m == 0) return;
+            if (!s_cmds.IsCreated || s_cmds.Length < cmds)
             {
                 if (s_cmds.IsCreated) { s_cmds.Dispose(); s_hits.Dispose(); }
                 int cap = Mathf.NextPowerOfTwo(Mathf.Max(64, cmds));
                 s_cmds = new NativeArray<RaycastCommand>(cap, Allocator.Persistent);
                 s_hits = new NativeArray<RaycastHit>(cap * MaxHits, Allocator.Persistent);
-                s_flight = new Req[Mathf.NextPowerOfTwo(Mathf.Max(64, n))];
             }
             var q = new QueryParameters(Room.Mask, false, QueryTriggerInteraction.Ignore, false);
             int c = 0;
-            for (int i = 0; i < n; i++)
+            for (int i = 0; i < m; i++)
             {
-                Req r = Queue[i];
+                Req r = s_flight[i];
                 r.Listener = listener;
                 r.First = c;
-                r.Routes = r.Corners ? routes : 0;
                 if (r.Routes > 0) r.P0 = Portals.List[0];
                 if (r.Routes > 1) r.P1 = Portals.List[1];
                 Cast3(listener, r.To, q, ref c);
@@ -113,18 +170,20 @@ namespace WiresAcoustics
                 if (r.Routes > 1) Cast3(r.P1.Point, r.To, q, ref c);
                 s_direct += 1;
                 s_openings += r.Routes;
-                if (r.Corners)
+                for (int k = 0; k < r.EdgeN; k++)
                 {
-                    Corners.Around(listener, r.To, r.F != null ? r.F.LastBlockDist : (r.To - listener).magnitude * .5f,
-                                   r.F != null ? r.F.LastBlocker : null, Pts);
-                    r.C0 = Pts[0]; r.C1 = Pts[1]; r.C2 = Pts[2]; r.C3 = Pts[3]; r.C4 = Pts[4]; r.C5 = Pts[5];
-                    foreach (Vector3 p in Pts) { Cast3(listener, p, q, ref c); Cast3(p, r.To, q, ref c); }
-                    s_cornerRays += 2 * Corners.Count;
+                    Vector3 e = s_edges[i * Corners.MaxEdges + k];
+                    Cast3(listener, e, q, ref c);
+                    Cast3(e, r.To, q, ref c);
                 }
+                // and the probes along the walls not probed yet
+                r.ProbeFirst = c;
+                if (r.KNear > 0) Probe(r.W.NearAt, r.W.NearN, r.KNear, q, ref c);
+                if (r.KFar > 0) Probe(r.W.FarAt, r.W.FarN, r.KFar, q, ref c);
+                s_cornerRays += 2 * r.EdgeN + 2 * Corners.Dirs * (r.KNear + r.KFar);
                 s_flight[i] = r;
             }
-            s_flightCount = n;
-            Queue.Clear();
+            s_flightCount = m;
             s_job = RaycastCommand.ScheduleBatch(s_cmds.GetSubArray(0, c), s_hits.GetSubArray(0, c * MaxHits), 8, MaxHits);
             JobHandle.ScheduleBatchedJobs();
             s_pending = true;
@@ -139,6 +198,56 @@ namespace WiresAcoustics
             s_cmds[c++] = Cast(from + up, to + up, q);
         }
 
+        // Probes across a wall, each way along it: two rays through it, Twin either side of the point.
+        private static void Probe(Vector3 at, Vector3 n, int count, QueryParameters q, ref int c)
+        {
+            Vector3 across = n * Occlusion.SameWall;
+            for (int d = 0; d < Corners.Dirs; d++)
+            {
+                Vector3 dir = Corners.Dir(n, d), twin = dir * Occlusion.Twin;
+                for (int i = 0; i < count; i++)
+                {
+                    Vector3 p = Corners.Probe(at, dir, i);
+                    s_cmds[c++] = Cast(p + across + twin, p - across + twin, q);
+                    s_cmds[c++] = Cast(p + across - twin, p - across - twin, q);
+                }
+            }
+        }
+
+        // One wall's probe pass, kept in its slot: the first open place each way along it.
+        private static int Keep(Corners.Record rec, Vector3 at, Vector3 n, int count, Vector3 to, ref int c)
+        {
+            rec.Valid = true;
+            rec.At = at; rec.N = n;
+            rec.Span = count * Corners.Spacing;
+            rec.Gen = Occlusion.WorldGen;
+            rec.Count = 0;
+            for (int d = 0; d < Corners.Dirs; d++)
+            {
+                Vector3 dir = Corners.Dir(n, d);
+                bool got = false;
+                for (int i = 0; i < count; i++, c += 2)
+                {
+                    if (got || !Open(c, to) || !Open(c + 1, to)) continue;
+                    rec.Edges[rec.Count++] = Corners.Probe(at, dir, i);
+                    got = true;
+                }
+            }
+            return rec.Count;
+        }
+
+        // Nothing solid (a wall, the ground, rock) on a probe ray.
+        private static bool Open(int cmd, Vector3 to)
+        {
+            for (int h = 0; h < MaxHits; h++)
+            {
+                Solids.Info s = Solids.Of(s_hits[cmd * MaxHits + h]);
+                if (s == null) return true;
+                if (Occlusion.Counts(s, to) >= 1f) return false;
+            }
+            return false;
+        }
+
         private static RaycastCommand Cast(Vector3 from, Vector3 to, QueryParameters q)
         {
             Vector3 d = to - from;
@@ -150,49 +259,37 @@ namespace WiresAcoustics
 
         private static readonly RaycastHit[] Line = new RaycastHit[MaxHits];
 
-        private static float Walls(int cmd, Vector3 to, ref Occlusion.Block b) =>
-            Walls(cmd, to, out _, out _, ref b);
-
         // One line (three rays from cmd on): what two of them agree on.
-        private static float Walls(int cmd, Vector3 to, out float first,
-                                   out Collider blocker, ref Occlusion.Block b)
+        private static float Walls(int cmd, Vector3 to, ref Occlusion.Block b)
         {
             Occlusion.Block b0 = b, b1 = b, b2 = b;
-            float o0 = Ray(cmd, to, out float f0, out Collider c0, ref b0);
-            float o1 = Ray(cmd + 1, to, out float f1, out Collider c1, ref b1);
-            float o2 = Ray(cmd + 2, to, out float f2, out Collider c2, ref b2);
+            float o0 = Ray(cmd, to, ref b0);
+            float o1 = Ray(cmd + 1, to, ref b1);
+            float o2 = Ray(cmd + 2, to, ref b2);
             int k = Occlusion.Median(b0, b1, b2);
             b = k == 0 ? b0 : k == 1 ? b1 : b2;
-            first = k == 0 ? f0 : k == 1 ? f1 : f2;
-            blocker = k == 0 ? c0 : k == 1 ? c1 : c2;
             return k == 0 ? o0 : k == 1 ? o1 : o2;
         }
 
         // Hits of one ray, and the ridge if the ground was among them (from the ray's own start).
-        private static float Ray(int cmd, Vector3 to, out float first,
-                                 out Collider blocker, ref Occlusion.Block b)
+        private static float Ray(int cmd, Vector3 to, ref Occlusion.Block b)
         {
             bool hadGround = b.Terrain;
             b.Terrain = false;
-            float occ = WallHits(cmd, to, out first, out blocker, ref b);
-            if (b.Terrain) Occlusion.Ridge(s_cmds[cmd].from, to, ref b);
-            b.Terrain |= hadGround;
-            return occ;
-        }
-
-        private static float WallHits(int cmd, Vector3 to, out float first,
-                                   out Collider blocker, ref Occlusion.Block b)
-        {
             int n = 0;
             for (int h = 0; h < MaxHits; h++)
             {
                 RaycastHit hit = s_hits[cmd * MaxHits + h];
                 // the first empty slot ends the ray's hits: Unity doesn't write the ones after it, so
                 // they can still hold hits from an earlier batch (RaycastCommand, Unity docs)
-                if (hit.collider == null) break;
+                if (hit.colliderInstanceID == 0) break;
                 Line[n++] = hit;
             }
-            return Occlusion.Along(Line, n, s_cmds[cmd].from, to, ref b, out first, out blocker, n >= MaxHits);
+            Vector3 from = s_cmds[cmd].from;
+            float occ = Occlusion.Along(Line, n, from, to, ref b, n >= MaxHits);
+            if (b.Terrain) Occlusion.Ridge(from, to, ref b);
+            b.Terrain |= hadGround;
+            return occ;
         }
 
         // Where a sound behind something is heard from, as hearing does it (the precedence effect;
@@ -238,21 +335,25 @@ namespace WiresAcoustics
             return true;
         }
 
-        private static void Apply()
+        private static bool Apply()
         {
             bool on = Plugin.Occlusion.Value;
-            for (int i = 0; i < s_flightCount; i++)
+            long until = System.Diagnostics.Stopwatch.GetTimestamp() + SliceTicks;
+            int start = s_applied;
+            for (; s_applied < s_flightCount; s_applied++)
             {
+                int i = s_applied;
+                // this frame's slice used up: the rest next frame (at least one each frame)
+                if (i > start && System.Diagnostics.Stopwatch.GetTimestamp() > until) { Occlusion.Own = null; return false; }
                 Req r = s_flight[i];
                 s_flight[i].F = null;
                 AcousticFilter f = r.F;
                 if (f == null) continue;
-                float occ = 0f, first = 0f;
+                float occ = 0f;
                 Occlusion.Own = f.ShapeRoot != null ? f.ShapeRoot.root : null;
-                Collider firstBlocker = null;
                 Occlusion.Block direct = Occlusion.Block.Clear;
-                if (on) occ = Walls(r.First, r.To, out first, out firstBlocker, ref direct);
-                f.LastBlockDist = first < float.MaxValue ? first : (r.To - r.Listener).magnitude * .5f;
+                if (on) occ = Walls(r.First, r.To, ref direct);
+                if (on) f.Walls = Corners.From(direct);
                 // The direct sound (through the walls) and the best way round (an opening, a corner)
                 // are both heard: neither stops the other. The way round is picked by how loud
                 // it arrives, and the two add up by energy.
@@ -262,7 +363,6 @@ namespace WiresAcoustics
                 int c = r.First + 3;
                 // The result also decides the routing next time.
                 f.LastOcc = occ;
-                f.LastBlocker = occ >= .3f ? firstBlocker : null;
                 // Just gone behind something (stepping down off a wall, the sea behind it): its ways
                 // round weren't tried this time, and the wall alone would shut it off for a moment
                 // and then open it again. Kept as it was for one more frame, tried with them.
@@ -285,17 +385,31 @@ namespace WiresAcoustics
                             bestKind = 1;
                     }
                 else c += 3 * r.Routes;
-                if (r.Corners)
-                    for (int k = 0; k < Corners.Count; k++, c += 6)
+                for (int k = 0; k < r.EdgeN; k++, c += 6)
+                {
+                    if (!on || occ < .3f) continue;
+                    Vector3 p = s_edges[i * Corners.MaxEdges + k];
+                    Occlusion.Block leg = Occlusion.Block.Clear;
+                    float total = Walls(c, p, ref leg) + Walls(c + 3, r.To, ref leg);
+                    Diffraction.Round(r.Listener, p, r.To, out float bg, out float bc);
+                    if (Consider(total, leg, Corners.LengthGain(r.Listener, p, r.To), bg, bc, p, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
+                        bestKind = 2;
+                }
+                // New probe passes kept for next time (each wall into its slot). If they found edges,
+                // checked again next frame with them, so a gap is heard straight away; with no edges
+                // tried this time, this result (the wall alone) isn't applied at all.
+                if (r.Corners && on && f.Records != null && r.KNear + r.KFar > 0)
+                {
+                    c = r.ProbeFirst;
+                    int found = 0;
+                    if (r.KNear > 0) found += Keep(f.Records[r.SlotNear], r.W.NearAt, r.W.NearN, r.KNear, r.To, ref c);
+                    if (r.KFar > 0) found += Keep(f.Records[r.SlotFar], r.W.FarAt, r.W.FarN, r.KFar, r.To, ref c);
+                    if (found > 0 && !r.Retry && occ >= .3f)
                     {
-                        if (!on || f.LastOcc < .3f) continue;
-                        Vector3 p = k == 0 ? r.C0 : k == 1 ? r.C1 : k == 2 ? r.C2 : k == 3 ? r.C3 : k == 4 ? r.C4 : r.C5;
-                        Occlusion.Block leg = Occlusion.Block.Clear;
-                        float total = Walls(c, p, ref leg) + Walls(c + 3, r.To, ref leg);
-                        Diffraction.Round(r.Listener, p, r.To, out float bg, out float bc);
-                        if (Consider(total, leg, Corners.LengthGain(r.Listener, p, r.To), bg, bc, p, ref pathGain, ref pathCutoff, ref pathOcc, ref pathAt))
-                            bestKind = 2;
+                        Queue.Add(new Req { F = f, To = r.To, Under = r.Under, Reverb = r.Reverb, Corners = true, Retry = true });
+                        if (r.EdgeN == 0) { Occlusion.Own = null; continue; }
                     }
+                }
                 Occlusion.Wall(direct, out float gain, out float cutoff);
                 bool routed = false;
                 Vector3 heard = r.To;
@@ -324,6 +438,8 @@ namespace WiresAcoustics
                 if (r.Reverb && f.Source != null) Occlusion.Send(f, Occlusion.ReverbSend((r.To - r.Listener).magnitude, gain));
             }
             s_flightCount = 0;
+            s_applied = 0;
+            return true;
         }
 
         // Pending checks dropped (switched off).
@@ -332,6 +448,7 @@ namespace WiresAcoustics
             if (s_pending) { s_job.Complete(); s_pending = false; }
             for (int i = 0; i < s_flightCount; i++) s_flight[i].F = null;
             s_flightCount = 0;
+            s_applied = 0;
             Queue.Clear();
         }
 

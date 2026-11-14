@@ -20,7 +20,7 @@ namespace WiresAcoustics
     internal static class Room
     {
         private const int Rays = 64;
-        private const float MaxDistance = 50f, Interval = .2f, Smooth = .35f, RescanEvery = 30f; // a safety net: locations and dungeons are handled as they're placed (Spawned)
+        internal const float MaxDistance = 50f; private const float Interval = .2f, Smooth = .35f, RescanEvery = 30f; // a safety net: locations and dungeons are handled as they're placed (Spawned)
         private static readonly Vector3[] Dirs = BuildDirs();
         private static NativeArray<RaycastCommand> s_cmds;
         private static NativeArray<RaycastHit> s_hits;
@@ -33,7 +33,6 @@ namespace WiresAcoustics
         private static Transform s_zoneParent, s_listener;
         private static Params s_current, s_applied;
         private static bool s_haveApplied;
-        private static readonly Dictionary<int, float> Absorb = new Dictionary<int, float>();
         // Save original Unity reverb zones rather than destroying them.
         // Required for toggling acoustics OFF without reloading the area.
         private struct VanillaZone { internal AudioReverbZone Zone; internal bool Enabled; }
@@ -397,17 +396,6 @@ namespace WiresAcoustics
 
         // A ray that went out through an opening (or to open sky), not a seam (Portals).
         internal static bool Out(int i) => (!Hit[i] || Opening[i] >= 0f) && SealedBy[i] < 0;
-        private static readonly Dictionary<int, bool> BuiltCache = new Dictionary<int, bool>();
-        private static bool IsBuilt(Collider c)
-        {
-            if (c == null) return false;
-            int id = c.GetInstanceID();
-            if (BuiltCache.TryGetValue(id, out bool b)) return b;
-            if (BuiltCache.Count > 8192) BuiltCache.Clear();
-            b = c.GetComponentInParent<WearNTear>() != null;
-            BuiltCache[id] = b;
-            return b;
-        }
         internal static readonly float[] Dist = new float[Rays], Alpha = new float[Rays];
 
         private static bool s_logDue;
@@ -433,9 +421,9 @@ namespace WiresAcoustics
         private static RaycastHit Pick(int i)
         {
             RaycastHit h = s_hits[i];
-            if (h.collider != null) return h;
+            if (h.colliderInstanceID != 0) return h;
             RaycastHit a = s_hits[Rays + 2 * i], b = s_hits[Rays + 2 * i + 1];
-            if (a.collider == null || b.collider == null) return h;
+            if (a.colliderInstanceID == 0 || b.colliderInstanceID == 0) return h;
             return a.distance <= b.distance ? a : b;
         }
 
@@ -452,7 +440,7 @@ namespace WiresAcoustics
             {
                 Picked[i] = Pick(i);
                 Hit[i] = Surface(s_from, Dirs[i], Picked[i], MaxDistance, out _, out _, out Dist[i], out Alpha[i], out Tree[i]);
-                Built[i] = Hit[i] && IsBuilt(Picked[i].collider);
+                Built[i] = Hit[i] && (Solids.Of(Picked[i])?.Built ?? false);
             }
             // Gaps: a ray that leaves a building through a window, a door or a crack goes on to the sky
             // or to a hill far off, and taking that as part of the room made rooms seem many times their
@@ -495,8 +483,8 @@ namespace WiresAcoustics
                 int wallRay = hit && Built[i] ? i : SealedBy[i];
                 if (wallRay >= 0)
                 {
-                    float fw = Occlusion.FirstWall(Picked[wallRay].collider);
-                    if (fw > 0f) { bedSum += fw * fw; bedWalls++; }
+                    Solids.Info s = Solids.Of(Picked[wallRay]);
+                    if (s != null && s.Wall) { bedSum += s.First * s.First; bedWalls++; }
                 }
                 if (!hit) { escaped++; continue; }
                 hits++;
@@ -605,49 +593,11 @@ namespace WiresAcoustics
             }
         }
 
-        // A wall, floor, roof, beam or pole, as opposed to furniture, stations and props: by the piece's
-        // build category (the hammer tabs), size (1.8 m) for anything else. Cached per collider.
-        private static readonly Dictionary<int, bool> StructuralCache = new Dictionary<int, bool>();
-        internal static bool Structural(Collider c)
-        {
-            int id = c.GetInstanceID();
-            if (StructuralCache.TryGetValue(id, out bool s)) return s;
-            if (StructuralCache.Count > 8192) StructuralCache.Clear();
-            Piece p = c.GetComponentInParent<Piece>();
-            bool big = Mathf.Max(c.bounds.size.x, Mathf.Max(c.bounds.size.y, c.bounds.size.z)) >= 1.8f;
-            if (p == null) s = big;
-            else if (p.m_category == Piece.PieceCategory.BuildingWorkbench || p.m_category == Piece.PieceCategory.BuildingStonecutter) s = true;
-            else if (p.m_category == Piece.PieceCategory.DeepNorth) s = big;
-            else s = false;
-            StructuralCache[id] = s;
-            return s;
-        }
-
-        // Trees, as the game itself defines them: cached per collider. They scatter sound more than they
-        // reflect it, so they count little toward enclosure, absorb most of what reaches them (for
-        // the reverb), and muffle little.
+        // Trees, as the game itself defines them (Solids). They scatter sound more than they reflect
+        // it, so they count little toward enclosure, absorb most of what reaches them (for the reverb),
+        // and muffle little.
         internal const float TreeWeight = .15f; // no source: a judgement value
-        private static readonly Dictionary<int, bool> TreeCache = new Dictionary<int, bool>();
-        internal static bool IsTree(Collider c)
-        {
-            int id = c.GetInstanceID();
-            if (TreeCache.TryGetValue(id, out bool t)) return t;
-            if (TreeCache.Count > 8192) TreeCache.Clear();
-            t = false;
-            if (c.GetComponentInParent<WearNTear>() == null && c.GetComponentInParent<Heightmap>() == null)
-            {
-                // what the game itself calls a tree: cuttable trees, felled logs, and destructibles of the tree kind
-                Destructible d = c.GetComponentInParent<Destructible>();
-                t = c.GetComponentInParent<TreeBase>() != null || c.GetComponentInParent<TreeLog>() != null ||
-                    (d != null && d.m_destructibleType == DestructibleType.Tree);
-            }
-            TreeCache[id] = t;
-            return t;
-        }
 
-        // Absorption coefficient (share of sound energy a surface swallows, mid frequencies) by what the
-        // ray hit. Cached per collider.
-        private static readonly Dictionary<int, Heightmap> Ground = new Dictionary<int, Heightmap>();
         internal const float WaterAbsorb = .01f; // a calm water surface reflects nearly everything
 
         // What a ray ran into: its first hit, or the sea's surface if it reached that first (rays pass
@@ -655,7 +605,7 @@ namespace WiresAcoustics
         internal static bool Surface(Vector3 from, Vector3 dir, RaycastHit h, float max, out Vector3 point, out Vector3 normal, out float dist, out float alpha, out bool tree)
         {
             float sea = ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : 30f;
-            if (dir.y < -.01f && from.y > sea && (h.collider == null || h.point.y < sea))
+            if (dir.y < -.01f && from.y > sea && (h.colliderInstanceID == 0 || h.point.y < sea))
             {
                 float t = (from.y - sea) / -dir.y;
                 if (t <= max)
@@ -664,23 +614,23 @@ namespace WiresAcoustics
                     return true;
                 }
             }
-            if (h.collider == null)
+            Solids.Info s = Solids.Of(h);
+            if (s == null)
             {
                 point = default; normal = Vector3.up; dist = max; alpha = 1f; tree = false;
                 return false;
             }
             point = h.point; normal = h.normal; dist = h.distance;
-            tree = IsTree(h.collider);
-            alpha = AbsorptionAt(h.collider, h.point);
+            tree = s.Tree;
+            alpha = s.Absorb >= 0f ? s.Absorb : s.Hm != null ? GroundAt(s.Hm, h.point) : GroundClass[3];
             return true;
         }
 
         // Furniture and clutter at 500 Hz (pyroomacoustics' material database): beds as empty
         // cloth-covered upholstered chairs, rugs, hides and furs as hairy carpet on felt, banners,
         // tapestries and curtains as tight velvet curtains, anything else as wooden chairs.
-        private static float Furniture(Collider c, WearNTear wnt)
+        private static float Furniture(Piece p, WearNTear wnt)
         {
-            Piece p = c.GetComponentInParent<Piece>();
             string n = wnt.gameObject.name.ToLowerInvariant();
             if (p != null && p.m_comfortGroup == Piece.ComfortGroup.Bed) return .77f;
             if ((p != null && p.m_comfortGroup == Piece.ComfortGroup.Carpet) || n.Contains("rug") || n.Contains("hide") || n.Contains("fur") || n.Contains("pillow"))
@@ -688,15 +638,6 @@ namespace WiresAcoustics
             if ((p != null && p.m_comfortGroup == Piece.ComfortGroup.Banner) || n.Contains("tapestry") || n.Contains("curtain") || n.Contains("cloth"))
                 return .35f;
             return .10f;
-        }
-
-        // Absorption where a ray landed: the ground by what's at that very spot, anything else by
-        // what it is (AbsorptionOf).
-        internal static float AbsorptionAt(Collider c, Vector3 p)
-        {
-            float a = AbsorptionOf(c);
-            if (a >= 0f) return a;
-            return Ground.TryGetValue(c.GetInstanceID(), out Heightmap hm) && hm != null ? GroundAt(hm, p) : GroundClass[3];
         }
 
         // The natural ground, by the Nord2000 ground classes (effective flow resistivity in kPa s/m2,
@@ -746,42 +687,118 @@ namespace WiresAcoustics
             return k < 0 ? .03f : GroundClass[k];
         }
 
-        private static float AbsorptionOf(Collider c)
+        // Absorption coefficient (share of sound energy a surface swallows, mid frequencies) by what
+        // something is, worked out once per collider (Solids). -1: the ground, by the exact spot.
+        internal static float Absorption(Collider c, Piece p, WearNTear wnt, bool structural, bool ground, bool tree)
         {
-            int id = c.GetInstanceID();
-            if (Absorb.TryGetValue(id, out float a)) return a;
-            if (Absorb.Count > 8192) { Absorb.Clear(); Ground.Clear(); }
-            WearNTear wnt = c.GetComponentInParent<WearNTear>();
-            if (wnt != null && !Structural(c))
+            if (wnt != null && !structural)
             {
                 // Furniture and clutter: chests, benches, stations, racks, beds, rugs. They break up
                 // and swallow the reflections that make an empty room ring; soft ones most (the game's
                 // own comfort groups for beds, banners and carpets, plus anything cloth or fur by name).
-                a = Furniture(c, wnt);
+                return Furniture(p, wnt);
             }
-            else if (wnt != null)
+            if (wnt != null)
             {
                 switch (wnt.m_materialType)
                 {
-                    case WearNTear.MaterialType.Stone: case WearNTear.MaterialType.Ashstone: a = .03f; break;
-                    case WearNTear.MaterialType.Marble: a = .01f; break; // marble/tile at 500 Hz (Sengpiel)
-                    case WearNTear.MaterialType.Iron: a = .08f; break; // steel decking at 500 Hz
-                    case WearNTear.MaterialType.Ancient: a = .06f; break; // heavy wood at 500 Hz, as below
-                    case WearNTear.MaterialType.Ice: a = .013f; break; // water or ice surface at 500 Hz (Sengpiel)
-                    case WearNTear.MaterialType.HardWood: case WearNTear.MaterialType.Timberwood: a = .06f; break; // heavy wood at 500 Hz (Vorlander, Auralization: wood stage floor, 2 layers 27 mm)
-                    default: a = .10f; break; // wood planks: wood on joists at 500 Hz (Sengpiel)
+                    case WearNTear.MaterialType.Stone: case WearNTear.MaterialType.Ashstone: return .03f;
+                    case WearNTear.MaterialType.Marble: return .01f; // marble/tile at 500 Hz (Sengpiel)
+                    case WearNTear.MaterialType.Iron: return .08f; // steel decking at 500 Hz
+                    case WearNTear.MaterialType.Ancient: return .06f; // heavy wood at 500 Hz, as below
+                    case WearNTear.MaterialType.Ice: return .013f; // water or ice surface at 500 Hz (Sengpiel)
+                    case WearNTear.MaterialType.HardWood: case WearNTear.MaterialType.Timberwood: return .06f; // heavy wood at 500 Hz (Vorlander, Auralization: wood stage floor, 2 layers 27 mm)
+                    default: return .10f; // wood planks: wood on joists at 500 Hz (Sengpiel)
                 }
             }
-            else if (c.GetComponentInParent<Heightmap>() is Heightmap hm)
+            if (ground) return -1f;                                        // the ground: by the exact point (Surface)
+            if (tree) return .05f;                                         // bark at 500 Hz (Li et al. 2020)
+            if (c.gameObject.layer == Solids.StaticSolid) return .03f;     // rock: limestone wall at 500 Hz (pyroomacoustics database)
+            return .15f;                                                   // props: no source, a judgement value
+        }
+    }
+
+    // Everything the mod needs to know about a collider, worked out the first time a ray hits it and
+    // kept by its instance id: one table instead of the eight there were (built, structural, tree,
+    // ground, weight, wall loss, mass, absorption), each doing its own GetComponentInParent calls. A
+    // hit is looked up by RaycastHit.colliderInstanceID, a plain number; RaycastHit.collider is a
+    // native object lookup every time it's read (Object.FindObjectFromInstanceID, Unity's source),
+    // so it's only read for a collider not seen before.
+    // The old tables were emptied at 8192 entries; a big base has more colliders than that, and each
+    // emptying meant working every one out again. This holds 65536 (an entry is a few dozen bytes).
+    // Ids aren't reused in a session, so a destroyed collider's entry just sits until then.
+    // A built piece, rock or the ground doesn't move, so its box is kept too, read again only after a
+    // door turns (DoorGen; a piece built or removed adds or drops colliders, it moves none). Anything
+    // else (a ship, a cart, a creature) is read live.
+    internal static class Solids
+    {
+        internal sealed class Info
+        {
+            internal Collider C;
+            internal Transform Root;
+            internal bool Built, Structural, Tree, Ground, Wall, Static;
+            internal float Weight, First = 1f, Cut = 22000f, Absorb;
+            internal Heightmap Hm;
+            internal Bounds Box;
+            internal int BoxGen = -1;
+        }
+
+        private const int Cap = 1 << 16;
+        private static readonly Dictionary<int, Info> Table = new Dictionary<int, Info>(4096);
+        internal static readonly int StaticSolid = LayerMask.NameToLayer("static_solid");
+        private static readonly int PieceLayer = LayerMask.NameToLayer("piece"), TerrainLayer = LayerMask.NameToLayer("terrain");
+
+        internal static Info Of(in RaycastHit h)
+        {
+            int id = h.colliderInstanceID;
+            if (id == 0) return null;
+            return Table.TryGetValue(id, out Info i) ? i : Make(id, h.collider);
+        }
+
+        internal static Info Of(Collider c)
+        {
+            if (c == null) return null;
+            int id = c.GetInstanceID();
+            return Table.TryGetValue(id, out Info i) ? i : Make(id, c);
+        }
+
+        internal static Bounds BoxOf(Info s)
+        {
+            if (!s.Static) return s.C != null ? s.C.bounds : s.Box;
+            if (s.BoxGen != Occlusion.DoorGen && s.C != null) { s.Box = s.C.bounds; s.BoxGen = Occlusion.DoorGen; }
+            return s.Box;
+        }
+
+        private static Info Make(int id, Collider c)
+        {
+            if (c == null) return null;
+            if (Table.Count >= Cap) Table.Clear();
+            var s = new Info { C = c, Root = c.transform.root };
+            int layer = c.gameObject.layer;
+            s.Static = layer == PieceLayer || layer == StaticSolid || layer == TerrainLayer;
+            s.Box = c.bounds;
+            s.BoxGen = Occlusion.DoorGen;
+            WearNTear wnt = c.GetComponentInParent<WearNTear>();
+            s.Built = wnt != null;
+            s.Hm = c.GetComponentInParent<Heightmap>();
+            s.Ground = s.Hm != null;
+            Vector3 size = s.Box.size;
+            bool big = Mathf.Max(size.x, Mathf.Max(size.y, size.z)) >= 1.8f;
+            Piece p = c.GetComponentInParent<Piece>();
+            if (p == null) s.Structural = big;
+            else if (p.m_category == Piece.PieceCategory.BuildingWorkbench || p.m_category == Piece.PieceCategory.BuildingStonecutter) s.Structural = true;
+            else if (p.m_category == Piece.PieceCategory.DeepNorth) s.Structural = big;
+            if (!s.Built && !s.Ground)
             {
-                a = -1f; // the ground: by the exact point (AbsorptionAt)
-                Ground[id] = hm;
+                // what the game itself calls a tree: cuttable trees, felled logs, and destructibles of the tree kind
+                Destructible d = c.GetComponentInParent<Destructible>();
+                s.Tree = c.GetComponentInParent<TreeBase>() != null || c.GetComponentInParent<TreeLog>() != null ||
+                    (d != null && d.m_destructibleType == DestructibleType.Tree);
             }
-            else if (IsTree(c)) a = .05f;                                                                          // bark at 500 Hz (Li et al. 2020)
-            else if (c.gameObject.layer == LayerMask.NameToLayer("static_solid")) a = .03f;                       // rock: limestone wall at 500 Hz (pyroomacoustics database)
-            else a = .15f;                                                                                        // props: no source, a judgement value
-            Absorb[id] = a;
-            return a;
+            Occlusion.Classify(s, wnt, layer);
+            s.Absorb = Room.Absorption(c, p, wnt, s.Structural, s.Ground, s.Tree);
+            Table[id] = s;
+            return s;
         }
     }
 }

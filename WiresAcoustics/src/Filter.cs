@@ -133,14 +133,16 @@ namespace WiresAcoustics
         // Vanilla ZSFX only refreshes looping reverb when this authored flag
         // is set. Unflagged loops need our existing batched geometry tick.
         internal bool NativeReverbLoop;
-        internal float StartedAt, LastOcc, LastBlockDist;
+        internal float StartedAt, LastOcc;
+        // The walls between you and it at the last check, and the probe passes kept for them (Corners).
+        internal Corners.Walls Walls;
+        internal Corners.Record[] Records;
         // A playing loop's wall check runs when something changed, not on a clock (Occlusion.WatchLoop):
         // where you and it were at its last check, when, and which world change it had seen.
         internal bool WatchLoop;
         internal Vector3 CheckedFrom, CheckedAt;
         internal float CheckedTime = -1e6f;
         internal int CheckedGen;
-        internal Collider LastBlocker; // prior confirmed obstruction, for bounded real-edge diffraction
         internal float LastDist = 1e6f;            // from the listener (Directions, Occlusion), for Budget
         internal bool InBudget;                    // in Budget's list of playing sounds
         // How wide the game made the source (its own spread, before ours): 0 a point, 1 all around.
@@ -401,12 +403,6 @@ namespace WiresAcoustics
             Budget.Clear();
         }
 
-        // Debug-only read; target values alone can look correct even if the
-        // source was bypassed by Budget or the DSP had not yet reached them.
-        internal string CurrentProcessing() =>
-            "processed=" + m_active + ", actual gain=" + m_gain.ToString("F2") +
-            ", actual cutoff=" + m_cutoff.ToString("F0") + " Hz";
-
         // Debug: what this filter is doing to the sound right now.
         internal string Explain() =>
             "gain " + m_targetGain.ToString("F2") + ", cut " + m_targetCutoff.ToString("F0") + ", air " + AirCutoff.ToString("F0") +
@@ -603,23 +599,30 @@ namespace WiresAcoustics
             m_cutoff = Mathf.Exp(Mathf.Lerp(Mathf.Log(m_cutoff), Mathf.Log(tc), glide));
             m_gain = g1;
             float a = m_cutoff >= 20000f ? 1f : 1f - Mathf.Exp(-2f * Mathf.PI * m_cutoff * Stage / s_rate);
-            float[] st = m_state;
             float inv = 1f / frames, dg = g1 - g0;
-            for (int i = 0, k = 0; i < frames; i++)
+            // Through pointers: Mono checks the bounds of every array access, twice per sample per
+            // channel here, and the audio thread runs this for every processed sound.
+            unsafe
             {
-                float g = g0 + dg * i * inv;
-                for (int c = 0; c < channels; c++, k++)
+                fixed (float* d = data, st = m_state)
                 {
-                    float y1 = st[c] += a * (data[k] - st[c]);
-                    float y = st[c + MaxChannels] += a * (y1 - st[c + MaxChannels]);
-                    data[k] = y * g;
+                    for (int i = 0, k = 0; i < frames; i++)
+                    {
+                        float g = g0 + dg * i * inv;
+                        for (int c = 0; c < channels; c++, k++)
+                        {
+                            float y1 = st[c] += a * (d[k] - st[c]);
+                            float y = st[c + MaxChannels] += a * (y1 - st[c + MaxChannels]);
+                            d[k] = y * g;
+                        }
+                    }
                 }
             }
         }
 
-        private void Spatialize(float[] data, int ch, float tg, float tc)
+        private void Spatialize(float[] dataArr, int ch, float tg, float tc)
         {
-            int frames = data.Length / ch;
+            int frames = dataArr.Length / ch;
             if (frames == 0) return;
 
             // occlusion
@@ -661,26 +664,29 @@ namespace WiresAcoustics
                 m_primed = true;
                 m_delayL = tL; m_delayR = tR; m_gainL = tgL; m_gainR = tgR;
                 float first = 0f;
-                for (int c = 0; c < ch; c++) first += data[c];
+                for (int c = 0; c < ch; c++) first += dataArr[c];
                 first /= ch;
                 float v0 = first * g0;
                 for (int r = 0; r < Ring; r++) m_ring[r] = v0;
                 m_mono = m_mono2 = first;
-                m_side = m_side2 = stereo ? (data[0] - data[1]) * .5f : 0f;
+                m_side = m_side2 = stereo ? (dataArr[0] - dataArr[1]) * .5f : 0f;
                 m_headL = m_headR = m_backL = m_backR = v0;
                 m_x1L = m_x2L = m_y1L = m_y2L = m_x1R = m_x2R = m_y1R = m_y2R = v0;
             }
             float dL0 = m_delayL, dR0 = m_delayR, gL0 = m_gainL, gR0 = m_gainR;
             m_delayL = tL; m_delayR = tR; m_gainL = tgL; m_gainR = tgR;
 
-            // the loop works on locals (the audio thread's hot path: no field access, no calls)
-            float[] ring = m_ring;
+            // the loop works on locals and pointers (the audio thread's hot path: no field access, no
+            // calls, no bounds checks)
             int pos = m_pos;
             float mono = m_mono, mono2 = m_mono2, sideS = m_side, side2 = m_side2, headL = m_headL, headR = m_headR, backL = m_backL, backR = m_backR;
             float x1L = m_x1L, x2L = m_x2L, y1L = m_y1L, y2L = m_y2L, x1R = m_x1R, x2R = m_x2R, y1R = m_y1R, y2R = m_y2R;
             float invF = 1f / frames;
             float dg = g1 - g0, ddL = tL - dL0, ddR = tR - dR0, dgL = tgL - gL0, dgR = tgR - gR0;
             const int mask = Ring - 1;
+            unsafe
+            {
+            fixed (float* data = dataArr, ring = m_ring)
             for (int i = 0; i < frames; i++)
             {
                 float t = i * invF;
@@ -728,6 +734,7 @@ namespace WiresAcoustics
                 x2R = x1R; x1R = vR; y2R = y1R; y1R = oR;
                 data[k] = oL * (gL0 + dgL * t) + sw;
                 data[k + 1] = oR * (gR0 + dgR * t) - sw;
+            }
             }
             m_pos = pos;
             m_mono = mono; m_mono2 = mono2; m_side = sideS; m_side2 = side2; m_headL = headL; m_headR = headR; m_backL = backL; m_backR = backR;
