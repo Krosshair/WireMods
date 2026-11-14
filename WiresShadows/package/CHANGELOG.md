@@ -1,3 +1,8 @@
+## 0.1.7
+- Fixed: breaking a piece near a light left shadows of chips (wood) or rocks (stone) on the ground until you looked away. The dust, chips and rocks that fly out were drawn into the light's shadow map while it updated. The game's effects are no longer drawn into shadow maps.
+- Less lag placing and breaking: each light round a change used to search everything in its reach again before updating its shadow. Now a placed piece is just added to what each light already knows, and a broken one needs nothing. The check of what's round a light is also worked out once per object instead of on every update. Lower-detail models are no longer switched off and on for every shadow update (the update always draws full detail, so they were never drawn anyway).
+- Shadows change with the piece: placing or breaking something in view updates the lights you can see in the next frame, instead of one side of one light per frame after each other (it was a few frames late).
+
 ## 0.1.6
 - Leaner: the mod keeps its shadow maps one way only (sized by the screen, kept as depth, both sides in one render). The two older ways it carried as fallbacks are gone (about 750 lines, a third of the lighting shader and three shaders), and so are their textures. A GPU that can't do this keeps the game's own point-light shadows.
 - Coming home is smooth: shadow maps are kept when their lights unload, and a light that loads back in with nothing changed around it gets its map back without rendering. Maps that do have to be built are spread out over time.

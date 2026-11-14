@@ -24,6 +24,29 @@ namespace WiresShadows
 
         private static int KeepKey(Vector3 center, float range) => Quantize(center, 100f) * 31 + Mathf.RoundToInt(range * 100f);
 
+        // Per collider, what the fingerprint needs from its parents, looked up once: a base has
+        // thousands in a light's reach, and every render after any change took them all again.
+        // Instance ids aren't reused in a session; emptied if it ever gets very large.
+        private sealed class HashPart { internal bool Skip, Door; internal ZNetView Nv; }
+        private static readonly Dictionary<int, HashPart> HashParts = new Dictionary<int, HashPart>(4096);
+
+        private static HashPart PartOf(Collider c)
+        {
+            int id = c.GetInstanceID();
+            if (HashParts.TryGetValue(id, out HashPart p)) return p;
+            if (HashParts.Count >= 1 << 16) HashParts.Clear();
+            p = new HashPart();
+            // moving maps, not this one: characters; and what the static camera never draws
+            p.Skip = c.isTrigger || ((1 << c.gameObject.layer) & StaticLayerMask) == 0 || c.GetComponentInParent<Character>() != null;
+            if (!p.Skip)
+            {
+                p.Nv = c.GetComponentInParent<ZNetView>();
+                p.Door = p.Nv != null && p.Nv.GetComponent<Door>() != null;
+            }
+            HashParts[id] = p;
+            return p;
+        }
+
         // What can cast into a light's map, as a number that's the same when nothing there changed.
         private static int CasterHash(Vector3 center, float range)
         {
@@ -34,15 +57,16 @@ namespace WiresShadows
                 for (int i = 0; i < n; i++)
                 {
                     Collider c = Hits[i];
-                    if (c == null || c.isTrigger || ((1 << c.gameObject.layer) & StaticLayerMask) == 0) continue;
-                    if (c.GetComponentInParent<Character>() != null) continue; // moving maps, not this one
-                    ZNetView nv = c.GetComponentInParent<ZNetView>();
+                    if (c == null) continue;
+                    HashPart part = PartOf(c);
+                    if (part.Skip) continue;
+                    ZNetView nv = part.Nv;
                     ZDO zdo = nv != null ? nv.GetZDO() : null;
                     int h = zdo != null ? zdo.m_uid.GetHashCode() : 0;
                     Transform tr = c.transform;
                     h = h * 31 + Quantize(tr.position, 100f);
                     h = h * 31 + Quantize(tr.rotation * Vector3.forward, 100f);
-                    if (zdo != null && nv.GetComponent<Door>() != null) h = h * 31 + zdo.GetInt(ZDOVars.s_state);
+                    if (zdo != null && part.Door) h = h * 31 + zdo.GetInt(ZDOVars.s_state);
                     sum += h * 16777619 ^ (h >> 13); // order doesn't matter: summed
                 }
             }

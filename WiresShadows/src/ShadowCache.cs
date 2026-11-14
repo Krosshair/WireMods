@@ -41,15 +41,19 @@ namespace WiresShadows
             internal readonly List<Mesh> ProxyMeshes = new List<Mesh>();       // colliders inside the near plane
             internal readonly List<Matrix4x4> ProxyMatrices = new List<Matrix4x4>();
             internal int NearProxies;
-            internal readonly List<Mesh> StructMeshes = new List<Mesh>();      // null: a box
-            internal readonly List<Matrix4x4> StructMatrices = new List<Matrix4x4>();   // the first ones are inside the near plane only
             internal readonly List<int> ExplicitSub = new List<int>();
             internal Vector3 Center;
             internal bool Dirty;         // waiting for a full re-render
             internal float DirtyAt;      // not before this time (bursts of changes coalesce)
             internal int Face = -1;      // face being rendered, -1 when idle
             internal int DoorFaces;      // affected static faces queued on a gate/shutter change
-            internal bool DoorPrepared;  // casters gathered once for this queued face batch
+            internal bool DoorPrepared;  // the caster lists are current (gathered, plus pieces placed since)
+            // Pieces placed or broken in reach since the lists were gathered: a placed one is sorted
+            // into them on its own; a broken one needs nothing (gone, the camera can't draw it) but
+            // its near-plane stand-ins (FindProxies).
+            internal readonly List<Transform> AddedRoots = new List<Transform>();
+            internal bool ProxiesStale;
+            internal bool Urgent;        // a piece placed or broken where you can see this light
             internal bool Ready;         // has a complete map
             internal float Fade;         // shadow strength fading in, as LightLod does (1 s)
             internal readonly List<Renderer> Hide = new List<Renderer>();
@@ -1383,7 +1387,39 @@ namespace WiresShadows
             RegisterPiece(piece);
             ItemStand stand = piece.GetComponentInChildren<ItemStand>(true);
             if (stand != null) RefreshStand(stand);
+            s_placed = piece.transform.root;
             PieceChanged(piece.transform.position, piece);
+            s_placed = null;
+        }
+
+        // Which kind of change PieceChanged is handling (a piece placed, or broken), or neither.
+        private static Transform s_placed;
+        private static bool s_broken;
+
+        // What the game's effects are drawn with while they last (EffectList.Create: the sawdust and
+        // chips of a broken piece, sparks, dust, debris). The cube camera draws every renderer on the
+        // layers it looks at (a particle's "no shadows" flag is for Unity's own shadows, not for a
+        // camera), so a light re-rendering just after a piece broke froze the flying chips into its
+        // kept map as dots: chips for wood (vfx_SawDust), rocks for stone (vfx_RockDestroyed, mesh
+        // particles). Persistent networked objects an effect list spawns are real things, not effects.
+        private static readonly List<Renderer> Effects = new List<Renderer>(128);
+        private static readonly List<Renderer> EffectScratch = new List<Renderer>(16);
+
+        internal static void EffectsCreated(GameObject[] made)
+        {
+            if (made == null) return;
+            if (Effects.Count > 512) Effects.RemoveAll(r => r == null);
+            foreach (GameObject go in made)
+            {
+                if (go == null) continue;
+                // the game's effects are networked too (a ZNetView that isn't kept, gone after a few
+                // seconds: vfx_SawDust, vfx_RockDestroyed); a kept one is a real object
+                ZNetView nv = go.GetComponent<ZNetView>();
+                if (nv != null && nv.m_persistent) continue;
+                go.GetComponentsInChildren(true, EffectScratch);
+                Effects.AddRange(EffectScratch);
+            }
+            EffectScratch.Clear();
         }
 
         internal static void PieceGone(Piece piece)
@@ -1393,7 +1429,9 @@ namespace WiresShadows
             UnregisterPiece(piece);
             ItemStand stand = piece.GetComponentInChildren<ItemStand>(true);
             if (stand != null) UnregisterStand(stand);
+            s_broken = true;
             PieceChanged(piece.transform.position, piece);
+            s_broken = false;
         }
 
         // A building piece appeared or went away: lights whose range reaches it re-render.
@@ -1431,6 +1469,9 @@ namespace WiresShadows
                 if (!hasBounds && !hasAnyRenderer) return;
             }
             bool dirtied = false;
+            Camera viewer = s_placed != null || s_broken ? Utils.GetMainCamera() : null;
+            bool frustum = viewer != null;
+            if (frustum) GeometryUtility.CalculateFrustumPlanes(viewer, FillFrustum);
             foreach (Tracked t in cache._slots)
             {
                 if (t == null || t.Light == null) continue;
@@ -1453,7 +1494,12 @@ namespace WiresShadows
                     if (changedFaces != 0)
                     {
                         t.DoorFaces |= changedFaces;
-                        t.DoorPrepared = false;
+                        // A piece placed or broken: its lists are patched, not searched again.
+                        if (t.DoorPrepared && s_placed != null) t.AddedRoots.Add(s_placed);
+                        else if (t.DoorPrepared && s_broken) t.ProxiesStale = true;
+                        else t.DoorPrepared = false;
+                        // in view: its faces next frame, together, not one a frame after the rest
+                        if (frustum && InView(t)) t.Urgent = true;
                         dirtied = true;
                     }
                 }
@@ -3620,7 +3666,7 @@ namespace WiresShadows
         private System.Collections.IEnumerator RenderDirty()
         {
             _rendering = true;
-            int burst = 0;
+            int burst = 0, urgentBurst = 0;
             while (true)
             {
                 Tracked job = null;
@@ -3638,6 +3684,7 @@ namespace WiresShadows
                     if (t == null || t.Light == null)
                         continue;
                     if (t.Face >= 0) { job = t; jobInView = fillCam != null && !t.Ready && InView(t); break; }
+                    if (t.Urgent && t.DoorFaces != 0 && t.Ready && !t.Dirty) { job = t; break; }
                     if (!((t.DoorFaces != 0 && t.Ready && !t.Dirty) ||
                           (t.Dirty && (Time.time >= t.DirtyAt || Loading()) && Time.time >= t.WaitUntil)))
                         continue;
@@ -3666,7 +3713,14 @@ namespace WiresShadows
                 // Never batch all nearby lights inside Door.SetState.
                 if (job.DoorFaces != 0 && job.Ready && !job.Dirty && job.Face < 0)
                 {
+                    bool urgent = job.Urgent;
                     RenderDoorFace(job);
+                    if (job.DoorFaces == 0) job.Urgent = false;
+                    // a piece placed or broken in view: its lights' faces in the same frame, so the
+                    // shadow changes with it (at most a cube's worth a frame)
+                    if (urgent && ++urgentBurst < UrgentFacesPerFrame)
+                        continue;
+                    urgentBurst = 0;
                     burst = 0;
                     yield return null;
                     continue;
@@ -3712,7 +3766,15 @@ namespace WiresShadows
                 t.RootPos = t.Light.transform.root.position;
                 t.RootRot = t.Light.transform.root.rotation;
                 FindCasters(t);
-                t.DoorPrepared = true;
+            }
+            else if (t.AddedRoots.Count > 0 || t.ProxiesStale)
+            {
+                // only what was placed since, not the whole reach again
+                foreach (Transform root in t.AddedRoots)
+                    if (root != null && root != t.Light.transform.root) SortRoot(t, root);
+                t.AddedRoots.Clear();
+                t.ProxiesStale = false;
+                FindProxies(t);
             }
             int face = 0;
             while ((t.DoorFaces & (1 << face)) == 0) face++;
@@ -3720,7 +3782,6 @@ namespace WiresShadows
             DrawFace(t);
             t.Face = -1;
             t.DoorFaces &= ~(1 << face);
-            if (t.DoorFaces == 0) t.DoorPrepared = false;
         }
 
         private void RenderNow(Tracked t)
@@ -3737,6 +3798,7 @@ namespace WiresShadows
         // (kept maps of an unchanged base come back without any, Keep). It was three a frame,
         // a couple of seconds of lag on getting home.
         private const int FillFacesPerFrame = 1;
+        private const int UrgentFacesPerFrame = 6;
         private static readonly Plane[] FillFrustum = new Plane[6];
 
         private static bool InView(Tracked t) =>
@@ -3882,6 +3944,14 @@ namespace WiresShadows
                 r.forceRenderingOff = true;
                 ChangedForceOff.Add(r);
             }
+            // the game's passing effects (dust, chips, sparks) are never part of a kept map
+            Effects.RemoveAll(r => r == null);
+            foreach (Renderer r in Effects)
+            {
+                if (r.forceRenderingOff) continue;
+                r.forceRenderingOff = true;
+                ChangedForceOff.Add(r);
+            }
             foreach (Renderer r in t.Show)
             {
                 if (r == null || r.shadowCastingMode == ShadowCastingMode.On) continue;
@@ -4022,43 +4092,8 @@ namespace WiresShadows
                 foreach (Renderer r in Renderers)
                     if (!r.forceRenderingOff) t.Hide.Add(r);
             }
-            Transform ownRoot = t.Light.transform.root;
-            t.StructMeshes.Clear();
-            t.StructMatrices.Clear();
             foreach (Transform root in Roots)
-            {
-                root.GetComponentsInChildren(false, Renderers);
-                // Rugs and carpets lie flat on the floor: their shadow is only
-                // jagged edges on the boards beneath. Characters are drawn
-                // into the moving map, never baked into this one.
-                bool flat = IsRug(root.name) || root.GetComponent<Character>() != null;
-                // Even before GatherCasters discovers a newly dropped item,
-                // its item root must never sneak into a static shadow map.
-                bool looseItem = root.GetComponent<ItemDrop>() != null;
-                foreach (Renderer r in Renderers)
-                {
-                    if (r.forceRenderingOff)
-                        continue;
-                    if (StandVisuals.Contains(r) || DropVisuals.Contains(r) ||
-                        flat || looseItem || SeeThrough(r))
-                        t.Hide.Add(r);
-                    else if (r.shadowCastingMode == ShadowCastingMode.Off || FarLod(r))
-                        t.Hide.Add(r);
-                    else
-                    {
-                        if (r.shadowCastingMode == ShadowCastingMode.ShadowsOnly)
-                            t.Show.Add(r);
-                        if (Sheet(r) && (StaticLayerMask & (1 << r.gameObject.layer)) != 0)
-                        {
-                            // Drawn from both sides instead (DrawUntagged).
-                            t.Hide.Add(r);
-                            t.Sheets.Add(r);
-                        }
-                        else
-                            AddUntagged(t, r);
-                    }
-                }
-            }
+                SortRoot(t, root);
             // The replacement camera hides own-piece renderers via t.Hide,
             // but its independent untagged-material and two-sided-sheet
             // command-buffer passes bypass that visibility flag. Exclude only
@@ -4079,6 +4114,51 @@ namespace WiresShadows
                 t.Show.RemoveAll(r => r != null && r.transform.IsChildOf(ownTransform));
             }
             FindProxies(t);
+            t.DoorPrepared = true;
+            t.AddedRoots.Clear();
+            t.ProxiesStale = false;
+        }
+
+        // One object's renderers into a light's lists: hidden, shown, drawn both-sided or drawn
+        // directly (FindCasters, and a piece placed since on its own).
+        private static void SortRoot(Tracked t, Transform root)
+        {
+            root.GetComponentsInChildren(false, Renderers);
+            // Rugs and carpets lie flat on the floor: their shadow is only
+            // jagged edges on the boards beneath. Characters are drawn
+            // into the moving map, never baked into this one.
+            bool flat = IsRug(root.name) || root.GetComponent<Character>() != null;
+            // Even before GatherCasters discovers a newly dropped item,
+            // its item root must never sneak into a static shadow map.
+            bool looseItem = root.GetComponent<ItemDrop>() != null;
+            foreach (Renderer r in Renderers)
+            {
+                if (r.forceRenderingOff)
+                    continue;
+                if (StandVisuals.Contains(r) || DropVisuals.Contains(r) ||
+                    flat || looseItem || SeeThrough(r))
+                    t.Hide.Add(r);
+                else if (r.shadowCastingMode == ShadowCastingMode.Off)
+                    t.Hide.Add(r);
+                // A lower-detail model: the camera never picks it (the render forces full detail,
+                // lodBias), so it needs no hiding (two native calls a face each, for most of a
+                // base's pieces); only kept out of the direct draws below.
+                else if (FarLod(r))
+                    continue;
+                else
+                {
+                    if (r.shadowCastingMode == ShadowCastingMode.ShadowsOnly)
+                        t.Show.Add(r);
+                    if (Sheet(r) && (StaticLayerMask & (1 << r.gameObject.layer)) != 0)
+                    {
+                        // Drawn from both sides instead (DrawUntagged).
+                        t.Hide.Add(r);
+                        t.Sheets.Add(r);
+                    }
+                    else
+                        AddUntagged(t, r);
+                }
+            }
         }
 
         // Direct static item draw handles colliderless mounted weapons and
@@ -4291,37 +4371,6 @@ namespace WiresShadows
             }
         }
 
-        // Walls, floors, roofs and beams cast as their colliders: plain
-        // solid shapes, so a wall's stones, ledges and plank edges never shade
-        // the wall itself, while the wall still blocks whatever is behind it.
-        private static bool Structural(Piece p) =>
-            p != null && (p.m_category == Piece.PieceCategory.BuildingWorkbench || p.m_category == Piece.PieceCategory.BuildingStonecutter)
-            && p.GetComponentInChildren<Door>() == null;
-
-        private static readonly List<Collider> PieceColliders = new List<Collider>();
-
-        private static bool AddStructural(Tracked t, Transform root)
-        {
-            root.GetComponentsInChildren(false, PieceColliders);
-            int before = t.StructMeshes.Count;
-            foreach (Collider c in PieceColliders)
-            {
-                if (c.isTrigger || !c.enabled)
-                    continue;
-                if (c is BoxCollider box)
-                {
-                    t.StructMeshes.Add(null);
-                    t.StructMatrices.Add(box.transform.localToWorldMatrix * Matrix4x4.TRS(box.center, Quaternion.identity, box.size));
-                }
-                else if (c is MeshCollider mc && mc.sharedMesh != null)
-                {
-                    t.StructMeshes.Add(mc.sharedMesh);
-                    t.StructMatrices.Add(mc.transform.localToWorldMatrix);
-                }
-            }
-            return t.StructMeshes.Count > before;
-        }
-
         private static void FindProxies(Tracked t)
         {
             t.ProxyMeshes.Clear();
@@ -4352,11 +4401,6 @@ namespace WiresShadows
                 AddProxy(t, c);
             }
             t.NearProxies = t.ProxyMeshes.Count;
-            for (int i = 0; i < t.StructMeshes.Count; i++)
-            {
-                t.ProxyMeshes.Add(t.StructMeshes[i] != null ? t.StructMeshes[i] : _cube);
-                t.ProxyMatrices.Add(t.StructMatrices[i]);
-            }
         }
 
         private static readonly AccessTools.FieldRef<LightLod, float> BaseRange =
@@ -4547,6 +4591,12 @@ namespace WiresShadows
     internal static class PieceDestroy
     {
         private static void Prefix(Piece __instance) => ShadowCache.PieceGone(__instance);
+    }
+
+    [HarmonyPatch(typeof(EffectList), nameof(EffectList.Create))]
+    internal static class EffectsMade
+    {
+        private static void Postfix(GameObject[] __result) => ShadowCache.EffectsCreated(__result);
     }
 }
 
