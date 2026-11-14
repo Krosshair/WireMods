@@ -67,7 +67,6 @@ namespace WiresShadows
 
         private void ReleaseTiers()
         {
-            _kept.Clear(); // their pools go below
             ReleaseOnePassFaces();
             for (int k = 0; k < TierCount; k++)
             {
@@ -134,21 +133,68 @@ namespace WiresShadows
             }
         }
 
+        // From the 1 s reassignment, with nothing rendering: a pool at least a quarter empty is made
+        // again at the size it uses, its maps packed together (copied on the GPU) and everything
+        // pointing at them (the lights using them) moved along. Re-renders go into new cubes
+        // while the old ones stay on screen, so a burst of them (arriving at a base, a setting
+        // changed) grows the pools far past what they hold once it's over.
+        private void CompactPools()
+        {
+            foreach (Tracked t in _slots)
+                if (t != null && (t.Face >= 0 || t.RenderCube >= 0 || t.Dirty || t.PromotionFrom != null || t.PromotionTo != null))
+                    return;
+            bool packed = false;
+            for (int k = 0; k < TierCount; k++)
+            {
+                List<bool> used = _poolUsed[k];
+                int n = used.Count, u = 0;
+                foreach (bool b in used) if (b) u++;
+                int size = Mathf.Max(1, u);
+                if (n - size < Mathf.Max(1, n / 4)) continue;
+                int r = TierRes(k);
+                var next = new RenderTexture(r, r, NativeDepthBits, RenderTextureFormat.Shadowmap)
+                {
+                    dimension = TextureDimension.CubeArray, volumeDepth = 6 * size,
+                    useMipMap = false, filterMode = FilterMode.Bilinear, name = "WireShadowPool" + r
+                };
+                if (!next.Create()) { next.Release(); Destroy(next); continue; }
+                // old cube -> new cube
+                int[] moved = new int[n];
+                int at = 0;
+                for (int c = 0; c < n; c++)
+                {
+                    moved[c] = -1;
+                    if (!used[c]) continue;
+                    for (int f = 0; f < 6; f++)
+                        Graphics.CopyTexture(_pool[k], c * 6 + f, 0, next, at * 6 + f, 0);
+                    moved[c] = at++;
+                }
+                _pool[k].Release(); Destroy(_pool[k]);
+                _pool[k] = next;
+                used.Clear();
+                for (int c = 0; c < size; c++) used.Add(c < u);
+                Shader.SetGlobalTexture(TierIds[k], next);
+                for (int sl = 0; sl < MaxSlots; sl++)
+                    if ((int)_mapTier[sl] == k && _mapCube[sl] >= 0f) _mapCube[sl] = moved[(int)_mapCube[sl]];
+                packed = true;
+                Plugin.Note("[tiers] " + r + " px pool: packed to " + size + " cubes, all pools " + (PoolBytes() >> 20) + " MB");
+            }
+            if (packed) UploadTierMaps();
+        }
+
         private int AllocCube(int tier)
         {
             List<bool> used = _poolUsed[tier];
             for (int c = 0; c < used.Count; c++)
                 if (!used[c]) { used[c] = true; return c; }
+            // one more, not double: a pool grown ahead of a burst (SizePoolsForWaiting) rarely
+            // needs this, and doubling left it twice the size it needed (1.8 GB) for the session
             int n = used.Count;
-            if (GrowPool(tier, Mathf.Max(n + 1, n * 2)) || GrowPool(tier, n + 1))
+            if (GrowPool(tier, n + 1))
             {
                 used[n] = true;
                 return n;
             }
-            // no memory left: kept maps of unloaded lights make room, oldest first (Keep)
-            if (DropOldestKept(tier))
-                for (int c = 0; c < used.Count; c++)
-                    if (!used[c]) { used[c] = true; return c; }
             return -1;
         }
 
@@ -219,7 +265,6 @@ namespace WiresShadows
             _mapTier[sl] = t.RenderTier;
             _mapCube[sl] = t.RenderCube;
             t.NativeCacheRange = t.RenderRange;
-            t.CasterHash = t.PendingHash;
             t.RenderCube = -1;
         }
 

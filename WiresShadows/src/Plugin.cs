@@ -19,7 +19,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.1.7";
+        public const string Version = "0.1.8";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -36,13 +36,12 @@ namespace WiresShadows
         internal const float UltraDistance = 150f;
         internal const int FarMovingLights = 8;
         internal const bool GhostShadows = true;
-        internal const bool FollowGameShadows = true;
 
         internal const bool MovingLightShadows = true;
 
-        internal const int FarResolution = 256;
         internal const float Distance = 60f;
         internal const bool MovingCasters = true;
+        internal const bool ParticleShadows = true; // effects' particles cast moving shadows
         internal static ConfigEntry<bool> Benchmark;
         internal static ConfigEntry<bool> DebugLog;
         internal static bool BenchRunning; // the log is on while the benchmark runs

@@ -1,3 +1,12 @@
+## 0.1.8
+- Fixed: pieces round you could vanish and pop back in while the game streamed things in, when a light switched on as its piece appeared.
+- The chunks a broken piece falls apart into cast moving shadows while they fall, as they do with the game's own shadows.
+- Effect particles cast moving shadows too: the chips of a broken piece or tree, a stone's rock bits and the like. See-through dust doesn't.
+- Leaner: shadow updates no longer make garbage for every lower-detail model in a light's reach, and leftover code from older versions is gone.
+- Far less video memory: the shadow maps' storage grew to twice what it needed whenever it ran out (1.8 GB seen) and never got smaller. It now grows by what's needed and packs itself back down once lights are done updating.
+- Fixed: placing a spinning wheel, refinery, windmill or ballista lagged: their moving parts made every light round them search everything in its reach again. Now they're just left out of those lights' maps.
+- Maps are no longer kept for lights that unload (for coming back), which held a lot of video memory and popped in. After a portal or a world load the maps are built again over the first moments, as before, and now fade in instead of popping.
+
 ## 0.1.7
 - Fixed: breaking a piece near a light left shadows of chips (wood) or rocks (stone) on the ground until you looked away. The dust, chips and rocks that fly out were drawn into the light's shadow map while it updated. The game's effects are no longer drawn into shadow maps.
 - Less lag placing and breaking: each light round a change used to search everything in its reach again before updating its shadow. Now a placed piece is just added to what each light already knows, and a broken one needs nothing. The check of what's round a light is also worked out once per object instead of on every update. Lower-detail models are no longer switched off and on for every shadow update (the update always draws full detail, so they were never drawn anyway).

@@ -71,10 +71,7 @@ namespace WiresShadows
             internal int WantTier;       // map size it needs on screen (Tiers)
             internal int RenderTier, RenderCube = -1; // where the render in progress goes (Tiers)
             internal float RenderRange;
-            internal int CasterHash, PendingHash; // what cast into its map when rendered (Keep)
-            internal int HashVersion = -1;        // WorldVersion when CasterHash was taken
             internal float WaitSince = -1f, WaitUntil; // waiting for its area to load in (AreaWait)
-            internal Vector3 HashCenter;
             internal readonly List<Animator> Animators = new List<Animator>();
             internal readonly List<AnimatorCullingMode> AnimatorModes = new List<AnimatorCullingMode>();
         }
@@ -99,7 +96,6 @@ namespace WiresShadows
         private static readonly AccessTools.FieldRef<LightLod, bool> ShadowLod =
             AccessTools.FieldRefAccess<LightLod, bool>("m_shadowLod");
 
-        private static readonly int MapsId = Shader.PropertyToID("_WireShadowMaps");
         private static readonly int LightsId = Shader.PropertyToID("_WireShadowLights");
         private static readonly int CountId = Shader.PropertyToID("_WireShadowCount");
         private static readonly int CenterId = Shader.PropertyToID("_WireLightCenter");
@@ -126,7 +122,6 @@ namespace WiresShadows
         // Static shadow slots are logical. Moving-shadow faces occupy a compact,
         // lossless physical cube pool, growing only when another light really
         // needs moving shadows. Resolution and exact shader comparisons unchanged.
-        private const int InitialMovingCubes = 4;
         // The native comparison copies are made from 16-bit maps (RHalf, RGHalf): 16-bit depth
         // keeps all of it at half the memory of 24-bit (which the card stores in 4 bytes).
         private const int NativeDepthBits = 16;
@@ -382,8 +377,6 @@ namespace WiresShadows
         private bool _hasUploadedDynActive, _hasUploadedNativeMovingActive, _hasUploadedNativeMovingRanges;
         // Static comparison arrays change only when a map becomes ready, a slot changes,
         // or a native resource is reset. Fade updates must not resend them.
-        private readonly float[] _uploadedNativeStaticActive = new float[MaxSlots];
-        private readonly float[] _uploadedNativeStaticRanges = new float[MaxSlots];
 
         private void UploadDynActive()
         {
@@ -414,18 +407,6 @@ namespace WiresShadows
             _nativeMovingCopyMat = null;
             System.Array.Clear(_nativeMovingActive, 0, MaxSlots);
             UploadNativeMovingActive();
-        }
-        internal static void RequestNativeMovingRefresh()
-        {
-            ShadowCache c = Instance;
-            if (c == null) return;
-            c.ReleaseNativeMovingResources();
-            c._nativeMovingFailed = false;
-            // Redraw only when the regular moving-shadow logic next needs a face.
-            // Reset the old face signatures to guarantee valid depth data.
-            System.Array.Clear(c._dynFacesLast, 0, c._dynFacesLast.Length);
-            System.Array.Clear(c._faceHash, 0, c._faceHash.Length);
-            c.WakeRenders();
         }
         private bool EnsureNativeMovingTier(bool near)
         {
@@ -550,9 +531,6 @@ namespace WiresShadows
                 _frameCb.ClearRenderTarget(true, false, Color.clear, far);
             }
         }
-        private static readonly int NativeNearId = Shader.PropertyToID("_WireNativeNearMaps");
-        private static readonly int NativeFarId = Shader.PropertyToID("_WireNativeFarMaps");
-        private static readonly int NativeSourceId = Shader.PropertyToID("_WireNativeDepthSource");
         private static readonly int NativeInvRangeId = Shader.PropertyToID("_WireNativeInvRange");
         private static readonly int NativeActiveId = Shader.PropertyToID("_WireNativeActive");
         private static readonly int NativeRangesId = Shader.PropertyToID("_WireNativeInvRanges");
@@ -567,8 +545,6 @@ namespace WiresShadows
 
 
 
-        private static readonly int FrontId = Shader.PropertyToID("_WireFront");
-        private static readonly int BackId = Shader.PropertyToID("_WireBack");
 
         // A staged re-render that won't finish (slot lost, item started rolling).
         private void AbortStage(Tracked t)
@@ -582,7 +558,6 @@ namespace WiresShadows
 
 
         private int _farResolution;
-        private static readonly int FarMapsId = Shader.PropertyToID("_WireFarMaps");
         private static readonly int NearCountId = Shader.PropertyToID("_WireNearCount");
         private Camera _camera;
         private int _resolution;
@@ -976,11 +951,8 @@ namespace WiresShadows
             internal bool Placed;
             internal Vector3 PlacedCenter;
             internal float PlacedRadius;
-            internal bool Handoff; // legacy flag; dropped items now live in cached moving maps
         }
         private static readonly Dictionary<ItemDrop, DropCaster> Drops = new Dictionary<ItemDrop, DropCaster>();
-        // Legacy handoff list stays empty now that settled drops use moving-map caching.
-        private static readonly List<DropCaster> PendingDrops = new List<DropCaster>();
         private static readonly HashSet<Renderer> DropVisuals = new HashSet<Renderer>();
         private static readonly List<DropCaster> PlacedDrops = new List<DropCaster>();
 
@@ -1065,37 +1037,6 @@ namespace WiresShadows
             return d;
         }
 
-        private void UpdateDropHandoffs()
-        {
-            for (int i = PendingDrops.Count - 1; i >= 0; i--)
-            {
-                DropCaster d = PendingDrops[i];
-                if (!d.Handoff || d.Item == null)
-                {
-                    PendingDrops.RemoveAt(i);
-                    continue;
-                }
-                bool waiting = false;
-                Vector3 c = d.Stable ? d.StaticPosition : d.CurrentPosition;
-                foreach (Tracked t in _slots)
-                {
-                    if (t == null || t.Light == null) continue;
-                    float reach = Range(t) + ItemRadius;
-                    if ((t.Center - c).sqrMagnitude <= reach * reach &&
-                        (t.Dirty || t.Face >= 0 || t.DoorFaces != 0))
-                    {
-                        waiting = true;
-                        break;
-                    }
-                }
-                if (!waiting)
-                {
-                    d.Handoff = false;
-                    PendingDrops.RemoveAt(i);
-                }
-            }
-        }
-
         // Removal invalidates affected persistent moving-map faces; never
         // wait on a scheduled static-cubemap rebuild for a picked-up item.
         // Resting items knocked off, moved or no longer placed go back on the every-frame list.
@@ -1119,7 +1060,6 @@ namespace WiresShadows
 
         internal static void DropRemoved(ItemDrop item)
         {
-            WorldVersion++;
             Resting.Remove(item);
             if (System.Object.ReferenceEquals(item, null) || !Drops.TryGetValue(item, out DropCaster d))
             {
@@ -1131,7 +1071,6 @@ namespace WiresShadows
             UnplaceDrop(d);
             if (d.Renderers != null)
                 foreach (Renderer r in d.Renderers) DropVisuals.Remove(r);
-            PendingDrops.Remove(d);
             Drops.Remove(item);
             Items.Remove(item);
         }
@@ -1148,14 +1087,12 @@ namespace WiresShadows
                     MarkDropFaces(d.CurrentPosition);
                     UnplaceDrop(d);
                     foreach (Renderer r in d.Renderers) DropVisuals.Remove(r);
-                    PendingDrops.Remove(d);
                     LostDrops.Add(pair.Key);
                 }
             foreach (ItemDrop it in LostDrops) Drops.Remove(it);
             LostDrops.Clear();
         }
 
-        private static int CountBits(int v) { int n = 0; for (; v != 0; v &= v - 1) n++; return n; }
 
         private static bool Swinging(Animator a)
         {
@@ -1378,7 +1315,6 @@ namespace WiresShadows
 
         internal static void PieceAwake(Piece piece)
         {
-            WorldVersion++;
             if (ZNetView.m_forceDisableInit)
             {
                 Ghosts.Add(piece);
@@ -1400,7 +1336,7 @@ namespace WiresShadows
         // chips of a broken piece, sparks, dust, debris). The cube camera draws every renderer on the
         // layers it looks at (a particle's "no shadows" flag is for Unity's own shadows, not for a
         // camera), so a light re-rendering just after a piece broke froze the flying chips into its
-        // kept map as dots: chips for wood (vfx_SawDust), rocks for stone (vfx_RockDestroyed, mesh
+        // stored map as dots: chips for wood (vfx_SawDust), rocks for stone (vfx_RockDestroyed, mesh
         // particles). Persistent networked objects an effect list spawns are real things, not effects.
         private static readonly List<Renderer> Effects = new List<Renderer>(128);
         private static readonly List<Renderer> EffectScratch = new List<Renderer>(16);
@@ -1418,8 +1354,85 @@ namespace WiresShadows
                 if (nv != null && nv.m_persistent) continue;
                 go.GetComponentsInChildren(true, EffectScratch);
                 Effects.AddRange(EffectScratch);
+                foreach (Renderer r in EffectScratch)
+                    if (r is ParticleSystemRenderer pr)
+                    {
+                        ParticleSystem ps = pr.GetComponent<ParticleSystem>();
+                        Material m = pr.sharedMaterial;
+                        if (ps == null || m == null) continue;
+                        if (Plugin.ParticleShadows && SheetMaterial(m) is Material sheet)
+                        {
+                            if (Particles.Count > 512) Particles.RemoveAll(p => p.R == null);
+                            Particles.Add(new ParticleCaster { R = pr, Ps = ps, Sheet = sheet });
+                        }
+                    }
             }
             EffectScratch.Clear();
+        }
+
+        // ---- Particles ----
+
+        // An effect's particles cast moving shadows (a broken piece's dust and chips, a tree's): drawn
+        // as flat sprites cut out by their texture (WireShadowDistance's WIRESHEET passes), while they
+        // have any particles. Vanilla gives them none.
+        private struct ParticleCaster { internal ParticleSystemRenderer R; internal ParticleSystem Ps; internal Material Sheet; }
+        private static readonly List<ParticleCaster> Particles = new List<ParticleCaster>(64);
+        private static readonly Dictionary<Material, Material> Sheets = new Dictionary<Material, Material>();
+        private static readonly int SheetCutId = Shader.PropertyToID("_WireSheetCut");
+        private static int s_sheetPass = -2, s_sheetGsPass = -2;
+
+        // The sprite's texture, cut hard at the material's own cutoff (sawdust chips); a solid one (a
+        // stone's rock bits) whole. See-through particles (dust clouds) cast none: their shadow was
+        // barely visible and redrawing it every frame cost the most. Null when there's nothing to
+        // cast, or the shader bundle has no sprite pass yet.
+        private static Material SheetMaterial(Material orig)
+        {
+            if (DistanceShader == null) return null;
+            bool cutout = orig.HasProperty("_Cutoff");
+            if (!cutout && orig.GetTag("RenderType", false, "") != "Opaque") return null;
+            if (s_sheetPass == -2)
+            {
+                var probe = new Material(DistanceShader);
+                s_sheetPass = probe.FindPass("WIRESHEET");
+                s_sheetGsPass = SystemInfo.supportsGeometryShaders ? probe.FindPass("WIRESHEETGS") : -1;
+                Object.Destroy(probe);
+            }
+            if (s_sheetPass < 0) return null;
+            if (Sheets.TryGetValue(orig, out Material m) && m != null) return m;
+            Texture tex = orig.HasProperty("_MainTex") ? orig.mainTexture : null;
+            if (tex == null) return null;
+            m = new Material(DistanceShader) { hideFlags = HideFlags.HideAndDontSave, mainTexture = tex,
+                mainTextureScale = orig.mainTextureScale, mainTextureOffset = orig.mainTextureOffset };
+            m.SetFloat(SheetCutId, cutout ? orig.GetFloat("_Cutoff") : 0f);
+            Sheets[orig] = m;
+            return m;
+        }
+
+        private void AddParticleGroups(Vector3 cam, float far2)
+        {
+            for (int i = Particles.Count - 1; i >= 0; i--)
+            {
+                ParticleCaster p = Particles[i];
+                if (p.R == null || p.Ps == null) { Particles[i] = Particles[Particles.Count - 1]; Particles.RemoveAt(Particles.Count - 1); continue; }
+                if (!p.R.enabled || !p.R.gameObject.activeInHierarchy || p.Ps.particleCount == 0) continue;
+                Bounds b = p.R.bounds;
+                if ((b.center - cam).sqrMagnitude > far2) continue;
+                float radius = b.extents.magnitude;
+                if (!LitByAny(b.center, radius)) continue;
+                int start = Casters.Count;
+                Casters.Add(new Caster { R = p.R, B = b, Radius = radius, Subs = 1, Sheet = p.Sheet });
+                if (_groupCount == Groups.Count) Groups.Add(new Group());
+                Group g = Groups[_groupCount++];
+                g.Center = b.center;
+                g.Radius = radius;
+                g.Hash = Time.frameCount; // moving every frame they last
+                g.Character = false;
+                g.Volatile = true;
+                g.Kind = KindDrop;
+                g.Owner = null;
+                g.Start = start;
+                g.Count = 1;
+            }
         }
 
         internal static void PieceGone(Piece piece)
@@ -1443,7 +1456,6 @@ namespace WiresShadows
 
         internal static void PieceChanged(Vector3 position, float settle, Object who)
         {
-            WorldVersion++;
             ShadowCache cache = Instance;
             if (cache == null) return;
             Bounds affected = default;
@@ -1497,6 +1509,9 @@ namespace WiresShadows
                         // A piece placed or broken: its lists are patched, not searched again.
                         if (t.DoorPrepared && s_placed != null) t.AddedRoots.Add(s_placed);
                         else if (t.DoorPrepared && s_broken) t.ProxiesStale = true;
+                        // a machine's moving parts (a spinning wheel, a refinery): the piece itself
+                        // came in as placed, and its sorting hides them (SortRoot); nothing to search
+                        else if (t.DoorPrepared && s_machine) { }
                         else t.DoorPrepared = false;
                         // in view: its faces next frame, together, not one a frame after the rest
                         if (frustum && InView(t)) t.Urgent = true;
@@ -1548,7 +1563,6 @@ namespace WiresShadows
             PendingStands.Clear();
             StandVisuals.Clear();
             Drops.Clear();
-            PendingDrops.Clear();
             DropVisuals.Clear();
             PlacedDrops.Clear();
             LostDrops.Clear();
@@ -1739,18 +1753,6 @@ namespace WiresShadows
             }
             _camera.cullingMask = StaticLayerMask = StaticMask();
             return true;
-        }
-
-        private static int MovingMask()
-        {
-            int mask = 0;
-            foreach (string name in new[] { "character", "character_net", "character_ghost", "character_noenv", "item", "ragdoll" })
-            {
-                int layer = LayerMask.NameToLayer(name);
-                if (layer >= 0)
-                    mask |= 1 << layer;
-            }
-            return mask;
         }
 
 
@@ -1984,6 +1986,7 @@ namespace WiresShadows
                         t.DirtyAt = Time.time;
                     }
                 SizePoolsForWaiting();
+                CompactPools();
             }
             }
             finally
@@ -1996,7 +1999,6 @@ namespace WiresShadows
 
         private const float OffscreenWeight = 3f;
         private const float ScreenWeight = 4f;
-        private const float TierMargin = 4f;
 
         // A free slot in [from, to), else (if allowed) one whose light
         // matters clearly less, released. -1 if none.
@@ -2276,7 +2278,7 @@ namespace WiresShadows
                 _dynFacesLast[t.Slot] = 0;
                 _nativeMovingActive[t.Slot] = 0f;
                 FreeDynSlot(t.Slot);
-                KeepOrFree(t, t.Slot); // a finished map is kept for when this light comes back (Keep)
+                FreeSlotMap(t.Slot);
             }
             if (t.Ready) t.ReleasedFrame = Time.frameCount;
             AbortStage(t);
@@ -3110,6 +3112,7 @@ namespace WiresShadows
                 foreach (int k in FaceRenderers)
                 {
                     Caster c = Casters[k];
+                    if (c.Sheet != null) { _frameCb.DrawRenderer(c.R, c.Sheet, 0, s_sheetPass); continue; }
                     for (int sub = 0; sub < c.Subs; sub++)
                         _frameCb.DrawRenderer(c.R, _distMaterial, sub, 0);
                 }
@@ -3126,6 +3129,12 @@ namespace WiresShadows
                 {
                     Caster c = Casters[k];
                     _frameCb.SetGlobalFloat(FaceMaskId, GsMask[k]);
+                    if (c.Sheet != null)
+                    {
+                        // its sprite pass, one draw for all its faces (none on a GPU without geometry shaders)
+                        if (s_sheetGsPass >= 0) _frameCb.DrawRenderer(c.R, c.Sheet, 0, s_sheetGsPass);
+                        continue;
+                    }
                     for (int sub = 0; sub < c.Subs; sub++)
                         _frameCb.DrawRenderer(c.R, _distMaterial, sub, s_gsPass);
                 }
@@ -3164,6 +3173,7 @@ namespace WiresShadows
             internal Bounds B;
             internal int Subs;
             internal float Radius;
+            internal Material Sheet;     // a particle system: drawn as cut-out sprites (WIRESHEET)
             // Bounding radius is identical for all lights in this frame.
             internal int Faces(Vector3 lp) => FacesFor(B.center - lp, Radius);
         }
@@ -3455,7 +3465,6 @@ namespace WiresShadows
                     d.StaticPosition = pos;
                     d.StaticRotation = tr.rotation;
                 }
-                d.Handoff = false;
                 d.CurrentPosition = pos;
                 d.CurrentRotation = tr.rotation;
                 // Fixed, settled dropped meshes keep exactly the same world
@@ -3477,6 +3486,16 @@ namespace WiresShadows
                 AddGroup(_ghostCenter, _ghostRadius, _ghostHash, false, _ghostRenderers, true, KindGhost); // honor source prefab's shadow exclusions
             foreach (Swing w in Swings)
                 AddGroup(w.Center, w.Radius, Time.frameCount, false, w.Renderers, false, KindSwing); // moving every frame of the swing
+            AddParticleGroups(cam, far2);
+            // a broken piece's falling chunks, for the few seconds they last
+            for (int i = Fragments.Count - 1; i >= 0; i--)
+            {
+                Renderer[] rs = Fragments[i];
+                if (rs[0] == null) { Fragments[i] = Fragments[Fragments.Count - 1]; Fragments.RemoveAt(Fragments.Count - 1); continue; }
+                Bounds b = rs[0].bounds;
+                if ((b.center - cam).sqrMagnitude > far2) continue;
+                AddGroup(b.center, b.extents.magnitude, Time.frameCount, false, rs, true, KindDrop);
+            }
             AddMachineGroups(cam, far);
             // A mounted item participates in the moving map ONLY during
             // the short static-cache handoff, like a closing gate.
@@ -3486,6 +3505,23 @@ namespace WiresShadows
                     (s.Center - cam).sqrMagnitude <
                         (far + s.Radius) * (far + s.Radius))
                     AddStandGroup(s);
+        }
+
+        // The chunks a broken piece falls apart into (Destructible.CreateFragments): copies of its
+        // own models with its materials and a physics body, on the "effect" layer (which the static
+        // maps never draw), each given 2 to 4 s (TimedDestruction). Vanilla Unity shadows them, so the
+        // moving maps do too while they fall.
+        private static readonly List<Renderer[]> Fragments = new List<Renderer[]>(32);
+        private static readonly int EffectLayer = LayerMask.NameToLayer("effect");
+
+        internal static void Timed(TimedDestruction td)
+        {
+            GameObject go = td.gameObject;
+            if (go.layer != EffectLayer || go.GetComponent<ZNetView>() != null || go.GetComponent<Rigidbody>() == null) return;
+            MeshRenderer r = go.GetComponent<MeshRenderer>();
+            if (r == null) return;
+            if (Fragments.Count > 256) Fragments.RemoveAll(rs => rs[0] == null);
+            Fragments.Add(new Renderer[] { r });
         }
 
         private void AddStandGroup(StandCaster s)
@@ -3795,7 +3831,7 @@ namespace WiresShadows
         private static float _fillUntil = -10f;
         private const float FillSeconds = 8f;
         // After arriving: maps that have to be built go at the usual one face a frame, spread out
-        // (kept maps of an unchanged base come back without any, Keep). It was three a frame,
+        // each fading in as it finishes (FinishMap). It was three a frame,
         // a couple of seconds of lag on getting home.
         private const int FillFacesPerFrame = 1;
         private const int UrgentFacesPerFrame = 6;
@@ -3869,32 +3905,6 @@ namespace WiresShadows
                     return;
                 // Every render goes into a new cube of its own (Tiers): the old map stays on screen
                 // until the new one is done, so none waits for another.
-                if (_tiered)
-                {
-                    // Its map from before it unloaded, if nothing in its reach changed (Keep).
-                    Vector3 c0 = RestingPosition(t.Light);
-                    float r0 = Mathf.Max(1f, Range(t));
-                    // Nothing built, broken, dropped or opened anywhere since its last fingerprint
-                    // and it hasn't moved (a size change): the same one, no search.
-                    int hash = t.Ready && t.CasterHash != 0 && t.HashVersion == WorldVersion && t.HashCenter == c0
-                        ? t.CasterHash : CasterHash(c0, r0);
-                    t.HashVersion = WorldVersion;
-                    t.HashCenter = c0;
-                    if (!t.Ready && TryReuseKept(t, c0, r0, hash))
-                    {
-                        t.Dirty = false;
-                        t.Face = -1;
-                        t.Staged = false;
-                        t.Ready = true;
-                        t.Fade = 1f;
-                        t.RootPos = t.Light.transform.root.position;
-                        t.RootRot = t.Light.transform.root.rotation;
-                        if (t.PromotionFrom != null) CompleteNearPromotion(t);
-                        else UpdateGlobals();
-                        return;
-                    }
-                    t.PendingHash = hash;
-                }
                 if (!StartTierRender(t))
                 {
                     t.DirtyAt = Time.time + 0.25f; // no room yet: tried again (oversized maps are shrinking)
@@ -3944,7 +3954,7 @@ namespace WiresShadows
                 r.forceRenderingOff = true;
                 ChangedForceOff.Add(r);
             }
-            // the game's passing effects (dust, chips, sparks) are never part of a kept map
+            // the game's passing effects (dust, chips, sparks) are never part of a stored map
             Effects.RemoveAll(r => r == null);
             foreach (Renderer r in Effects)
             {
@@ -3990,8 +4000,11 @@ namespace WiresShadows
                 // the new cube on screen, the old one freed
                 PublishTierMap(t);
                 t.Staged = false;
+                // a new map fades in (over a second, Update), also the ones built after a portal or a
+                // world load (behind the loading screen they fade there, unseen); a light just lit
+                // (Instant) shows at once, in step with its own light fading in
                 if (!t.Ready || t.Instant)
-                    t.Fade = !t.Ready && !t.Instant && !Loading() ? 0f : 1f;
+                    t.Fade = t.Instant ? 1f : 0f;
                 t.Instant = false;
                 t.Ready = true;
                 if (t.PromotionFrom != null)
@@ -4135,6 +4148,12 @@ namespace WiresShadows
             {
                 if (r.forceRenderingOff)
                     continue;
+                // a machine's moving parts (the moving maps draw them) and a swinging door's
+                if (MachineHidden.Contains(r) || SwingHidden.Contains(r))
+                {
+                    t.Hide.Add(r);
+                    continue;
+                }
                 if (StandVisuals.Contains(r) || DropVisuals.Contains(r) ||
                     flat || looseItem || SeeThrough(r))
                     t.Hide.Add(r);
@@ -4280,19 +4299,32 @@ namespace WiresShadows
         // pass gets LOD 0 by the forced bias, but the explicit and two-sided passes draw
         // every renderer they're given, so these are left out there: the spice rack's
         // simplified model (flat cards) was being drawn over its detailed one.
+        // Asked for every renderer in a light's reach each time it searches (thousands at a base), and
+        // GetLODs makes a new array each call: worked out once per renderer and kept (a piece's LOD
+        // setup never changes; ids aren't reused in a session).
         private static readonly List<LODGroup> s_lodGroups = new List<LODGroup>();
+        private static readonly Dictionary<int, bool> FarLods = new Dictionary<int, bool>(4096);
         private static bool FarLod(Renderer r)
         {
+            int id = r.GetInstanceID();
+            if (FarLods.TryGetValue(id, out bool far)) return far;
+            if (FarLods.Count >= 1 << 16) FarLods.Clear();
             r.GetComponentsInParent(true, s_lodGroups);
-            if (s_lodGroups.Count == 0) return false;
-            LOD[] lods = s_lodGroups[0].GetLODs();
-            if (lods.Length < 2) return false;
-            foreach (Renderer l in lods[0].renderers)
-                if (l == r) return false;
-            for (int i = 1; i < lods.Length; i++)
-                foreach (Renderer l in lods[i].renderers)
-                    if (l == r) return true;
-            return false;
+            if (s_lodGroups.Count > 0)
+            {
+                LOD[] lods = s_lodGroups[0].GetLODs();
+                // every renderer of this group at once: the rest of it is asked about next
+                for (int i = 0; i < lods.Length; i++)
+                    foreach (Renderer l in lods[i].renderers)
+                        if (l != null)
+                        {
+                            int lid = l.GetInstanceID();
+                            if (i == 0) FarLods[lid] = false; // in LOD 0: never far
+                            else if (!FarLods.ContainsKey(lid)) FarLods[lid] = lods.Length >= 2;
+                        }
+            }
+            if (!FarLods.TryGetValue(id, out far)) FarLods[id] = far = false;
+            return far;
         }
 
         private static bool OwnShades(Tracked t) =>
@@ -4450,7 +4482,6 @@ namespace WiresShadows
     {
         private static void Postfix(ItemDrop __instance)
         {
-            ShadowCache.WorldVersion++;
             ShadowCache.RegisterPiece(__instance);
             ShadowCache.Items.Add(__instance);
             var lifecycle = __instance.GetComponent<DropLifecycle>();
@@ -4553,7 +4584,7 @@ namespace WiresShadows
         // Re-render once the door has swung.
         private static void Postfix(Door __instance, bool __state)
         {
-            if (__state) { ShadowCache.WorldVersion++; ShadowCache.DoorMoved(__instance); }
+            if (__state) ShadowCache.DoorMoved(__instance);
         }
     }
 
@@ -4591,6 +4622,12 @@ namespace WiresShadows
     internal static class PieceDestroy
     {
         private static void Prefix(Piece __instance) => ShadowCache.PieceGone(__instance);
+    }
+
+    [HarmonyPatch(typeof(TimedDestruction), nameof(TimedDestruction.Trigger), new System.Type[] { typeof(float) })]
+    internal static class FragmentMade
+    {
+        private static void Postfix(TimedDestruction __instance) => ShadowCache.Timed(__instance);
     }
 
     [HarmonyPatch(typeof(EffectList), nameof(EffectList.Create))]

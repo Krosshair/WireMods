@@ -23,8 +23,31 @@ namespace WiresShadows
             float now = Time.time;
             if (Areas.TryGetValue(zone, out AreaState s) && now - s.At < AreaRecheck) return s.Ready;
             if (Areas.Count > 256) Areas.Clear();
-            bool ready = ZNetScene.instance.IsAreaReady(p);
+            bool ready = AreaReady(p, zone);
             Areas[zone] = new AreaState { Ready = ready, At = now };
+            return ready;
+        }
+
+        // The game's ZNetScene.IsAreaReady, with a list of its own. The game's fills ZNetScene's own
+        // working list (m_tempCurrentObjects), the one its streaming is in the middle of using while
+        // it creates objects (CreateDestroyObjects: create from it, then remove whatever isn't on it),
+        // and a light switching on as its piece appears renders at once (LightLod.OnEnable), from
+        // inside that. Emptied and refilled with a smaller area there, the game removed everything
+        // that had dropped off it and streamed it back in: pieces vanishing and coming back.
+        private static readonly List<ZDO> AreaObjects = new List<ZDO>();
+        private static readonly System.Func<ZNetScene, ZDO, bool> PrefabValid =
+            HarmonyLib.AccessTools.MethodDelegate<System.Func<ZNetScene, ZDO, bool>>(HarmonyLib.AccessTools.Method(typeof(ZNetScene), "IsPrefabZDOValid"));
+        private static bool AreaReady(Vector3 p, Vector2s zone)
+        {
+            ZNetScene scene = ZNetScene.instance;
+            if (ZDOMan.instance == null) return true;
+            if (!ZoneSystem.instance.IsZoneLoaded(zone)) return false;
+            AreaObjects.Clear();
+            ZDOMan.instance.FindSectorObjects(zone, new SimulationDistance(1, 0), AreaObjects);
+            bool ready = true;
+            foreach (ZDO zdo in AreaObjects)
+                if (PrefabValid(scene, zdo) && scene.FindInstance(zdo) == null) { ready = false; break; }
+            AreaObjects.Clear();
             return ready;
         }
 

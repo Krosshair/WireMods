@@ -110,9 +110,12 @@ namespace WiresShadows
             Machines.Add(m);
             if (smelter != null) MachineBySmelter[smelter] = m;
             foreach (Renderer r in m.Renderers) MachineHidden.Add(r);
-            // Its cached maps were made with the parts in; take them out.
+            // Its cached maps were made with the parts in; take them out (redrawn, not searched again).
+            s_machine = true;
             PieceChanged(m.Center, owner);
+            s_machine = false;
         }
+        private static bool s_machine;
 
         private static void CacheRestMachineGeometry(Machine m)
         {
