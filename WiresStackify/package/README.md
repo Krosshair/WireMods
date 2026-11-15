@@ -28,6 +28,16 @@ Quick stack, restock and sort, all from one little pouch that sits right next to
 * Items you pick up skip favorited slots unless there's nowhere else to put them (they still stack onto what's already there).
 * Coming from Quick Stack Store? Me too! Your favorites come along the first time you load in.
 
+## Inventory mouse controls
+
+* **Ctrl + left click:** drop a whole stack, or move it to the other inventory with a container open. Favorited items and slots are protected. Hold Ctrl + left click and drag over other stacks to move them too.
+* **Right click while holding a stack:** place one item into the slot. Hold right click and drag across slots to distribute one per slot, including favorited slots.
+* **Shift + right click on a stack:** pick up half (rounded up) without a split dialog, but only while you're not holding W, A, S or D. You can still use food and potions while moving.
+* **Shift + right click while already holding a stack:** place half of what you're holding.
+* **Double left click:** gather matching items into the stack you're holding, up to its limit.
+* **Number keys 1–8 while hovering an item:** swap it with that hotbar slot, even if favorited.
+* **Scroll down over or while holding an item:** transfer one to the other open inventory. **Scroll up:** bring one matching item back. No transfers between slots of the same inventory.
+
 ## Feels good
 
 * Every container you stack into or take from opens with its own sound, one after another, with a burst of sparks (blue ones when restocking).
