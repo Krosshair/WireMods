@@ -1,3 +1,9 @@
+## 0.1.11
+- New: Flicker culling (General, on by default). Lights more than 15 metres from you stop flickering, as do lights whose entire reach is out of view. Their brightness holds steady until nearby and visible again; fades and flashing-light accessibility settings remain supported. The distance is adjustable.
+- Fixed: A placed feast or other food could leave its shadow behind briefly after being broken or removed. Visible affected faces now get priority within the existing redraw budget, without scanning all nearby geometry again.
+- Less CPU work around large moving objects: oversized moving shadow casters no longer expand the search around every light. The original shadows are preserved.
+- More reliable cached shadows: a failed cube face is no longer marked finished, and temporary rendering settings are restored even if a render fails.
+- The experimental indirect renderer is not included in this stable release. Tiled lighting remains optional and unchanged.
 ## 0.1.10
 - Less lag placing and breaking: the shadow updates round a change no longer all run inside that one frame (up to 12 ms seen); a little each frame instead, nearest first. Lights out of view update when they come into view.
 - Fixed: picking up or eating placed food lagged like placing a feast did: every light round it searched everything in its reach again.

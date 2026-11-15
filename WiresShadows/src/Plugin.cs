@@ -13,13 +13,12 @@ namespace WiresShadows
     // Swaps Valheim's deferred lighting shader for a rebuilt copy that reads
     // cached shadow maps (ShadowCache) for the nearest point lights.
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(VpoCompat.Guid, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInProcess("valheim.exe")]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.1.10";
+        public const string Version = "0.1.11";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -45,6 +44,8 @@ namespace WiresShadows
         internal static ConfigEntry<bool> Benchmark;
         internal static ConfigEntry<bool> DebugLog;
         internal static ConfigEntry<bool> TiledLights;
+        internal static ConfigEntry<bool> FlickerCulling;
+        internal static ConfigEntry<float> FlickerDistance;
         internal static ConfigEntry<bool> TimingLog;
         internal static bool BenchRunning; // the log is on while the benchmark runs
         internal static bool Debug => BenchRunning || (DebugLog != null && DebugLog.Value);
@@ -94,6 +95,11 @@ namespace WiresShadows
                 "Measures the mod against vanilla where you stand (about a minute) and shows the frame times. Resets itself.");
             TiledLights = Setting("General", "Tiled lights", false,
                 "Experimental. Every point light in one pass instead of one pass each. Off: the game's way, one at a time.");
+            FlickerCulling = Setting("General", "Flicker culling", true,
+                "Skip brightness flicker for distant and completely off-screen lights; preserve TTL/fade/accessibility.");
+            FlickerDistance = Setting("General", "Flicker distance", 15f,
+                new ConfigDescription("Maximum source-to-camera distance (metres) for animated brightness flicker. Complete light influence must also intersect camera view.",
+                    new AcceptableValueRange<float>(0f, 250f)));
             TimingLog = Setting("General", "Timing log", false,
                 "Every 5 seconds, what the mod's own work costs per frame (average and worst), in the log (BepInEx/LogOutput.log).");
             DebugLog = Setting("General", "Debug log", false,
@@ -154,8 +160,6 @@ namespace WiresShadows
             else
                 Logger.LogError("[firelight] Could not verify LightFlicker positional-jitter patch; some fire shadows may still wobble.");
 
-            // VPO's flicker culling freezes shadow movement for lights outside the view.
-            VpoCompat.Remove(_harmony, Logger, AccessTools.Method(typeof(LightFlicker), "Awake"), "ValheimPerformanceOptimizations.Patches.VPOLightFlicker");
 
             gameObject.AddComponent<ShadowCache>();
             UseShader.SettingChanged += (_, __) => { Apply(); AmbientOcclusion.Apply(); };

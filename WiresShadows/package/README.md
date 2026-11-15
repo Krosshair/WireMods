@@ -23,12 +23,15 @@ Wire's Shadows first, vanilla second.
 
 ## Limitations
 
-* **No fire wiggle.** In vanilla a fire's light shakes around a little. A cached shadow is rendered from one spot, so here the light holds still. Its brightness still flickers.
+* **No fire wiggle.** In vanilla a fire's light shakes around a little. A cached shadow is rendered from one spot, so here the light holds still. Its brightness still flickers while the light is nearby and visible (flicker culling is adjustable in General).
 * **No swaying shadows.** Banners, hanging cloth and herbs cast their shadow at rest, not moving with the wind.
 
 ## Settings
 
 * **Enabled:** off brings back the game's own lighting and shadows.
+* **Flicker culling:** on by default. Stops unnecessary brightness flicker calculations for lights beyond the configured distance or whose full light influence is off screen. Those lights hold steady brightness; nearby visible lights keep their normal flicker. Light lifetime, fades and reduced-flashing settings are preserved.
+* **Flicker distance:** 15 metres by default, measured from your player. Changing this setting does not change shadow or illumination range.
+* **Tiled lights:** off by default; the optional batched lighting path remains available.
 * **Debug log:** off by default. Writes what the mod does to the log; turns itself on while a benchmark runs.
 * **Benchmark:** measures the mod against vanilla where you stand (the full mod, the mod with every moving shadow redrawn every frame, the cached shadows alone, the cached shadows with the game's own moving shadows, and vanilla) and shows the frame times.
 

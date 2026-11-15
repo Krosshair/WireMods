@@ -1020,6 +1020,9 @@ namespace WiresShadows
         {
             ShadowCache c = Instance;
             if (c == null || !c._active) return;
+            // An item disappearing must update its visible cached faces urgently.
+            Camera viewer = Utils.GetMainCamera();
+            if (viewer != null) GeometryUtility.CalculateFrustumPlanes(viewer, FillFrustum);
             foreach (Tracked t in c._slots)
             {
                 if (t == null || t.Light == null) continue;
@@ -1034,7 +1037,9 @@ namespace WiresShadows
                     t.DoorPrepared = false;
                     continue;
                 }
-                t.DoorFaces |= FacesFor(d.PlacedCenter - t.Center, d.PlacedRadius); Timing.Count(Timing.Part.ByFood);
+                int affectedFaces = FacesFor(d.PlacedCenter - t.Center, d.PlacedRadius);
+                t.DoorFaces |= affectedFaces; Timing.Count(Timing.Part.ByFood);
+                if (affectedFaces != 0 && viewer != null && InView(t)) t.Urgent = true;
                 if (!t.DoorPrepared || d.Renderers == null) continue;
                 for (int i = t.Explicit.Count - 1; i >= 0; i--)
                     if (System.Array.IndexOf(d.Renderers, t.Explicit[i]) >= 0)
@@ -3360,10 +3365,12 @@ namespace WiresShadows
             for (int g = 0; g < _groupCount; g++)
             {
                 Group group = Groups[g];
-                MovingGridMaxRadius = Mathf.Max(MovingGridMaxRadius, group.Radius);
+                // Oversized groups go into overflow for every light, never enlarge ordinary grid queries.
+                bool oversized = group.Radius > MovingGridSize;
+                if (!oversized) MovingGridMaxRadius = Mathf.Max(MovingGridMaxRadius, group.Radius);
                 int x = Mathf.FloorToInt((group.Center.x - MovingGridX) / MovingGridSize);
                 int z = Mathf.FloorToInt((group.Center.z - MovingGridZ) / MovingGridSize);
-                if (x < 0 || x >= MovingGridWidth || z < 0 || z >= MovingGridWidth)
+                if (oversized || x < 0 || x >= MovingGridWidth || z < 0 || z >= MovingGridWidth)
                 {
                     MovingGridOverflow.Add(g);
                     continue;
@@ -3795,8 +3802,22 @@ namespace WiresShadows
                 Camera viewCam = fillCam ?? Utils.GetMainCamera();
                 if (fillCam == null && viewCam != null)
                     GeometryUtility.CalculateFrustumPlanes(viewCam, FillFrustum);
+                // Allow a visible completed-map food/piece removal to take the existing
+                // urgent bounded face path before an unfinished staged cube.
+                Tracked visibleUrgent = null;
+                if (viewCam != null)
+                    foreach (Tracked candidate in _slots)
+                        if (candidate != null && candidate.Light != null && candidate.Ready &&
+                            candidate.Face < 0 && !candidate.Dirty && candidate.Urgent &&
+                            candidate.DoorFaces != 0 && InView(candidate))
+                        {
+                            visibleUrgent = candidate;
+                            break;
+                        }
                 bool jobInView = false;
                 float jobRank = float.MaxValue;
+                if (visibleUrgent != null) job = visibleUrgent;
+                else
                 foreach (Tracked t in _slots)
                 {
                     if (t == null || t.Light == null)
@@ -3911,15 +3932,20 @@ namespace WiresShadows
             int face = 0;
             while ((t.DoorFaces & (1 << face)) == 0) face++;
             t.Face = face;
-            DrawFace(t);
+            bool success = DrawFace(t, true);
             t.Face = -1;
-            t.DoorFaces &= ~(1 << face);
+            if (success) t.DoorFaces &= ~(1 << face);
         }
 
         private void RenderNow(Tracked t)
         {
             t.Dirty = true;
-            do RenderFace(t); while (t.Face >= 0 && t.Light != null);
+            do
+            {
+                int oldFace = t.Face;
+                RenderFace(t);
+                if (oldFace == t.Face) break;
+            } while (t.Face >= 0 && t.Light != null);
         }
 
         private static float _arrivalStreamUntil = -10f;
@@ -4026,7 +4052,7 @@ namespace WiresShadows
                 t.RootRot = t.Light.transform.root.rotation;
                 if (!sameCasters) FindCasters(t);
             }
-            DrawFace(t);
+            if (!DrawFace(t)) return;
             if (++t.Face >= 6)
                 FinishMap(t);
         }
@@ -4037,11 +4063,16 @@ namespace WiresShadows
         private static readonly List<Renderer> ChangedShadowMode = new List<Renderer>();
         private static readonly List<ShadowCastingMode> PriorShadowModes = new List<ShadowCastingMode>();
 
-        private void DrawFace(Tracked t) { long t0 = Timing.Start(); DrawFaceCore(t); Timing.Stop(Timing.Part.Face, t0); }
-        private void DrawFaceCore(Tracked t)
+        private bool DrawFace(Tracked t, bool partial = false)
+        {
+            long start = Timing.Start();
+            try { return DrawFaceCore(t); }
+            finally { Timing.Stop(Timing.Part.Face, start); }
+        }
+        private bool DrawFaceCore(Tracked t)
         {
             // sized maps: nothing to draw into (no render cube and none on screen)
-            if (_tiered && t.RenderCube < 0 && (t.Slot < 0 || _mapTier[t.Slot] < 0f)) return;
+            if (_tiered && t.RenderCube < 0 && (t.Slot < 0 || _mapTier[t.Slot] < 0f)) return false;
             _camera.transform.position = t.Center;
             // The near plane is cut as a sphere in the shaders (with the
             // colliders drawn inside it), so the camera starts at the light.
@@ -4082,20 +4113,27 @@ namespace WiresShadows
             // small target), which swapped detailed pieces (the spice rack's herbs and frame)
             // for their simplified LOD in the cached shadow.
             float lodBias = QualitySettings.lodBias;
-            QualitySettings.lodBias = 10000f;
-            DrawUntaggedOnePass(t);
-            bool ok = _camera.RenderToCubemap(_tierRG[tierNow], 1 << t.Face);
-            QualitySettings.lodBias = lodBias;
-            Shader.SetGlobalFloat(NearCutId, 0f);
-            _staticCb.Clear();
-            foreach (Renderer r in ChangedForceOff)
-                if (r != null) r.forceRenderingOff = false;
-            for (int i = 0; i < ChangedShadowMode.Count; i++)
-                if (ChangedShadowMode[i] != null)
-                    ChangedShadowMode[i].shadowCastingMode = PriorShadowModes[i];
-            if (!ok) return;
-            Graphics.CopyTexture(_tierRG[tierNow], t.Face, 0, _tierFlatRG[tierNow], 0, 0);
-            TierFaceOnePass(t, t.Face, rendering);
+            try
+            {
+                QualitySettings.lodBias = 10000f;
+                DrawUntaggedOnePass(t);
+                if (!_camera.RenderToCubemap(_tierRG[tierNow], 1 << t.Face))
+                    return false;
+                Graphics.CopyTexture(_tierRG[tierNow], t.Face, 0, _tierFlatRG[tierNow], 0, 0);
+                TierFaceOnePass(t, t.Face, rendering);
+                return true;
+            }
+            finally
+            {
+                QualitySettings.lodBias = lodBias;
+                Shader.SetGlobalFloat(NearCutId, 0f);
+                _staticCb.Clear();
+                foreach (Renderer r in ChangedForceOff)
+                    if (r != null) r.forceRenderingOff = false;
+                for (int i = 0; i < ChangedShadowMode.Count; i++)
+                    if (ChangedShadowMode[i] != null)
+                        ChangedShadowMode[i].shadowCastingMode = PriorShadowModes[i];
+            }
         }
 
         private void FinishMap(Tracked t)
