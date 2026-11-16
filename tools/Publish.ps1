@@ -122,7 +122,12 @@ if (-not $SkipBuild) {
     } finally { Pop-Location }
     foreach ($dll in Get-ChildItem -Path $PkgDir -Filter *.dll) {
         $built = Join-Path $SrcDir "bin\Release\net472\$($dll.Name)"
-        if (-not (Test-Path $built)) { Fail "Built $($dll.Name) not found at $built" }
+        if (-not (Test-Path $built)) {
+            # WiresDLSS ships the signed upstream NVIDIA native DLLs as package assets.
+            # They are redistributables, not .NET project outputs.
+            if ($Mod -eq "WiresDLSS" -and $dll.Name -in @("NVUnityPlugin.dll", "nvngx_dlss.dll")) { continue }
+            Fail "Built $($dll.Name) not found at $built"
+        }
         if (-not $DryRun) { Copy-Item $built $dll.FullName -Force }
     }
 }
@@ -190,7 +195,12 @@ function Publish-TsLike($site, $api, $team, $tokenName, $categories) {
         }
         Invoke-RestMethod -Uri "$api/submission/submit/" -Method Post -Headers $h -ContentType 'application/json' `
             -Body ($body | ConvertTo-Json -Depth 5) | Out-Null
-        return 'published'
+        # Successful submit can still be rejected; check public community status.
+        $post = Invoke-RestMethod -Uri "$api/package/$team/$PkgName/" -Method Get
+        $listing = @($post.community_listings | Where-Object { $_.community -eq $Config.community }) | Select-Object -First 1
+        if ($listing.review_status -eq 'rejected') { return "FAILED: uploaded but REJECTED from $($Config.community) listing (check Thunderstore moderation reason)" }
+        if ($listing.review_status -eq 'approved') { return 'published and approved' }
+        return "uploaded, not publicly approved yet (status: $($listing.review_status))"
     } catch {
         try { Invoke-RestMethod -Uri "$api/usermedia/$uuid/abort-upload/" -Method Post -Headers $h -ContentType 'application/json' -Body '{}' | Out-Null } catch {}
         return "FAILED: $($_.Exception.Message) $($_.ErrorDetails.Message)"
@@ -240,7 +250,12 @@ function Publish-Nexus {
             -Body ($body | ConvertTo-Json) | Out-Null
         Invoke-RestMethod -Uri "$api/mods/$($modInfo.data.id)/changelogs" -Method Post -Headers $h -ContentType 'application/json' `
             -Body (@{ version = $Ver; changelog = $NexusChangelog } | ConvertTo-Json) | Out-Null
-        return 'published'
+        # Successful submit can still be rejected; check public community status.
+        $post = Invoke-RestMethod -Uri "$api/package/$team/$PkgName/" -Method Get
+        $listing = @($post.community_listings | Where-Object { $_.community -eq $Config.community }) | Select-Object -First 1
+        if ($listing.review_status -eq 'rejected') { return "FAILED: uploaded but REJECTED from $($Config.community) listing (check Thunderstore moderation reason)" }
+        if ($listing.review_status -eq 'approved') { return 'published and approved' }
+        return "uploaded, not publicly approved yet (status: $($listing.review_status))"
     } catch { return "FAILED: $($_.Exception.Message) $($_.ErrorDetails.Message)" }
 }
 
@@ -253,7 +268,13 @@ function Publish-GitHub {
         $tag = "$Mod-v$Ver"
         if ((& git tag --list $tag)) { return "skipped: tag $tag already exists" }
         if ($DryRun) { return "ok (dry run): would commit, tag $tag and create a GitHub release" }
-        & git add -A "$Mod" tools | Out-Null
+        if ($Mod -eq "WiresDLSS") {
+            # Release only source and metadata. Never commit private FG experiments,
+            # downloaded toolchains or oversized native DLLs into Git history.
+            & git add -A -- "WiresDLSS/src/*.cs" "WiresDLSS/src/*.csproj" "WiresDLSS/package/README.md" "WiresDLSS/package/manifest.json" "WiresDLSS/package/icon.png" "WiresDLSS/package/NVIDIA-LICENSE.txt" "WiresDLSS/package/UninstallNative.cmd" "WiresDLSS/package/UninstallNative.ps1" tools/Publish.ps1 tools/mods.json | Out-Null
+        } else {
+            & git add -A "$Mod" tools | Out-Null
+        }
         & git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { & git commit -q -m "$Mod $Ver" | Out-Null }
         & git tag $tag
         # GitHub may have changes made on the website (uploaded images). Bring
