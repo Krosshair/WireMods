@@ -12,25 +12,19 @@ namespace WiresHoodToggle
         private static readonly int HiddenKey =
             "wire.hoodtoggle.lowered".GetStableHashCode();
 
-        private static readonly FieldInfo HelmetInstanceField =
-            AccessTools.Field(
-                typeof(VisEquipment),
-                "m_helmetItemInstance");
+        // Direct field access: these are read for every player every frame,
+        // and reflection boxed the hash into garbage each time.
+        private static readonly AccessTools.FieldRef<VisEquipment, GameObject> HelmetInstance =
+            AccessTools.FieldRefAccess<VisEquipment, GameObject>("m_helmetItemInstance");
 
-        private static readonly FieldInfo CurrentHelmetHashField =
-            AccessTools.Field(
-                typeof(VisEquipment),
-                "m_currentHelmetItemHash");
+        private static readonly AccessTools.FieldRef<VisEquipment, int> CurrentHelmetHash =
+            AccessTools.FieldRefAccess<VisEquipment, int>("m_currentHelmetItemHash");
 
-        private static readonly FieldInfo NViewField =
-            AccessTools.Field(
-                typeof(VisEquipment),
-                "m_nview");
+        private static readonly AccessTools.FieldRef<VisEquipment, ZNetView> NView =
+            AccessTools.FieldRefAccess<VisEquipment, ZNetView>("m_nview");
 
-        private static readonly FieldInfo EquippedHelmetField =
-            AccessTools.Field(
-                typeof(Humanoid),
-                "m_helmetItem");
+        private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData> EquippedHelmet =
+            AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData>("m_helmetItem");
 
         private static readonly MethodInfo
             UpdateEquipmentVisualsMethod =
@@ -73,8 +67,7 @@ namespace WiresHoodToggle
                 return;
             }
 
-            ItemDrop.ItemData helmet = EquippedHelmetField?.GetValue(player)
-                as ItemDrop.ItemData;
+            ItemDrop.ItemData helmet = EquippedHelmet(player);
 
             if (player != _trackedPlayer)
             {
@@ -145,8 +138,7 @@ namespace WiresHoodToggle
                 !(HelmetToggleAnimation.Pending ? !zdo.GetBool(HiddenKey, false) : zdo.GetBool(HiddenKey, false));
 
             ItemDrop.ItemData helmetItem =
-                EquippedHelmetField?.GetValue(player)
-                as ItemDrop.ItemData;
+                EquippedHelmet(player);
 
             if (helmetItem == null)
                 return;
@@ -166,7 +158,7 @@ namespace WiresHoodToggle
             if (zdo == null)
                 return;
             ItemDrop.ItemData helmetItem =
-                EquippedHelmetField?.GetValue(player) as ItemDrop.ItemData;
+                EquippedHelmet(player);
 
             zdo.Set(HiddenKey, hidden);
             SavedHelmetStates.SetHidden(player.GetPlayerID(), hidden);
@@ -215,9 +207,7 @@ namespace WiresHoodToggle
         {
             if (vis == null ||
                 !vis.m_isPlayer ||
-                vis.m_isArmorStand ||
-                HelmetInstanceField == null ||
-                CurrentHelmetHashField == null)
+                vis.m_isArmorStand)
                 return;
 
             int id = vis.GetInstanceID();
@@ -231,8 +221,7 @@ namespace WiresHoodToggle
             }
 
             GameObject helmet =
-                HelmetInstanceField.GetValue(vis)
-                as GameObject;
+                HelmetInstance(vis);
 
             int helmetId =
                 helmet != null
@@ -240,8 +229,7 @@ namespace WiresHoodToggle
                     : 0;
 
             int helmetHash =
-                (int)CurrentHelmetHashField
-                    .GetValue(vis);
+                CurrentHelmetHash(vis);
 
             bool hidden = IsHidden(vis);
 
@@ -292,8 +280,7 @@ namespace WiresHoodToggle
             if (player != _trackedPlayer)
             {
                 _trackedPlayer = player;
-                _trackedHelmet = EquippedHelmetField?.GetValue(player)
-                    as ItemDrop.ItemData;
+                _trackedHelmet = EquippedHelmet(player);
                 _restoredForPlayer = false;
             }
 
@@ -346,9 +333,7 @@ namespace WiresHoodToggle
         private static ZNetView GetView(
             VisEquipment vis)
         {
-            ZNetView view =
-                NViewField?.GetValue(vis)
-                as ZNetView;
+            ZNetView view = NView(vis);
 
             if (view != null)
                 return view;

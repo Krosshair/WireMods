@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.6
+
+* Less work every frame: no more garbage made for each player while checking their helmet.
+
 ## 0.2.5
 
 * The toggle animation now also plays while sitting in a chair or throne.
