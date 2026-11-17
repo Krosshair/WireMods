@@ -1,0 +1,11 @@
+@echo off
+copy /y "%~dp0Chains.cs" "%~dp0..\..\src\Chains.cs"
+copy /y "%~dp0DecisionAI.cs" "%~dp0..\..\src\DecisionAI.cs"
+copy /y "%~dp0Extras.cs" "%~dp0..\..\src\Extras.cs"
+copy /y "%~dp0Individual.cs" "%~dp0..\..\src\Individual.cs"
+copy /y "%~dp0Maneuver.cs" "%~dp0..\..\src\Maneuver.cs"
+copy /y "%~dp0Physicality.cs" "%~dp0..\..\src\Physicality.cs"
+copy /y "%~dp0ServerSync.cs" "%~dp0..\..\src\ServerSync.cs"
+copy /y "%~dp0WiresAIPlugin.cs" "%~dp0..\..\src\WiresAIPlugin.cs"
+copy /y "%~dp0CHANGELOG.md" "%~dp0..\..\package\CHANGELOG.md"
+copy /y "%~dp0README.md" "%~dp0..\..\package\README.md"

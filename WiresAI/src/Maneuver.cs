@@ -70,7 +70,8 @@ namespace WiresAI
             Vector3 toTarget = target.transform.position - self.transform.position;
             toTarget.y = 0f;
             float dist = toTarget.magnitude;
-            float chance = TacticsChance(p, b.Allies);
+            // the aggressive reposition less and just go at it
+            float chance = TacticsChance(p, b.Allies) * (1f - .5f * Mathf.Clamp01(GroupAggression(p, b)));
             // Outmatches the target: little reason to go around it. Outmatched: more care.
             float finesse = b.Overpower > 0f ? 1f - .85f * b.Overpower : 1f - .5f * b.Overpower;
 
@@ -101,10 +102,14 @@ namespace WiresAI
                 return;
             }
             // Can't reach it (ledge, rock, roof): wait out of reach and spread around instead of loitering.
-            else if (dist < 25f && (target.transform.position.y - self.transform.position.y > 1.6f ||
+            else if (dist < 25f && (target.transform.position.y - self.transform.position.y > AboveReach ||
                 self.GetTimeSinceLastAttack() > 5f) && !HavePath(ai, target.transform.position) &&
                 Roll(p, ++b.Decisions) < chance + .25f)
-            { pick = Move.Hold; why = "unreachable"; holdDist = 13f; holdTime = 4f; }
+            {
+                // clever melee ones wait where it can't see them (Senses.cs); the rest out of reach
+                if (TryHide(ai, b, p, target)) return;
+                pick = Move.Hold; why = "unreachable"; holdDist = 13f; holdTime = 4f;
+            }
             if (pick != Move.None)
             {
                 Vector3 back = -toTarget.normalized;
@@ -164,25 +169,23 @@ namespace WiresAI
             b.ManeuverSide = Vector3.Dot(target.transform.right, -toTarget) >= 0f ? 1f : -1f;
             if (why == "pillar") b.ManeuverSide = -b.ManeuverSide; // the other way round
             _maneuvers++;
-            // Force vanilla's circling branch for the maneuver's length.
-            b.Lease2 = ai.gameObject.AddComponent<ManeuverLease>();
-            b.Lease2.AI = ai;
-            b.Lease2.Interval = ai.m_circleTargetInterval;
-            b.Lease2.Duration = ai.m_circleTargetDuration;
+            // Force vanilla's circling branch for the maneuver's length; it ends in the MoveTo hook
+            // (called every frame meanwhile), when it attacks, or on the next scan.
+            b.ManeuverAI = ai;
+            b.ManeuverInterval = ai.m_circleTargetInterval;
+            b.ManeuverDuration = ai.m_circleTargetDuration;
             // Some creatures never circle (interval 0); give them one circle for the maneuver.
             if (ai.m_circleTargetInterval <= 0f) ai.m_circleTargetInterval = .05f;
             ai.m_circleTargetDuration = duration;
             PauseTimer(ai) = ai.m_circleTargetInterval + .01f;
-            b.Lease2.Begin(duration);
+            b.ManeuverUntil = Time.time + duration;
+            // hiding and run-ups are how it gets to attack at all; the rest give way to a ready swing
+            b.BreaksForAttack = why != "hide" && why != "run-up" && why != "keep-distance" && why != "caster-back";
+            // clever ones turn back to it in time, so they're facing it when the attack is ready
+            b.PreTurn = Roll(p, ++b.Decisions) < SmartChance(p);
             b.Counts[0]++;
             if (_verbose.Value)
                 Logger.LogInfo("[WAI maneuver] " + b.View.GetZDO().m_uid + " " + pick + " reason=" + why);
-        }
-
-        internal void EndManeuver(MonsterAI ai)
-        {
-            if (ai == null || !Brains.TryGetValue(ai, out Behavior b)) return;
-            StopManeuver(b);
         }
 
         private static void StopManeuver(Behavior b)
@@ -192,7 +195,13 @@ namespace WiresAI
             b.ManeuverTarget = null;
             b.Spacing = false;
             _maneuvers--;
-            if (b.Lease2 != null) { ManeuverLease l = b.Lease2; b.Lease2 = null; l.Restore(); l.Cancel(); }
+            if (b.ManeuverAI != null)
+            {
+                b.ManeuverAI.m_circleTargetInterval = b.ManeuverInterval;
+                b.ManeuverAI.m_circleTargetDuration = b.ManeuverDuration;
+                PauseTimer(b.ManeuverAI) = 0f;
+            }
+            b.ManeuverAI = null;
             b.NextDecisionAt = 0f;
         }
 
@@ -215,11 +224,16 @@ namespace WiresAI
         [HarmonyPatch(typeof(BaseAI), "MoveTo")]
         private static class ManeuverMove
         {
-            // Exits on the first check unless some enemy is mid-maneuver.
+            // Mid-maneuver: steers it. Otherwise (chasing): may swing early, as it closes in (Pacing.cs).
             private static void Prefix(BaseAI __instance, ref Vector3 point, ref bool run)
             {
-                if (_maneuvers <= 0 || !(__instance is MonsterAI ai) ||
-                    !Brains.TryGetValue(ai, out Behavior b) || b.Maneuver == Move.None) return;
+                // no target (wandering, going home): nothing to do, before any lookup
+                if (!(__instance is MonsterAI ai) || Target(ai) == null || !Brains.TryGetValue(ai, out Behavior b)) return;
+                if (b.Maneuver == Move.None) { Anticipate(ai, b); return; }
+                if (Time.time >= b.ManeuverUntil) { StopManeuver(b); return; }
+                // came into reach with an attack ready: go for it (decided once per maneuver)
+                if (b.BreaksForAttack && ReadyAttack(ai, b, b.PreTurn) is ItemDrop.ItemData w)
+                { Ready(ai, b, w); StopManeuver(b); return; }
                 point = ManeuverPoint(b, point);
                 run = true;
             }
@@ -239,10 +253,14 @@ namespace WiresAI
             for (int i = 0; i < all.Count; i++)
             {
                 Character c = all[i];
-                if (c == null || c.IsDead() || c.IsTamed() || !(c.GetBaseAI() is MonsterAI) ||
-                    (c.transform.position - pos).sqrMagnitude > 100f) continue;
-                ZNetView v = c.GetComponent<ZNetView>();
-                if (v != null && v.IsValid()) v.InvokeRPC("WAI_Opening_v1", pl.GetPlayerID(), kind);
+                if (c == null || (c.transform.position - pos).sqrMagnitude > 100f || c.IsDead() || c.IsTamed() ||
+                    !(c.GetBaseAI() is MonsterAI ai)) continue;
+                // ours to run: straight in, no network message per creature on every swing and roll
+                if (Brains.TryGetValue(ai, out Behavior b) && b.View != null && b.View.IsValid())
+                {
+                    if (b.View.IsOwner()) Instance.OnOpening(ai, pl.GetPlayerID(), kind);
+                    else b.View.InvokeRPC("WAI_Opening_v1", pl.GetPlayerID(), kind);
+                }
             }
         }
 
@@ -278,6 +296,7 @@ namespace WiresAI
             PauseTimer(ai) = 0f;
             ai.m_minAttackInterval = 0f;
             b.HoldUntil = now + wait;
+            b.HoldIsFeint = false; // waiting out a roll is the point here
             b.DelayDecided = true; // no extra feint on a punish
             b.NextDecisionAt = now + 1.5f;
         }
@@ -317,7 +336,7 @@ namespace WiresAI
                     !Brains.TryGetValue(ai, out Behavior b) || b.View == null || !b.View.IsOwner()) return;
                 // Staggered while its target was blocking: that was a parry.
                 Character t = Target(ai);
-                if (t != null && t.IsBlocking()) b.SeenParries++;
+                if (t != null && t.IsBlocking()) { b.SeenParries++; Parried(ai); }
                 b.StaggeredAt = Time.time;
                 b.NextDecisionAt = 0f;
                 b.DecisionReason = "staggered";
@@ -336,39 +355,54 @@ namespace WiresAI
                 if (Instance == null || !Instance.Active || !Brains.TryGetValue(__instance, out Behavior b) ||
                     b.View == null || !b.View.IsOwner()) return true;
                 float now = Time.time;
-                if (now < b.HoldUntil) { __result = false; return false; }
-                if (b.DelayDecided || !Phys.TryGetValue(b.Character, out Physical ph) || ph.Individual == null)
-                    return true;
-                b.DelayDecided = true;
+                if (b.Maneuver != Move.None && now >= b.ManeuverUntil) StopManeuver(b);
+                Character target = Target(__instance);
+                if (now < b.HoldUntil)
+                {
+                    // a feint or a chain step gives way when the target leaves itself open
+                    if (!b.HoldIsFeint || !GoodOpening(b, target)) { __result = false; return false; }
+                    b.HoldUntil = 0f;
+                    EndStep(__instance);
+                }
+                if (!Phys.TryGetValue(b.Character, out Physical ph) || ph.Individual == null) return true;
                 Individual p = ph.Individual;
-                float chance = .6f * SmartChance(p) + .25f * Mathf.Min(1f, b.SeenParries / 2f);
+                // will the target still be in reach when the hit lands? if not, close in first
+                if (CloseInFirst(__instance, b, p, target, now)) { __result = false; return false; }
+                if (b.DelayDecided) return true;
+                b.DelayDecided = true;
+                if (GoodOpening(b, target)) return true; // no feinting into an opening
+                float chance = (.6f * SmartChance(p) + .25f * Mathf.Min(1f, b.SeenParries / 2f)) *
+                    (1f - .5f * Mathf.Clamp01(GroupAggression(p, b))); // the aggressive feint less
                 if (Roll(p, ++b.Decisions) >= chance) return true;
                 b.HoldUntil = now + Mathf.Lerp(.2f, .65f, Roll(p, ++b.Decisions));
+                b.HoldIsFeint = true;
                 __result = false;
                 return false;
             }
             private static void Postfix(MonsterAI __instance, bool __result)
             {
-                if (__result && Brains.TryGetValue(__instance, out Behavior b)) b.DelayDecided = false;
+                if (!__result || !Brains.TryGetValue(__instance, out Behavior b)) return;
+                b.DelayDecided = b.TimingDecided = false;
+                if (Phys.TryGetValue(b.Character, out Physical ph) && ph.Individual != null) NewJudgement(b, ph.Individual); // a fresh read for the next one
             }
         }
     }
 
-    public sealed class ManeuverLease : MonoBehaviour
+    public sealed partial class WiresAIPlugin
     {
-        internal MonsterAI AI;
-        internal float Interval, Duration;
-        private bool _ended;
-        internal void Begin(float duration) => Invoke(nameof(Expire), duration);
-        internal void Cancel() { _ended = true; CancelInvoke(nameof(Expire)); Destroy(this); }
-        // Creature unloaded mid-maneuver: still release the maneuver count.
-        private void OnDestroy() { if (!_ended) { _ended = true; WiresAIPlugin.Instance?.EndManeuver(AI); } }
-        internal void Restore()
+        // Unloaded or destroyed mid-maneuver or retreat: release the counts the hooks exit on.
+        [HarmonyPatch(typeof(BaseAI), "OnDestroy")]
+        private static class AIGone
         {
-            if (AI == null) return;
-            AI.m_circleTargetInterval = Interval;
-            AI.m_circleTargetDuration = Duration;
+            private static void Prefix(BaseAI __instance)
+            {
+                if (!(__instance is MonsterAI ai) || !Brains.TryGetValue(ai, out Behavior b)) return;
+                StopManeuver(b);
+                if (b.Retreating) { b.RetreatUntil = 0f; _retreating--; }
+                SetRegroup(b, null);
+                if (ChainStates.TryGetValue(ai, out ChainState s) && s.Stepping) { s.Stepping = false; _stepping--; }
+                if (b.Arcing) { b.Arcing = false; _arcing--; }
+            }
         }
-        private void Expire() => WiresAIPlugin.Instance?.EndManeuver(AI); // restores and destroys
     }
 }

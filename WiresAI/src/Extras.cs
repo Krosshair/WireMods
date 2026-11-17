@@ -15,7 +15,7 @@ namespace WiresAI
         private static long _sysGroup;
         private static int _sysFrame = -1;
         private static object _sysData;
-        private static int _regroupActive;
+        private static int _retreating; // retreats running: the Flee hook exits at once at 0
 
         private static long GroupHash(Vector3 p, long salt)
         {
@@ -77,8 +77,6 @@ namespace WiresAI
 
         private static void SetRegroup(Behavior b, Character ally)
         {
-            if (b.RegroupAlly == null && ally != null) _regroupActive++;
-            else if (b.RegroupAlly != null && ally == null) _regroupActive--;
             b.RegroupAlly = ally;
         }
 
@@ -122,11 +120,12 @@ namespace WiresAI
         [HarmonyPatch(typeof(BaseAI), "Flee")]
         private static class RegroupFlee
         {
-            // Only does anything while a regroup retreat is running.
+            // Only does anything while some retreat is running: ends it on time, steers a regroup.
             private static void Prefix(BaseAI __instance, ref Vector3 from)
             {
-                if (_regroupActive <= 0 || !(__instance is MonsterAI ai) ||
-                    !Brains.TryGetValue(ai, out Behavior b) || b.Lease == null) return;
+                if (_retreating <= 0 || !(__instance is MonsterAI ai) ||
+                    !Brains.TryGetValue(ai, out Behavior b) || !b.Retreating) return;
+                if (Time.time >= b.RetreatUntil) { Instance?.CompleteRetreat(ai); return; }
                 Character ally = b.RegroupAlly;
                 if (ally == null || ally.IsDead()) return;
                 Vector3 me = ai.transform.position;

@@ -18,7 +18,8 @@ namespace WiresAI
         {
             internal readonly Dictionary<string, float> Weight = new Dictionary<string, float>();
             internal ItemDrop.ItemData Swing;
-            internal bool Landed, Swinging, Stepping;
+            internal bool Landed, Swinging, Stepping, StepRun, HitTimed;
+            internal float SwingStart;
             internal int Left = -1; // attacks still to go in this chain; -1 not chaining
             internal float StepUntil;
             internal Vector3 StepDir;
@@ -61,6 +62,8 @@ namespace WiresAI
                 s.Swing = __instance.GetCurrentWeapon();
                 s.Landed = false;
                 s.Swinging = true;
+                s.SwingStart = Time.time;
+                s.HitTimed = false;
             }
         }
 
@@ -100,22 +103,23 @@ namespace WiresAI
             {
                 string name = done.m_shared.m_name;
                 Learn(s, name, s.Landed, 1f);
-                ShareLesson(ai, h, name, s.Landed);
+                ShareLesson(ai, b, name, s.Landed);
             }
             Chain(ai, b, p, h, s, done);
         }
 
         // Smart ones of the same kind nearby see it hit or miss, and take half the lesson.
-        private static void ShareLesson(MonsterAI from, Humanoid self, string attack, bool hit)
+        private static void ShareLesson(MonsterAI from, Behavior mine, string attack, bool hit)
         {
-            string kind = Utils.GetPrefabName(self.gameObject);
-            Vector3 at = self.transform.position;
+            string kind = mine.Kind;
+            Vector3 at = mine.Character.transform.position;
             foreach (BaseAI other in BaseAI.BaseAIInstances)
             {
-                if (other == from || !(other is MonsterAI ai) || !(other.GetComponent<Character>() is Humanoid h) ||
-                    h.IsDead() || (h.transform.position - at).sqrMagnitude > ShareRange * ShareRange ||
-                    Utils.GetPrefabName(h.gameObject) != kind || !Brains.TryGetValue(ai, out Behavior b) ||
-                    b.View == null || !b.View.IsOwner() || !Phys.TryGetValue(h, out Physical ph) || ph.Individual == null)
+                // cheapest checks first: a swarm ends attacks all the time
+                if (other == from || (other.transform.position - at).sqrMagnitude > ShareRange * ShareRange ||
+                    !(other is MonsterAI ai) || !Brains.TryGetValue(ai, out Behavior b) || b.Kind != kind ||
+                    b.View == null || !b.View.IsOwner() || b.Character == null || b.Character.IsDead() ||
+                    !Phys.TryGetValue(b.Character, out Physical ph) || ph.Individual == null)
                     continue;
                 if (Roll(ph.Individual, ++b.Decisions) >= SmartChance(ph.Individual)) continue;
                 Learn(ChainStates.GetOrCreateValue(ai), attack, hit, .5f);
@@ -129,12 +133,12 @@ namespace WiresAI
             { s.Left = -1; return; }
             if (s.Left < 0)
             {
-                // how much it wants to keep going: aggression (-1..1) and confidence (0..1)
-                float drive = Mathf.Clamp01(.5f * (p.Aggression + 1f) * .5f + .5f * Mathf.Clamp01(b.Confidence));
-                if (Roll(p, ++b.Decisions) >= drive) return;
+                // how much it wants to keep going: aggression (-1..1, pulled toward its pack's) and confidence (0..1)
+                float drive = Mathf.Clamp01(.15f + .5f * (GroupAggression(p, b) + 1f) * .5f + .5f * Mathf.Clamp01(b.Confidence));
+                if (Roll(p, ++b.Decisions) >= drive) { NoChain(ai, b, p, target, done); return; }
                 s.Left = 1 + Mathf.FloorToInt(3f * drive * Roll(p, ++b.Decisions)); // up to 4 in a row
             }
-            if (s.Left == 0) { s.Left = -1; return; }
+            if (s.Left == 0) { s.Left = -1; NoChain(ai, b, p, target, done); return; }
             s.Left--;
 
             ItemDrop.ItemData next = PickAttack(ai, h, s, done, target, p, b);
@@ -145,16 +149,37 @@ namespace WiresAI
             if (h.GetCurrentWeapon() != next) h.EquipItem(next, false);
             WeaponTimer(ai) = 1f; // vanilla doesn't swap it back before it's used
 
-            // a very small step first, sideways or back, then the attack
+            // Sometimes straight into it. A very small step first, sideways or back, mostly when it
+            // repeats itself (the same attack again, or the only one it has), so it doesn't look
+            // like the same thing spammed; now and then even when it switches.
+            bool same = next == done || Options.Count <= 1;
+            if (Roll(p, ++b.Decisions) >= (same ? .75f : .25f)) { b.HoldUntil = 0f; b.DelayDecided = true; return; }
             Vector3 to = target.transform.position - h.transform.position; to.y = 0f;
             float r = Roll(p, ++b.Decisions);
             Vector3 dir = r < .4f ? Vector3.Cross(Vector3.up, to) : r < .8f ? -Vector3.Cross(Vector3.up, to) : -to;
             float step = Mathf.Lerp(.12f, .3f, Roll(p, ++b.Decisions));
             s.StepDir = dir.sqrMagnitude > 1e-4f ? dir.normalized : Vector3.zero;
             s.StepUntil = Time.time + step;
+            s.StepRun = false;
             if (!s.Stepping && s.StepDir != Vector3.zero) { s.Stepping = true; _stepping++; }
             b.HoldUntil = Time.time + step; // DelayedAttack holds the swing for the step
+            b.HoldIsFeint = true;
             b.DelayDecided = true;
+        }
+
+        // Not going straight into another: the next one still comes sooner than vanilla's wait, and a
+        // charger too close for its charge backs off to run at it again.
+        private void NoChain(MonsterAI ai, Behavior b, Individual p, Character target, ItemDrop.ItemData done)
+        {
+            Hurry(ai, b, p, done);
+            TryRunUp(ai, b, p, target, Time.time);
+        }
+
+        // A parried swing: that attack is taken less often (more than a plain miss).
+        internal static void Parried(MonsterAI ai)
+        {
+            if (ChainStates.TryGetValue(ai, out ChainState s) && s.Swing != null && Melee(s.Swing))
+                Learn(s, s.Swing.m_shared.m_name, false, 1.5f);
         }
 
         // Which attack next: what has been landing, a different one than the last where it has others.
@@ -184,17 +209,23 @@ namespace WiresAI
             return Options[Options.Count - 1];
         }
 
-        // The step: vanilla stops moving in reach of its target; while a step lasts it moves instead.
+        // Vanilla stops moving once its target is in reach (every frame while it is). The first of
+        // those after a gap: it just got there, so it attacks now, no wait (Pacing.cs). While a
+        // step lasts it moves instead.
         [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.StopMoving))]
         private static class ChainStep
         {
             private static bool Prefix(BaseAI __instance)
             {
-                if (_stepping <= 0 || !(__instance is MonsterAI ai) ||
-                    !ChainStates.TryGetValue(ai, out ChainState s) || !s.Stepping) return true;
+                if (!(__instance is MonsterAI ai) || !Brains.TryGetValue(ai, out Behavior b)) return true;
+                float now = Time.time;
+                if (now - b.LastStop > ArrivalGap) Arrived(ai, b);
+                b.LastStop = now;
+                if (Target(ai) is Character t) WatchTurn(b, t, now);
+                if (_stepping <= 0 || !ChainStates.TryGetValue(ai, out ChainState s) || !s.Stepping) return true;
                 if (Time.time < s.StepUntil && !ai.GetComponent<Character>().IsDead())
                 {
-                    ai.MoveTowards(s.StepDir, false);
+                    ai.MoveTowards(s.StepDir, s.StepRun);
                     return false;
                 }
                 s.Stepping = false;

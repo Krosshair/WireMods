@@ -8,8 +8,8 @@ namespace WiresAI
     {
         private enum Posture : byte { Vanilla, Commit, Probe, Hesitate, Retreat }
 
-        // A single Unity engine-scheduled callback, NO Update/Coroutine/polling.
-private static float Roll(Individual p, uint index)
+        // Its own repeatable dice: the same individual makes the same n-th choice every time.
+        private static float Roll(Individual p, uint index)
         {
             uint seed = p.Seed ^ (index * 0x9E3779B9u) ^ 0xA5A5C33Du;
             seed ^= seed >> 16; seed *= 0x7FEB352Du;
@@ -23,7 +23,7 @@ private static float Roll(Individual p, uint index)
             Individual p, float drive, float groupEffect, float now)
         {
             if (p == null || b == null || b.Character == null) return;
-            if (b.Action == Posture.Retreat && b.Lease != null) return;
+            if (b.Action == Posture.Retreat && b.Retreating) return;
             if (now < b.NextDecisionAt) return;
             float hp = Mathf.Clamp01(b.Character.GetHealthPercentage());
             float preyWounded = Mathf.Clamp01(1f - target.GetHealthPercentage());
@@ -117,10 +117,9 @@ private static float Roll(Individual p, uint index)
                 // branch handles all pathfinding. 1.01 allows fleeing while healthy.
                 ai.m_fleeIfLowHealth = 1.01f;
                 ai.m_fleeTimeSinceHurt = 10000000f;
-                b.Lease = ai.gameObject.AddComponent<RetreatLease>();
-                b.Lease.AI = ai;
-                float duration = Mathf.Lerp(1.2f,3.6f,Roll(p,++b.Decisions));
-                b.Lease.Begin(duration);
+                // ends in the Flee hook (vanilla flees every frame meanwhile) or on the next scan
+                if (!b.Retreating) _retreating++;
+                b.RetreatUntil = now + Mathf.Lerp(1.2f,3.6f,Roll(p,++b.Decisions));
             }
             if (_verbose.Value && (old != newAction || reason != "target-refresh"))
             {
@@ -134,11 +133,7 @@ private static float Roll(Individual p, uint index)
         private static void StopRetreat(MonsterAI ai, Behavior b)
         {
             SetRegroup(b, null);
-            if (b.Lease != null)
-            {
-                RetreatLease lease=b.Lease; b.Lease=null;
-                lease.Cancel();
-            }
+            if (b.Retreating) { b.RetreatUntil = 0f; _retreating--; }
             ai.m_fleeIfLowHealth = b.FleeThreshold;
             ai.m_fleeTimeSinceHurt = b.FleeTime;
         }
@@ -155,7 +150,7 @@ private static float Roll(Individual p, uint index)
                 if (_verbose.Value)
                     Logger.LogInfo("[WAI behavior] " + b.View.GetZDO().m_uid + " Retreat->Vanilla reason=retreat-expired");
             }
-            b.Lease = null;
+            if (b.Retreating) { b.RetreatUntil = 0f; _retreating--; }
             b.Action = Posture.Vanilla;
             b.NextDecisionAt = 0f;
         }
@@ -238,18 +233,6 @@ private static float Roll(Individual p, uint index)
                 if (v != null && v.IsValid() && !attacker.IsTamed())
                     v.InvokeRPC("WAI_PlayerHit_v1",actual);
             }
-        }
-    }
-    // Unity-loadable top-level MonoBehaviour; only a one-shot Invoke callback.
-    public sealed class RetreatLease : MonoBehaviour
-    {
-        internal MonsterAI AI;
-        internal void Begin(float duration) => Invoke(nameof(Expire), duration);
-        internal void Cancel() { CancelInvoke(nameof(Expire)); Destroy(this); }
-        private void Expire()
-        {
-            WiresAIPlugin.Instance?.CompleteRetreat(AI);
-            Destroy(this);
         }
     }
 }

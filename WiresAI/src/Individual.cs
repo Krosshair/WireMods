@@ -17,6 +17,8 @@ namespace WiresAI
         // Species-derived values, worked out once.
         internal readonly float SpeciesGroupFactor, FearSensitivity, LossRageBias;
         internal readonly int Stars;
+        // How far below its own kind's wits this one was born, in standard deviations (0 for fixed minds).
+        internal readonly float Dimness;
         // Bosses and named characters: same mind every time, vanilla body.
         internal readonly bool Fixed;
 
@@ -65,6 +67,7 @@ namespace WiresAI
             SpeciesMind(species, out float smarts, out float spread, out float speciesAggression, out float speciesCourage);
             for (int i = 0; i < 5; i++)
                 Mind[i] = spread * (psyche[i] - psiCoupling * mean) / divisor;
+            Dimness = -(psyche[2] - psiCoupling * mean) / divisor;
             Mind[0] += speciesAggression;
             Mind[1] += speciesCourage;
             Mind[2] += smarts + (ranged ? .3f : 0f); // ranged fighters lean smarter
@@ -77,7 +80,13 @@ namespace WiresAI
                 (.42f * Z[0] + .27f * Z[1] + .24f * Z[5] + .25f * random.Gaussian()) / 1.1f);
             // About +/-2% at 0 stars, starred ones a bit more. Drawn last so other traits stay the same.
             AnimSpeed = 1f + (.02f + .01f * Mathf.Min(stars, 5)) * (float)Math.Tanh(random.Gaussian() / 1.1f);
+            // Sight: its own draw, so nothing above changes, and tied to nothing else (a dim one
+            // can have sharp eyes). Up to about a quarter better or worse.
+            var senses = new Deterministic(seed ^ 0x5E115E5u);
+            Sight = 1f + .25f * SpreadScale * (float)Math.Tanh(senses.Gaussian() / 1.1f);
         }
+
+        internal readonly float Sight = 1f;
 
         // Fixed mind: the species' lore values with no random part, and vanilla
         // body (every axis 1). Bosses count as clever and fearless.

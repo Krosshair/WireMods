@@ -12,7 +12,7 @@ namespace WiresAI
     public sealed partial class WiresAIPlugin : BaseUnityPlugin
     {
         public const string Guid = "kajetan.valheim.wiresai";
-        public const string Version = "0.2.0";
+        public const string Version = "0.3.0";
         // Required on server and clients, gameplay settings follow the server.
         private static readonly ServerSync.ConfigSync Sync = new ServerSync.ConfigSync(Guid)
         {
@@ -40,6 +40,7 @@ namespace WiresAI
             internal long Group; // cached spawn group, 0 = none yet
             internal float OriginalWalk, OriginalRun, OriginalTurn;
             internal Vector3 OriginalScale;
+            internal float OriginalView, OriginalAngle; // Senses.cs
             internal Physical(Character c, Individual i, bool boss)
             {
                 Individual = i; Boss = boss;
@@ -55,7 +56,8 @@ namespace WiresAI
             internal readonly float CircleInterval, CircleDuration, AttackInterval;
             internal float Rage, Fear, Confidence, StateTime;
             internal Posture Action; internal float NextDecisionAt; internal uint Decisions;
-            internal string DecisionReason; internal RetreatLease Lease;
+            internal string DecisionReason;
+            internal bool Retreating => RetreatUntil > 0f;
             internal float FleeThreshold, FleeTime;
             internal int Allies = -1, Enemies = -1, Phase = -1;
             internal bool HasEncounter;
@@ -66,18 +68,35 @@ namespace WiresAI
             internal float LastRetreat = -10000f;
             internal int PackRetreating, PackCommitting, PackFlanking;
             internal Move Maneuver; internal Character ManeuverTarget; internal float ManeuverSide;
-            internal ManeuverLease Lease2; internal float Intercept;
+            internal float ManeuverInterval, ManeuverDuration; // circling values to put back after it
+            internal MonsterAI ManeuverAI;
+            internal bool Arcing; // a flyer weaving in front of its target (Pacing.cs)
+            internal bool BreaksForAttack, PreTurn; // this maneuver gives way to a ready attack in reach (turning in time)
+            internal bool CirclePreTurn; // vanilla's circling gives way too; this: turning in time, decided each scan
+            internal float LastStop = -10f; // last frame vanilla stopped it in reach
+            internal float JudgeErr; // its misreading of the next attack moment (Pacing.cs)
+            internal Vector3 LastFwd; internal float LastFwdAt, TurnRate; // its target turning, degrees a second
+            internal bool HoldIsFeint; // HoldUntil is a feint or a chain step (not waiting out a roll)
+            internal bool TimingDecided, TimesHits; // this attack: does it judge where the target will be
+            internal float BodyLength;
+            internal bool Searching; internal Vector3 LastSeenVel; // Senses.cs
+            internal float Escalation; // bosses: how far into the fight, 0..1
+            internal float Intercept;
             internal Vector3 HoldDir, MatesCentroid; internal float HoldDist, StaggeredAt = -10000f;
             internal int MatesNearTarget; internal bool PushNext;
             internal Vector3 FixedPoint; internal bool Spacing;
             internal float HoldUntil; internal bool DelayDecided;
             internal int SeenParries, SeenRolls, SeenBlocks; // this fight only
-            internal float PackCourage;
+            internal float PackCourage, PackAggression; internal int Mates;
+            internal readonly string Kind; // prefab name, worked out once
+            internal float ManeuverUntil, RetreatUntil; // when the running maneuver / retreat ends
+            internal int NoPathScans; // target scans in a row with no path to the target
             internal float Overpower; internal bool BreaksBlock; // Physicality.cs
             internal float LastPlayerHit = -10000f, EncounterStart, BreatherUntil;
             internal Behavior(MonsterAI ai)
             {
                 Character = ai.GetComponent<Character>(); View = ai.GetComponent<ZNetView>();
+                Kind = Utils.GetPrefabName(ai.gameObject);
                 CircleInterval = ai.m_circleTargetInterval;
                 CircleDuration = ai.m_circleTargetDuration;
                 AttackInterval = ai.m_minAttackInterval;
@@ -132,7 +151,7 @@ namespace WiresAI
             try
             {
                 _harmony.PatchAll(typeof(WiresAIPlugin).Assembly);
-                Logger.LogInfo("Wire's AI 0.1.0 active: individuals, packs, grudges, boss escalation; event hooks only.");
+                Logger.LogInfo("Wire's AI " + Version + " active.");
             }
             catch (Exception e)
             {
@@ -228,6 +247,7 @@ namespace WiresAI
                 c.m_turnSpeed *= traits.Axis[4];
                 c.transform.localScale = phys.OriginalScale * traits.Size;
                 ApplyHealth(c, phys, v);
+                ApplySenses(c, phys);
             }
             if (_debug.Value && v.IsOwner())
                 Logger.LogInfo("[WAI spawn] initCpuMs=" +
@@ -271,6 +291,7 @@ namespace WiresAI
                 c.m_runSpeed = p.OriginalRun * revised.Axis[3];
                 c.m_turnSpeed = p.OriginalTurn * revised.Axis[4];
                 c.transform.localScale = p.OriginalScale * revised.Size;
+                ApplySenses(c, p);
                 ZNetView z = c.GetComponent<ZNetView>();
                 if (_debug.Value && z != null && z.IsValid() && z.IsOwner())
                     Logger.LogInfo("[WAI level] id=" + z.GetZDO().m_uid +
@@ -341,7 +362,7 @@ namespace WiresAI
                     b.Character != null ? b.Character.GetHealthPercentage() : 0f, b.Counts[0]));
             System.Array.Clear(b.Counts, 0, b.Counts.Length);
             b.SeenParries = b.SeenRolls = b.SeenBlocks = 0;
-            b.HoldUntil = 0f; b.DelayDecided = false;
+            b.HoldUntil = 0f; b.DelayDecided = b.TimingDecided = false;
             b.Action=Posture.Vanilla; b.NextDecisionAt=0f;
             b.HasEncounter = false;
             b.Allies = b.Enemies = -1;
@@ -353,6 +374,7 @@ namespace WiresAI
             Behavior b = Brain(ai);
             Character self = b.Character;
             ZNetView v = b.View;
+            if (self != null && v != null && v.IsValid() && v.IsOwner()) DecideArc(ai, b);
             if (self == null || v == null || !v.IsValid() || !v.IsOwner() ||
                 (self.IsDead() || self.GetHealth() <= 0f) || (!self.IsBoss() &&
                 (self.IsFlying() || ai.m_randomFly || ai.m_serpentMovement)))
@@ -361,6 +383,9 @@ namespace WiresAI
                 return;
             }
 
+            float t0 = Time.time;
+            if (b.Maneuver != Move.None && t0 >= b.ManeuverUntil) StopManeuver(b);
+            if (b.Retreating && t0 >= b.RetreatUntil) CompleteRetreat(ai);
             // Picks up HP for enemies that spawned while another player owned them.
             if (!self.IsBoss() && Phys.TryGetValue(self, out Physical owned)) ApplyHealth(self, owned, v);
 
@@ -400,22 +425,24 @@ namespace WiresAI
             float allyPower = 1f, enemyPower=0f;
             long pack = GroupOf(self);
             Character leader = self; float best = LeaderScore(me);
-            float courageSum = 0f; int mates = 0;
+            float courageSum = 0f, aggressionSum = 0f; int mates = 0;
             b.PackRetreating = b.PackCommitting = b.PackFlanking = b.MatesNearTarget = 0;
             Vector3 matesSum = Vector3.zero;
             b.Committers = 0;
             if (_groups.Value)
             {
                 Scene scene = Observe(enemy);
+                Vector3 selfPos = self.transform.position, enemyPos = enemy.transform.position;
+                Character.Faction selfFaction = self.GetFaction(); bool selfTamed = self.IsTamed();
                 for (int i=0;i<scene.Actors.Count;i++)
                 {
                     Character actor = scene.Actors[i];
                     // Cached scene actors may have died/despawned after the snapshot.
                     // Unity destroyed objects throw on actor.transform; skip them.
-                    if (actor == null || actor == self || actor.IsDead() || actor.GetHealth() <= 0f) continue;
-                    float sq = (actor.transform.position - self.transform.position).sqrMagnitude;
-                    if (sq > ScanRadiusSq) continue;
-                    if (actor.IsTamed() == self.IsTamed() && actor.GetFaction() == self.GetFaction() &&
+                    if (actor == null || actor == self) continue;
+                    float sq = (actor.transform.position - selfPos).sqrMagnitude;
+                    if (sq > ScanRadiusSq || actor.IsDead()) continue;
+                    if (actor.GetFaction() == selfFaction && actor.IsTamed() == selfTamed &&
                         !BaseAI.IsEnemy(self,actor))
                     {
                         allies++;
@@ -424,13 +451,13 @@ namespace WiresAI
                         {
                             Individual other = Phys.TryGetValue(actor, out Physical op) ? op.Individual : null;
                             float score = LeaderScore(other);
-                            if (other != null) { courageSum += other.Courage; mates++; }
+                            if (other != null) { courageSum += other.Courage; aggressionSum += other.Aggression; mates++; }
                             if (score > best) { best = score; leader = actor; }
                             if (actor.GetBaseAI() is MonsterAI oa && Brains.TryGetValue(oa, out Behavior ob))
                             {
                                 if (ob.Action == Posture.Commit && Target(oa) == enemy) b.Committers++;
                                 if (ob.Maneuver == Move.Flank || ob.Maneuver == Move.Pincer) b.PackFlanking++;
-                                if ((actor.transform.position - enemy.transform.position).sqrMagnitude < 36f)
+                                if ((actor.transform.position - enemyPos).sqrMagnitude < 36f)
                                 { b.MatesNearTarget++; matesSum += actor.transform.position; }
                                 if (ob.Action == Posture.Retreat) b.PackRetreating++;
                                 else if (ob.Action == Posture.Commit) b.PackCommitting++;
@@ -456,6 +483,8 @@ namespace WiresAI
             int phase=-1;
             b.Leader = leader;
             b.PackCourage = mates > 0 ? courageSum / mates : 0f;
+            b.PackAggression = mates > 0 ? aggressionSum / mates : 0f;
+            b.Mates = mates;
             if (b.MatesNearTarget > 0) b.MatesCentroid = matesSum / b.MatesNearTarget;
             if (self.IsBoss())
             {
@@ -472,6 +501,7 @@ namespace WiresAI
                 if (incomingDamage >= .08f * self.GetMaxHealth()) b.BreatherUntil = now + 2.5f;
                 if (now < b.BreatherUntil) escalation *= .35f;
                 escalation = Mathf.Max(0f, escalation - .15f * b.Fear) * _behaviour.Value;
+                b.Escalation = Mathf.Clamp01(escalation);
                 interval *= 1f + .95f*escalation;
                 duration *= Mathf.Max(.20f,1f-.68f*escalation);
                 attack *= Mathf.Max(.55f,1f-.40f*escalation);
@@ -524,6 +554,9 @@ namespace WiresAI
                 ai.m_circleTargetInterval = Mathf.Max(0f,interval);
                 ai.m_circleTargetDuration = Mathf.Max(0f,duration);
             }
+            // Vanilla's circling gives way to a ready attack in reach (Pacing.cs); the clever ones turn in time.
+            if (Phys.TryGetValue(self, out Physical circler) && circler.Individual != null)
+                b.CirclePreTurn = Roll(circler.Individual, ++b.Decisions) < SmartChance(circler.Individual);
             if (self.IsBoss() && Phys.TryGetValue(self, out Physical bossPhys) && bossPhys.Individual != null)
             {
                 // Bosses: pacing stays with the escalation above (no retreat or
@@ -531,7 +564,12 @@ namespace WiresAI
                 // positioning, punishing openings (DoAttack/OnOpening use the mind).
                 // Not while flying or swimming: vanilla steers those.
                 if (!self.IsFlying() && !ai.m_randomFly && !ai.m_serpentMovement)
+                {
+                    // past half way into the fight: no more circling, and back round to the front
+                    if (b.Escalation > .5f && b.Maneuver == Move.None) ai.m_circleTargetInterval = 0f;
                     ChooseManeuver(ai, b, enemy, bossPhys.Individual, now);
+                    if (b.Escalation > .5f) TryFront(ai, b, bossPhys.Individual, enemy);
+                }
             }
             else if (!self.IsBoss() && Phys.TryGetValue(self,out Physical decisionPhys) &&
                 decisionPhys.Individual != null &&
@@ -539,15 +577,30 @@ namespace WiresAI
             {
                 ChoosePosture(ai,b,enemy,decisionPhys.Individual,drive,
                     Mathf.Clamp(imbalance,-1f,1f),now);
+                Individual dp = decisionPhys.Individual;
+                Search(ai, b, dp, enemy);
                 if (b.Maneuver == Move.None)
                 {
                     ApplyPosture(ai,b);
+                    // No idle circling (Pacing.cs): only the dim ones and the wary postures circle.
+                    if (!KeepsCircling(dp) && b.Action != Posture.Probe && b.Action != Posture.Hesitate &&
+                        _behaviour.Value > 0f)
+                        ai.m_circleTargetInterval = 0f;
                     // Circled long enough: cut it short and go.
-                    if (b.Action != Posture.Hesitate && PauseTimer(ai) > ai.m_circleTargetInterval + .5f * ai.m_circleTargetDuration &&
-                        Roll(decisionPhys.Individual, ++b.Decisions) < .3f + .4f * Mathf.Clamp01(decisionPhys.Individual.Aggression + .5f))
+                    else if (b.Action != Posture.Hesitate && PauseTimer(ai) > ai.m_circleTargetInterval + .5f * ai.m_circleTargetDuration &&
+                        Roll(dp, ++b.Decisions) < .3f + .4f * Mathf.Clamp01(dp.Aggression + .5f))
                         PauseTimer(ai) = 0f;
                 }
-                ChooseManeuver(ai,b,enemy,decisionPhys.Individual,now);
+                // a charger's run-up first; then its tactics; then, with nothing better to do, back to the front
+                // in reach with a swing ready: no repositioning now, it attacks
+                ItemDrop.ItemData ready = b.Action != Posture.Retreat ? ReadyAttack(ai, b, false) : null;
+                bool swing = ready != null;
+                if (swing) Ready(ai, b, ready);
+                if (!swing && !TryRunUp(ai, b, dp, enemy, now))
+                {
+                    ChooseManeuver(ai,b,enemy,dp,now);
+                    TryFront(ai, b, dp, enemy);
+                }
             }
 
             if (_verbose.Value && (!b.HasEncounter || phase!=b.Phase ||
@@ -567,12 +620,13 @@ namespace WiresAI
         {
             if (!Active || dead == null || dead is Player) return;
             List<Character> actors = Character.GetAllCharacters();
+            Vector3 at = dead.transform.position;
+            Character.Faction faction = dead.GetFaction();
             for (int i=0;i<actors.Count;i++)
             {
                 Character c=actors[i];
-                if (c==null || c==dead || c.IsDead() || c.IsBoss() ||
-                    c.GetFaction()!=dead.GetFaction() || c.IsTamed() ||
-                    (c.transform.position-dead.transform.position).sqrMagnitude>ScanRadiusSq)
+                if (c==null || c==dead || (c.transform.position-at).sqrMagnitude>ScanRadiusSq ||
+                    c.GetFaction()!=faction || c.IsDead() || c.IsBoss() || c.IsTamed())
                     continue;
                 if (!(c.GetBaseAI() is MonsterAI ai) ||
                     !Brains.TryGetValue(ai,out Behavior brain) ||
@@ -599,7 +653,8 @@ namespace WiresAI
                     Logger.LogInfo(string.Format(System.Globalization.CultureInfo.InvariantCulture,
                         "[WAI reaction] id={0} allyKilled={1} rage={2:F2} fear={3:F2} confidence={4:F2}",
                         brain.View.GetZDO().m_uid, dead.name, brain.Rage,brain.Fear,brain.Confidence));
-                Refresh(ai,Target(ai),0f);
+                // decided on its next target scan (within 2 s): a swarm dying at once used to
+                // re-run every survivor's whole decision for every death
             }
         }
 
@@ -701,16 +756,22 @@ namespace WiresAI
         [HarmonyPatch(typeof(BaseAI),"FindEnemy")]
         private static class TargetPatch
         {
-            private static void Postfix(BaseAI __instance, Character __result)
+            private static void Postfix(BaseAI __instance, ref Character __result)
             {
-                if (__instance is MonsterAI ai) Instance?.Refresh(ai,__result,0f);
+                if (Instance == null || !Instance.Active || !(__instance is MonsterAI ai)) return;
+                if (Brains.TryGetValue(ai, out Behavior b) && Instance.GivesUp(ai, b)) { __result = null; return; }
+                Instance.Refresh(ai,__result,0f);
             }
         }
         [HarmonyPatch(typeof(MonsterAI),"OnDamaged")]
         private static class DamagePatch
         {
-            private static void Postfix(MonsterAI __instance,float damage, Character attacker) =>
+            private static void Prefix(MonsterAI __instance, out bool __state) => __state = Target(__instance) != null;
+            private static void Postfix(MonsterAI __instance,float damage, Character attacker, bool __state)
+            {
                 Instance?.Refresh(__instance,attacker,damage);
+                ShotFromHiding(__instance, attacker, __state);
+            }
         }
         [HarmonyPatch(typeof(Character),"OnDeath")]
         private static class DeathPatch
