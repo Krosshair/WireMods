@@ -257,12 +257,7 @@ function Publish-Nexus {
             -Body ($body | ConvertTo-Json) | Out-Null
         Invoke-RestMethod -Uri "$api/mods/$($modInfo.data.id)/changelogs" -Method Post -Headers $h -ContentType 'application/json' `
             -Body (@{ version = $Ver; changelog = $NexusChangelog } | ConvertTo-Json) | Out-Null
-        # Successful submit can still be rejected; check public community status.
-        $post = Invoke-RestMethod -Uri "$api/package/$team/$PkgName/" -Method Get
-        $listing = @($post.community_listings | Where-Object { $_.community -eq $Config.community }) | Select-Object -First 1
-        if ($listing.review_status -eq 'rejected') { return "FAILED: uploaded but REJECTED from $($Config.community) listing (check Thunderstore moderation reason)" }
-        if ($listing.review_status -eq 'approved') { return 'published and approved' }
-        return "uploaded, not publicly approved yet (status: $($listing.review_status))"
+        return "ok: version $Ver added to file $fileId"
     } catch { return "FAILED: $($_.Exception.Message) $($_.ErrorDetails.Message)" }
 }
 

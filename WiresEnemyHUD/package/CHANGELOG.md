@@ -1,3 +1,5 @@
+## 0.9.6
+- Fixed: the yellow damage trail didn't show on a nameplate that appeared because of your hit.
 ## 0.9.5
 
 Fixed: renaming a tame didn't change its nameplate.

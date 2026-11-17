@@ -103,6 +103,10 @@ namespace EnemyHudRework
             float old = sample.TrailBeforeShare;
             if (old <= current + 0.002f)
                 return;
+            // A bar the hit just created hasn't had the game's first SetValue yet: it
+            // still reads full, and that first call would snap any trail we set to the
+            // current health. Give it that first value now, then the trail.
+            slow.SetValue(current);
             // Already trailing (it was on screen): the game handles it.
             if (slow.GetSmoothValue() > current + 0.002f)
                 return;
