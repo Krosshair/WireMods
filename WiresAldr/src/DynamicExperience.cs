@@ -156,6 +156,11 @@ namespace WiresAldr
             internal int LastTarget;
             internal bool Raid;
             internal float StaggerBefore; // your stagger bar before this block, 0..1
+            // XP of this attack, one per creature hit: that hit's share of a split swing
+            // times its damage bonus (crit x2, weakness by how much more it did)
+            internal float HitXp;
+            internal float LastRandom, LastFactor; // the swing's skill roll, and the roll after the split
+            internal bool HasSplit;
         }
         private struct DodgeState
         {
@@ -260,8 +265,6 @@ namespace WiresAldr
                     (RawLevel(player.GetSkills(), skill) - 40f) / 50f);
             bool ranged = skill == Skills.SkillType.Bows || skill == Skills.SkillType.Crossbows;
             float precision = Mathf.Clamp(c.Precision, 0f, ranged ? 0.25f : 0.12f);
-            // One attack hitting several enemies (cleaves, sweeps, piercing shots, AoE).
-            precision += 0.03f * Mathf.Max(0, c.HitCount - 1);
             return danger + precision * (Plugin.XpCombatStrength.Value / 100f);
         }
         [HarmonyPatch(typeof(Skills), nameof(Skills.RaiseSkill))]
@@ -366,6 +369,10 @@ namespace WiresAldr
                         " bonus_percent=" + Plugin.RaidBonus.Value.ToString("0"));
                 }
                 factor *= growth;
+                // a crit or weakness hit teaches as much more as it hurt more
+                if (c != null && c.Player == p && c.Target && IsCombatSkill(skillType) &&
+                    skillType != Skills.SkillType.Blocking && !addingParryXp && c.HitXp > 0f)
+                    factor *= c.HitXp;
                 AldrDiagnostics.Skill(skillType, xpBefore, factor, p);
             }
             private static void Postfix(bool __state) { if (__state && xpDepth > 0) --xpDepth; }
@@ -509,6 +516,13 @@ namespace WiresAldr
                 ActionScope c = current;
                 if (c == null || !__instance || __instance.IsPlayer() || hit == null) return;
                 if (hit.GetAttacker() != c.Player) return;
+                // Each creature hit counts. A swing that lowers damage per target
+                // (Attack.DoMeleeAttack: 1 / (targets x 0.75)) gives that share of XP per hit.
+                float share = c.HasSplit && c.LastRandom > 0f ? Mathf.Min(1f, c.LastFactor / c.LastRandom) : 1f;
+                c.HasSplit = false;
+                BaseAI hitAi = __instance.GetBaseAI();
+                bool hostile = hitAi != null && hitAi.IsEnemy(c.Player) && !__instance.IsTamed();
+                c.HitXp += share * (hostile ? HitDamageBonus(__instance, hit) : 1f);
                 int tier = GetEntityTier(__instance);
                 if (c.Target != null && c.TargetTier > tier) return;
                 int targetId = __instance.GetInstanceID();
@@ -535,6 +549,57 @@ namespace WiresAldr
                     Accomplishments.RecordHit(__instance, c.Player, hit, c.TargetTier, c.Stars, unaware);
             }
         }
+        // The melee loop rolls the skill factor, divides it for a split swing, then
+        // passes it to ModifyDamage: the two together give that hit's share.
+        [HarmonyPatch(typeof(Player), nameof(Player.GetRandomSkillFactor))]
+        private static class SwingRoll
+        {
+            private static void Postfix(Player __instance, float __result)
+            {
+                ActionScope c = current;
+                if (c != null && c.Player == __instance) c.LastRandom = __result;
+            }
+        }
+        [HarmonyPatch(typeof(Attack), "ModifyDamage")]
+        private static class SwingShare
+        {
+            private static void Prefix(float damageFactor)
+            {
+                ActionScope c = current;
+                if (c == null) return;
+                c.LastFactor = damageFactor;
+                c.HasSplit = true;
+            }
+        }
+
+        // How much more this hit does than a plain one, the way the game works it out
+        // in Character.RPC_Damage/ApplyDamage: x2 on a staggered creature (the crit),
+        // times the resistance gain where it is weak (weak spot included). Never below 1.
+        private static readonly System.Reflection.MethodInfo FindWeakSpot =
+            AccessTools.Method(typeof(Character), "FindWeakSpotIndex");
+        private static readonly System.Reflection.MethodInfo WeakSpotAt =
+            AccessTools.Method(typeof(Character), "GetWeakSpot");
+        private static readonly System.Reflection.FieldInfo HitCollider =
+            AccessTools.Field(typeof(HitData), "m_hitCollider");
+        private static float HitDamageBonus(Character target, HitData hit)
+        {
+            float bonus = target.IsStaggering() ? 2f : 1f;
+            try
+            {
+                WeakSpot spot = null;
+                object collider = HitCollider?.GetValue(hit);
+                if (FindWeakSpot != null && WeakSpotAt != null && collider != null)
+                    spot = (WeakSpot)WeakSpotAt.Invoke(target, new object[] { FindWeakSpot.Invoke(target, new object[] { collider }) });
+                HitData plain = hit.Clone();
+                float before = plain.GetTotalDamage();
+                plain.ApplyResistance(target.GetDamageModifiers(spot), out _);
+                float after = plain.GetTotalDamage();
+                if (before > 0f && after > before) bonus *= after / before;
+            }
+            catch { }
+            return bonus;
+        }
+
         private static bool IsMoving(Character c)
         {
             try { return c.GetVelocity().sqrMagnitude > 2.25f; } catch { return false; }
