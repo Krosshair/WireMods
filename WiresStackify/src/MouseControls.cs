@@ -160,7 +160,11 @@ namespace WiresStackify
                 if (DragItem(gui) != null) return true; // holding: the game's drop
                 if (Ctrl)
                 {
-                    if (item != null && !Fav(item, Inv(__instance))) MoveViaVanilla(gui, __instance, item, pos);
+                    // one move per slot per press: the held-Ctrl sweep may have moved this slot
+                    // already this press, and whatever lands in it after (a pickup, the rest of
+                    // a stack) stays put until the button is let go
+                    bool done = s_lastShift == pos && s_lastShiftGrid == __instance;
+                    if (!done && item != null && !Fav(item, Inv(__instance))) MoveViaVanilla(gui, __instance, item, pos);
                     s_lastShift = pos;
                     s_lastShiftGrid = __instance;
                     return false;

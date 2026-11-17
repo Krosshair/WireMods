@@ -1,10 +1,12 @@
+﻿## 0.2.1
+- Fixed: holding Ctrl+left click on a slot could move it twice, taking along what landed in that slot during the hold.
 ## 0.2.0
 
 * Added improved inventory controls.
 * Ctrl + left click drops a stack or moves it into an open container; holding Ctrl + left click moves each non-favorited stack you pass over.
 * Right click while holding a stack places one item; drag across slots to distribute one each. Shift + right click while holding places half instead.
 * Shift + right click directly on a stack picks up half without a dialog, except while holding W, A, S or D, when normal item use is preserved.
-* Double left click gathers matching items into the held stack. Press hotbar keys 1–8 over an item to swap it with the hotbar slot, including favorites.
+* Double left click gathers matching items into the held stack. Press hotbar keys 1â€“8 over an item to swap it with the hotbar slot, including favorites.
 * Scroll down transfers one item to the other open inventory; scroll up restocks one matching item from it.
 * Mouse interactions use the game's own inventory methods and sounds.
 
