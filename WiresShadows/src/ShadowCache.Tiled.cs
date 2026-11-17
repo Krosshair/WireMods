@@ -209,6 +209,7 @@ namespace WiresShadows
         }
 
         // Unity's falloff, copied from its own light pass (see the top).
+        private const string CaptureKeyword = "WIRE_CAPTURE";
         private void TiledCapture(Camera cam)
         {
             Shader.SetGlobalFloat(TiledCountId, 0f);
@@ -221,9 +222,11 @@ namespace WiresShadows
                 _tCaptureOn = new CommandBuffer { name = "Wire's Shadows falloff copy" };
                 _tCaptureOn.SetRandomWriteTarget(1, _tCapture);
                 _tCaptureOn.SetGlobalFloat(CapturingId, 1f);
+                _tCaptureOn.EnableShaderKeyword(CaptureKeyword); // the light pass variant that can write it
                 _tCaptureOff = new CommandBuffer { name = "Wire's Shadows falloff copy done" };
                 _tCaptureOff.ClearRandomWriteTargets();
                 _tCaptureOff.SetGlobalFloat(CapturingId, 0f);
+                _tCaptureOff.DisableShaderKeyword(CaptureKeyword);
                 cam.AddCommandBuffer(CameraEvent.BeforeLighting, _tCaptureOn);
                 cam.AddCommandBuffer(CameraEvent.AfterLighting, _tCaptureOff);
             }

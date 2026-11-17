@@ -15,8 +15,10 @@ Wire's Shadows first, vanilla second.
 
 * **Cached shadows for every placed light:** sconces, torches, braziers, hearths, campfires, lanterns, forges and the rest. Each light's shadow map is rendered once and only re-rendered when something near it changes (building, removing, a door opening or closing).
 * **No light leaking** through walls, floors or roofs.
-* **Dynamic shadows** for things that move: players, creatures, doors and gates, dropped items, and the moving parts of windmills, spinning wheels, the refinery and turrets. Only the part of a shadow map that changed is redrawn, and the further out in a light's range the moving things are, the less often (every frame close to the light, every 4th at the edge of its reach).
+* **Dynamic shadows** for things that move: players, creatures, doors and gates, dropped items, and the moving parts of windmills, spinning wheels, the refinery and turrets. Only the part of a shadow map that changed is redrawn, only where that shadow can show (on screen, and lit by that light), and the further out in a light's range the moving things are, the less often (every frame close to the light, every 4th at the edge of its reach).
 * **Items on stands and placed food and meads** are part of the cached shadows, and their glows (a trophy's flame, a mead) are lights of their own.
+* **Loads with the loading screen:** shadows are built while it's up and finished before it fades, so none pop in after loading or teleporting.
+* **What you do comes first:** placing and breaking, doors, items on stands and food update the shadows you can see before anything else.
 * **The vanilla look:** Valheim's own lighting shader, rebuilt with the shadows added. Same banding, same fades, same flicker.
 * Carried torches keep the game's own shadows.
 * **Coloured ambient occlusion:** the game's ambient occlusion takes on the colour of the surface it lands on (GTAO multi-bounce): bright surfaces are darkened less, coloured ones keep their colour instead of going grey.
@@ -26,20 +28,26 @@ Wire's Shadows first, vanilla second.
 * **No fire wiggle.** In vanilla a fire's light shakes around a little. A cached shadow is rendered from one spot, so here the light holds still. Its brightness still flickers while the light is nearby and visible (flicker culling is adjustable in General).
 * **No swaying shadows.** Banners, hanging cloth and herbs cast their shadow at rest, not moving with the wind.
 
+## Known issues
+
+* Breaking or taking placed food can leave its shadow for up to about a second before it goes. Building pieces don't.
+
 ## Settings
 
 * **Enabled:** off brings back the game's own lighting and shadows.
 * **Flicker culling:** on by default. Stops unnecessary brightness flicker calculations for lights beyond the configured distance or whose full light influence is off screen. Those lights hold steady brightness; nearby visible lights keep their normal flicker. Light lifetime, fades and reduced-flashing settings are preserved.
 * **Flicker distance:** 15 metres by default, measured from your player. Changing this setting does not change shadow or illumination range.
 * **Tiled lights:** off by default; the optional batched lighting path remains available.
+* **Timing log:** off by default. What the mod's own work costs per frame, in the log every 5 seconds.
 * **Debug log:** off by default. Writes what the mod does to the log; turns itself on while a benchmark runs.
-* **Benchmark:** measures the mod against vanilla where you stand (the full mod, the mod with every moving shadow redrawn every frame, the cached shadows alone, the cached shadows with the game's own moving shadows, and vanilla) and shows the frame times.
+* **Benchmark:** about a minute. Measures the mod against vanilla where you stand and shows the frame times, and what moving shadows, point lights and the lighting shader each cost.
+* **Quick benchmark:** the mod against vanilla in about 10 seconds.
 
 ## Performance
 
 The goal: run the same as vanilla with point lights maxed out, or slightly better, while looking much better.
 
-On my PC (RTX 4090, i5-13600KF, 128 GB RAM), in my base of about 6,000 pieces, one benchmark gave 17.40 ms a frame (57 fps) with the mod and 17.73 ms (56 fps) in vanilla. Other runs were up to 2.5 ms faster than vanilla. It depends on what's happening: it's faster nearly every time, but I can't guarantee it always is.
+On my PC (RTX 4090, i5-13600KF, 128 GB RAM), in my base of about 6,000 pieces, two benchmarks in a row gave 15.35 ms a frame (65 fps) with the mod and 19.95 ms (50 fps) in vanilla, and 20.17 ms (50 fps) against 24.85 ms (40 fps). It depends on what's happening, so I can't guarantee it's always faster.
 
 Measure it yourself: turn on Benchmark in an in-game config menu (such as Shudnal's Configuration Manager).
 

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <BepInExCore Condition="'$(BepInExCore)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Enngard\BepInEx\core</BepInExCore>
     <BepInExPlugins Condition="'$(BepInExPlugins)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Enngard\BepInEx\plugins</BepInExPlugins>
@@ -26,6 +26,7 @@
     <Reference Include="assembly_utils"><HintPath>$(ValheimManaged)\assembly_utils.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(ValheimManaged)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(ValheimManaged)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(ValheimManaged)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AudioModule"><HintPath>$(ValheimManaged)\UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AssetBundleModule"><HintPath>$(ValheimManaged)\UnityEngine.AssetBundleModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(ValheimManaged)\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>

@@ -1,3 +1,16 @@
+## 0.2.0
+- Faster moving shadows: something moving is only drawn into a light's shadow when that shadow can show: on screen, and where the light reaches it (not behind a wall from it). Each redraw also skips a copy it used to make.
+- Faster point lights: their lighting pass keeps the GPU's early depth test again (only the experimental Tiled lights need to switch it off).
+- Faster sun lighting: the sun's pass no longer carries the point light shadow code and no longer waits on its own shadow before reading the scene.
+- Shadows load during the loading screen, around where you spawn. Anything left is finished the frame you arrive, before the screen fades, after a world load, a respawn or a teleport. No shadows popping in afterwards.
+- What you do comes first: placing or breaking pieces, doors, items on stands and placing, taking or eating food. The light brightest where it happened updates its shadow at once; the other lights whose shadow of it you can see follow first in line. The world streaming in around you waits behind them.
+- A piece you place casts its shadow at once (as a moving shadow until its lights' cached shadows take it in).
+- Changes next to lights you walk around show right away: a light whose shadow was being resized no longer makes them wait for the whole resize, and a resize that was under way can't bring the old shadow back.
+- A dropped or falling item's shadow follows it every frame until it settles.
+- Placed food is drawn into shadows the same way as building pieces.
+- Fixed: a food building preview (holding food to place it) left a shadow until something else was placed.
+- The building preview casts no shadows, as in vanilla.
+- New: Quick benchmark (General): the mod against vanilla in about 10 seconds. Benchmark now takes the middle frame time of each part (a stutter doesn't skew it) and shows what moving shadows, point lights and the lighting shader each cost.
 ## 0.1.11
 - New: Flicker culling (General, on by default). Lights more than 15 metres from you stop flickering, as do lights whose entire reach is out of view. Their brightness holds steady until nearby and visible again; fades and flashing-light accessibility settings remain supported. The distance is adjustable.
 - Fixed: A placed feast or other food could leave its shadow behind briefly after being broken or removed. Visible affected faces now get priority within the existing redraw budget, without scanning all nearby geometry again.

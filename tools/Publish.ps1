@@ -175,6 +175,7 @@ function Publish-TsLike($site, $api, $team, $tokenName, $categories) {
     $init = Invoke-RestMethod -Uri "$api/usermedia/initiate-upload/" -Method Post -Headers $h -ContentType 'application/json' `
         -Body (@{ filename = [IO.Path]::GetFileName($Zip); file_size_bytes = $bytes.Length } | ConvertTo-Json)
     $uuid = $init.user_media.uuid
+    $phase = 'multipart upload'
     try {
         $parts = @()
         foreach ($p in $init.upload_urls) {
@@ -183,6 +184,7 @@ function Publish-TsLike($site, $api, $team, $tokenName, $categories) {
             $r = Invoke-WebRequest -Uri $p.url -Method Put -Body $chunk -UseBasicParsing
             $parts += @{ ETag = [string]($r.Headers['ETag']); PartNumber = $p.part_number }
         }
+        $phase = 'finish-upload'
         Invoke-RestMethod -Uri "$api/usermedia/$uuid/finish-upload/" -Method Post -Headers $h -ContentType 'application/json' `
             -Body (@{ parts = $parts } | ConvertTo-Json -Depth 5) | Out-Null
         $body = @{
@@ -193,6 +195,7 @@ function Publish-TsLike($site, $api, $team, $tokenName, $categories) {
             has_nsfw_content     = $false
             upload_uuid          = $uuid
         }
+        $phase = 'submission'
         Invoke-RestMethod -Uri "$api/submission/submit/" -Method Post -Headers $h -ContentType 'application/json' `
             -Body ($body | ConvertTo-Json -Depth 5) | Out-Null
         # Successful submit can still be rejected; check public community status.
@@ -203,7 +206,11 @@ function Publish-TsLike($site, $api, $team, $tokenName, $categories) {
         return "uploaded, not publicly approved yet (status: $($listing.review_status))"
     } catch {
         try { Invoke-RestMethod -Uri "$api/usermedia/$uuid/abort-upload/" -Method Post -Headers $h -ContentType 'application/json' -Body '{}' | Out-Null } catch {}
-        return "FAILED: $($_.Exception.Message) $($_.ErrorDetails.Message)"
+        $details = $_.ErrorDetails.Message
+        if (-not $details -and $_.Exception.Response) {
+            try { $reader = New-Object IO.StreamReader($_.Exception.Response.GetResponseStream()); $details = $reader.ReadToEnd(); $reader.Dispose() } catch {}
+        }
+        return "FAILED in $phase : $($_.Exception.Message) $details"
     }
 }
 

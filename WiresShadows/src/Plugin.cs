@@ -18,7 +18,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.1.11";
+        public const string Version = "0.2.0";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -26,15 +26,14 @@ namespace WiresShadows
         // Benchmark temporarily turns the cached path off; normal play always uses it.
         internal static bool CachedShadows = true;
         // Moving shadows redrawn less often the fainter the light is where the moving things are
-        // (ShadowCache.FaintEvery). The benchmark compares it with every frame.
-        internal static bool FaintCut = true;
+        // (ShadowCache.FaintEvery).
+        internal const bool FaintCut = true;
         internal const int Slots = 24;
         internal const int Resolution = 1024;
         internal const int FarSlots = 40;
         internal const int UltraSlots = 24;
         internal const float UltraDistance = 150f;
         internal const int FarMovingLights = 8;
-        internal const bool GhostShadows = true;
 
         internal const bool MovingLightShadows = true;
 
@@ -42,6 +41,7 @@ namespace WiresShadows
         internal const bool MovingCasters = true;
         internal const bool ParticleShadows = true; // effects' particles cast moving shadows
         internal static ConfigEntry<bool> Benchmark;
+        internal static ConfigEntry<bool> QuickBenchmark;
         internal static ConfigEntry<bool> DebugLog;
         internal static ConfigEntry<bool> TiledLights;
         internal static ConfigEntry<bool> FlickerCulling;
@@ -77,7 +77,7 @@ namespace WiresShadows
         {
             var a = new ConfigurationManagerAttributes
             {
-                Order = section == "General" && name == "Benchmark" ? 10000 : section == "General" && name == "Enabled" ? 9000 : _order--
+                Order = section == "General" && name == "Benchmark" ? 10000 : section == "General" && name == "Quick benchmark" ? 9999 : section == "General" && name == "Enabled" ? 9000 : _order--
             };
             return Config.Bind(section, name, value,
                 new ConfigDescription(description.Description, description.AcceptableValues, a));
@@ -104,7 +104,10 @@ namespace WiresShadows
                 "Every 5 seconds, what the mod's own work costs per frame (average and worst), in the log (BepInEx/LogOutput.log).");
             DebugLog = Setting("General", "Debug log", false,
                 "Writes what the mod is doing to the log (BepInEx/LogOutput.log). On by itself while a benchmark runs.");
+            QuickBenchmark = Setting("General", "Quick benchmark", false,
+                "The same against vanilla in about 10 seconds, the mod and vanilla only. For small changes. Resets itself.");
             Benchmark.SettingChanged += (_, __) => { if (Benchmark.Value && GetComponent<Bench>() == null) gameObject.AddComponent<Bench>(); };
+            QuickBenchmark.SettingChanged += (_, __) => { if (QuickBenchmark.Value && GetComponent<Bench>() == null) gameObject.AddComponent<Bench>(); };
             AssetBundle bundle = null;
             using (Stream stream = typeof(Plugin).Assembly.GetManifestResourceStream(BundleResource))
                 if (stream != null)
@@ -123,8 +126,7 @@ namespace WiresShadows
                     else if (s.name == "Hidden/WireShadowCombine") ShadowCache.CombineShader = s;
                     else if (s.name == "Hidden/WireShadowNativeDepthCopy") ShadowCache.NativeCopyShader = s;
                     else if (s.name == "Hidden/WireAOApply") AmbientOcclusion.BounceShader = s;
-                    else if (s.name == "Hidden/WireTiledLights") ShadowCache.TiledShader = s;
-                }
+                    else if (s.name == "Hidden/WireTiledLights") ShadowCache.TiledShader = s;                }
                 foreach (ComputeShader cs in bundle.LoadAllAssets<ComputeShader>())
                     if (cs.name == "WireTiledLights") ShadowCache.TiledCompute = cs;
             }
@@ -166,9 +168,15 @@ namespace WiresShadows
             Apply();
         }
 
+        // The benchmark's phase with the game's own lighting shader and the rest of the mod running.
+        internal static bool BenchGameLighting;
+        private static Plugin s_instance;
+        internal static void ReApply() => s_instance?.Apply();
+
         private void Apply()
         {
-            if (UseShader.Value)
+            s_instance = this;
+            if (UseShader.Value && !BenchGameLighting)
             {
                 GraphicsSettings.SetShaderMode(BuiltinShaderType.DeferredShading, BuiltinShaderMode.UseCustom);
                 GraphicsSettings.SetCustomShader(BuiltinShaderType.DeferredShading, _shader);
@@ -191,3 +199,4 @@ namespace WiresShadows
         }
     }
 }
+
