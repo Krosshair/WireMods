@@ -41,6 +41,7 @@ namespace WiresAcoustics
         // EffectList.Create postfix (Follow), before the sounds are followed or measured. May set the owner.
         internal static void Place(EffectList list, GameObject[] made, Vector3 basePos, Transform baseParent, ref Transform given)
         {
+            if (baseParent != null && StationPart(list, made, basePos, baseParent, ref given)) return;
             Transform root = baseParent != null ? baseParent : given;
             // made at a character's pivot with no owner given (pets, animals jumping, a player's tool):
             // that character is its owner, so it follows it
@@ -91,6 +92,7 @@ namespace WiresAcoustics
             if (given != null || baseParent != null) return;
             Transform piece = PieceAt(basePos);
             if (piece == null) return;
+            if (StationPart(list, made, basePos, piece, ref given)) return;
             given = piece;
             Vector3 at;
             bool door = piece.GetComponent<Door>() != null;
@@ -214,6 +216,35 @@ namespace WiresAcoustics
             if (flat.sqrMagnitude < .05f * .05f) return mid;
             Vector3 hinge = leaf.position - flat.normalized * Mathf.Min(.15f, flat.magnitude);
             at = new Vector3(hinge.x, y, hinge.z);
+            return true;
+        }
+
+        // Stations play the sound of what you put in or take out at their own pivot (Smelter,
+        // Fermenter, CookingStation). Each has the part you used: the intake you added coal or
+        // ore through, the tap, the output. The sound goes to that part.
+        private static bool StationPart(EffectList list, GameObject[] made, Vector3 basePos, Transform station, ref Transform given)
+        {
+            Transform piece = station;
+            if (piece == null || (basePos - piece.position).sqrMagnitude > 1e-4f) return false;
+            Component part = null;
+            Smelter sm = piece.GetComponentInChildren<Smelter>();
+            if (sm != null)
+                part = list == sm.m_oreAddedEffects ? sm.m_addOreSwitch
+                    : list == sm.m_fuelAddedEffects ? sm.m_addWoodSwitch
+                    : list == sm.m_produceEffects ? (Component)sm.m_outputPoint : null;
+            Fermenter fe = part == null ? piece.GetComponentInChildren<Fermenter>() : null;
+            if (fe != null)
+                part = list == fe.m_addedEffects ? fe.m_addSwitch
+                    : list == fe.m_tapEffects ? (Component)fe.m_outputPoint : null;
+            CookingStation cs = part == null && fe == null && sm == null ? piece.GetComponentInChildren<CookingStation>() : null;
+            if (cs != null && list == cs.m_fuelAddedEffects) part = cs.m_addFuelSwitch;
+            if (part == null) return false;
+            // a switch is a collider you aim at: its middle; a point is the point
+            Collider c = part.GetComponent<Collider>();
+            Vector3 at = c != null ? c.bounds.center : part.transform.position;
+            given = piece;
+            Move(made, piece, at, null);
+            Note(piece.name + " " + part.name, made);
             return true;
         }
 

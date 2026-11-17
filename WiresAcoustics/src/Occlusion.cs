@@ -92,6 +92,15 @@ namespace WiresAcoustics
             // your own sounds (footsteps, swings, your gear): nothing stands between your head and
             // your own body, so no check (three rays each, at every step)
             float occ = starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f) ? Blocking(Hearing.Eye, to, out block) : 0f; // what's in the way: from the camera (Hearing)
+            // You can see the thing it comes from: no muffle. The sound's spot can be hidden while the
+            // thing isn't (a chest's lid under the chest stacked on it, its side right in front of
+            // you), so the side of its box facing you is checked too, only when the spot was blocked.
+            if (occ > .05f && f != null && f.ShapeRoot != null && f.AreaRadius > 0f &&
+                Blocking(Hearing.Eye, FacingPoint(f, Hearing.Eye), out Block seen) <= .05f)
+            {
+                occ = 0f;
+                block = seen;
+            }
             Own = null;
             s_checked++;
             if (occ > .05f) s_muffled++;
@@ -204,6 +213,18 @@ namespace WiresAcoustics
         // hairline gap between their colliders, and one ray that happened to run along it got through
         // a closed wall as if it were open; three rays 8 cm apart can't all find it. A real gap a
         // sound gets through (a door left ajar) is wider than that.
+        // The point of the source's box nearest the eye: the side of it you'd see, 2 cm inside.
+        private static Vector3 FacingPoint(AcousticFilter f, Vector3 eye)
+        {
+            // the box: its middle kept in the object's space, its size along the world's axes (Area)
+            Vector3 c = f.ShapeRoot.TransformPoint(f.ShapeCenter);
+            Vector3 h = f.ShapeHalf - new Vector3(.02f, .02f, .02f);
+            Vector3 p = eye - c;
+            return c + new Vector3(Mathf.Clamp(p.x, -Mathf.Max(0f, h.x), Mathf.Max(0f, h.x)),
+                                   Mathf.Clamp(p.y, -Mathf.Max(0f, h.y), Mathf.Max(0f, h.y)),
+                                   Mathf.Clamp(p.z, -Mathf.Max(0f, h.z), Mathf.Max(0f, h.z)));
+        }
+
         internal static float Blocking(Vector3 from, Vector3 to, out Block block)
         {
             block = Block.Clear;

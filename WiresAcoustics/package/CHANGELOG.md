@@ -1,3 +1,6 @@
+## 0.5.12
+- Station sounds come from the part you used: the smelter's coal and ore intakes and its output, the fermenter's intake and tap, the cooking station's fuel intake.
+- A sound isn't muffled when you can see the side of what it comes from, even if its usual spot is covered (a chest under another in a stacked wall).
 ## 0.5.11
 - What's in the way of a sound and the way round it (walls, windows, doorways, corners) are now worked out from the camera, like a sound's direction: you hear what you see from where you see it. How loud a sound is still goes by your character's head.
 
