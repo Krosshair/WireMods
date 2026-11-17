@@ -1,3 +1,8 @@
+## 0.2.0
+- Attack chains: aggressive, confident enemies can go straight into another attack instead of attack, pause, attack, up to 4 in a row.
+- Between chained attacks they take a very small step, and switch to a different attack when they have one.
+- Melee attacks that land get used more, ones that miss less.
+- Smart enemies of the same kind nearby learn from it too.
 ## 0.1.2
 - Wire's Aldr gives its extra leader star to the pack's own leader.
 
