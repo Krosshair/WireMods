@@ -262,6 +262,20 @@ namespace WiresSmoothUI
             float now = Time.unscaledTime;
             List<ItemDrop.ItemData> items = inventory.GetAllItems();
 
+            // Items shown here last time that are gone now. When the game swaps an
+            // inventory's items for new copies, a "new" item with no position of its
+            // own takes the place of a gone one that matches, so it still slides.
+            Present.Clear();
+            for (int i = 0; i < items.Count; i++)
+                if (items[i] != null) Present.Add(items[i]);
+            Gone.Clear();
+            for (int i = 0; i < context.Occupied.Count; i++)
+            {
+                ItemDrop.ItemData old = context.Occupied[i]?.Item;
+                if (old != null && !Present.Contains(old) && LastPositions.ContainsKey(old))
+                    Gone.Add(old);
+            }
+
             for (int i = 0; i < items.Count; i++)
             {
                 ItemDrop.ItemData item = items[i];
@@ -295,6 +309,8 @@ namespace WiresSmoothUI
                     ClearItemState(state);
             }
 
+            Gone.Clear();
+            Present.Clear();
             PruneOldPositions(now);
         }
 
@@ -342,7 +358,10 @@ namespace WiresSmoothUI
                 // shown, even if nothing changed for a long time. (A time
                 // limit here made items in an untouched player inventory pop
                 // in instead of sliding when sorted.)
-                if (LastPositions.TryGetValue(item, out PositionRecord previous))
+                ItemDrop.ItemData twin = LastPositions.ContainsKey(item) ? null : TakeTwin(item);
+                if (twin != null && InFlight.TryGetValue(twin, out Vector3 twinDrawn))
+                    InFlight[item] = twinDrawn;
+                if (LastPositions.TryGetValue(twin ?? item, out PositionRecord previous))
                 {
                     fromWorld = previous.World;
                     if (TryGetSlotWorld(previous.Grid, previous.Index, out Vector3 live))
@@ -424,6 +443,29 @@ namespace WiresSmoothUI
             record.LastSeen = now;
             record.Grid = grid;
             record.Index = index;
+        }
+
+        private static readonly HashSet<ItemDrop.ItemData> Present =
+            new HashSet<ItemDrop.ItemData>(RefComparer<ItemDrop.ItemData>.Instance);
+        private static readonly List<ItemDrop.ItemData> Gone = new List<ItemDrop.ItemData>();
+
+        // A gone item that is the same thing (name, quality, variant), the same
+        // stack size first. Each gone item is used once.
+        private static ItemDrop.ItemData TakeTwin(ItemDrop.ItemData item)
+        {
+            int best = -1;
+            for (int i = 0; i < Gone.Count; i++)
+            {
+                ItemDrop.ItemData g = Gone[i];
+                if (g.m_shared.m_name != item.m_shared.m_name || g.m_quality != item.m_quality ||
+                    g.m_variant != item.m_variant) continue;
+                best = i;
+                if (g.m_stack == item.m_stack) break;
+            }
+            if (best < 0) return null;
+            ItemDrop.ItemData twin = Gone[best];
+            Gone.RemoveAt(best);
+            return twin;
         }
 
         // The current on-screen position of a slot's icon, if that grid and
