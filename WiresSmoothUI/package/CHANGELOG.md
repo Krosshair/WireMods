@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.6.11
+- Added: Hide damage numbers (Global Toggles, off by default) turns off the floating damage, heal and miss numbers entirely.
 ## 0.6.10
 - Fixed: on a server, the first sort or move in a chest someone else had open before could snap items into place instead of sliding them.
 ## 0.6.9

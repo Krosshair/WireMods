@@ -38,6 +38,7 @@ namespace WiresSmoothUI
             Move(config, ref WiresSmoothUIPlugin.MapInfoControllerHotkey, "Keybinds", "activator controller button", "Controller equivalent of the activator key.", 20);
             WiresSmoothUIPlugin.ActivatorBehavior = config.Bind("Keybinds", "Keybind behaviour", ActivatorBehaviorMode.Hold, new ConfigDescription("Choose whether the keyboard and controller activator must be held or pressed to toggle the reveal state.", null, new ConfigurationManagerAttributes { Order = 10 }));
             Move(config, ref WiresSmoothUIPlugin.Enabled, "Global Toggles", "Global toggle - animations", "Master switch for UI animations. Disabling overrides the individual animation switches without disabling dynamic HUD hiding.", 20);
+            NewBool(config, ref WiresSmoothUIPlugin.HideDamageNumbers, "Global Toggles", "Hide damage numbers", false, "Hide the floating damage numbers (and heal, miss and other floating texts) entirely.", 5);
             NewBool(config, ref WiresSmoothUIPlugin.HudEnabled, "Global Toggles", "Global toggle - Dynamic HUD", true, "Master switch for contextual HUD hiding. Disabling restores dynamic HUD elements to normal visibility without disabling menu animations.", 10);
             Move(config, ref WiresSmoothUIPlugin.CrosshairAnimations, "Crosshair (Dynamic HUD)", "Dynamic Crosshair", "Dynamically show and hide the + crosshair.", 90);
             Move(config, ref WiresSmoothUIPlugin.CrosshairFade, "Crosshair (Dynamic HUD)", "Crosshair fade seconds", "Fade time for the + crosshair.", 80, 0f, 1f);
