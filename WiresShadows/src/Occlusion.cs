@@ -33,7 +33,13 @@ namespace WiresShadows
             Compute != null && MaskShader != null && MaskShader.isSupported &&
             SystemInfo.supportsComputeShaders && SystemInfo.supportsAsyncGPUReadback;
 
-        private const int HideAfter = 2; // answers in a row saying hidden before a piece is hidden (picked)
+        // Kept cheap where little is hidden (outside, looking at a house): the depth pyramid is a
+        // quarter of the screen's size, the test runs every other frame (picked), and the GPU sends
+        // back only the pieces whose answer changed, so nothing here goes through every piece.
+        private const int TestEvery = 2;
+        private static bool s_gpuReset = true;
+        private static ComputeBuffer s_stateBuf;
+        private static int s_kClear;
 
         private sealed class Slot
         {
@@ -118,7 +124,7 @@ namespace WiresShadows
                     if (a == null || (!a.IsInTransition(0) && a.GetCurrentAnimatorStateInfo(0).normalizedTime >= 1f))
                         s_doors.RemoveAt(i);
                 }
-                if (s_doors.Count > 0) s_resetFrame = Time.frameCount;
+                if (s_doors.Count > 0) { s_resetFrame = Time.frameCount; s_gpuReset = true; }
             }
 
             Apply(pos);
@@ -143,20 +149,17 @@ namespace WiresShadows
             if (sent.Frame != f) return;
             if ((pos - sent.Cam).magnitude > sent.Move + 0.001f) { ShowAll(); return; } // moved more than it allowed for
 
-            int n = Mathf.Min(s_count, s_answerLength - 1);
-            for (int i = 0; i < n; i++)
+            // only the pieces whose answer changed (the GPU keeps each one's run of answers)
+            int n = Mathf.Min((int)s_answer[1], s_answerLength - 2);
+            for (int k = 0; k < n; k++)
             {
+                uint v = s_answer[2 + k];
+                int i = (int)(v & 0x7FFFFFFFu);
+                if (i >= s_count) continue;
                 Slot s = s_slots[i];
                 if (s == null || s.Since > f) continue;
-                if (s_answer[i + 1] == 1)
-                {
-                    if (++s.Streak >= HideAfter && !s.Hidden) Hide(i);
-                }
-                else
-                {
-                    s.Streak = 0;
-                    if (s.Hidden) Show(i);
-                }
+                if ((v & 0x80000000u) != 0) { if (!s.Hidden) Hide(i); }
+                else if (s.Hidden) Show(i);
             }
         }
 
@@ -165,9 +168,11 @@ namespace WiresShadows
             if (!s_active || req.hasError) return;
             var data = req.GetData<uint>();
             if (data.Length == 0) return;
-            if (s_answer.Length < data.Length) s_answer = new uint[Mathf.NextPowerOfTwo(data.Length)];
-            Unity.Collections.NativeArray<uint>.Copy(data, s_answer, data.Length);
-            s_answerLength = data.Length;
+            if (data.Length < 2) return;
+            int len = Mathf.Min(data.Length, 2 + (int)data[1]);
+            if (s_answer.Length < len) s_answer = new uint[Mathf.NextPowerOfTwo(len)];
+            Unity.Collections.NativeArray<uint>.Copy(data, s_answer, len);
+            s_answerLength = len;
             s_answerFrame = (int)s_answer[0];
         }
 
@@ -196,6 +201,7 @@ namespace WiresShadows
         internal static void ShowAll()
         {
             s_resetFrame = Time.frameCount + 1;
+            s_gpuReset = true; // the GPU's per-piece state starts over with it
             if (s_hidden.Count == 0) return;
             foreach (int i in new List<int>(s_hidden))
                 Show(i);
@@ -295,8 +301,11 @@ namespace WiresShadows
             s_active = true;
             s_kReduce = Compute.FindKernel("Reduce");
             s_kTest = Compute.FindKernel("Test");
+            s_kClear = Compute.FindKernel("Clear");
+            s_gpuReset = true;
             s_mask = new Material(MaskShader) { hideFlags = HideFlags.HideAndDontSave };
             s_mask.SetFloat("_WireFar", SystemInfo.usesReversedZBuffer ? 0f : 1f);
+            s_mask.SetFloat("_WireReversed", SystemInfo.usesReversedZBuffer ? 1f : 0f);
             Compute.SetFloat("_Reversed", SystemInfo.usesReversedZBuffer ? 1f : 0f);
             s_cb = new CommandBuffer { name = "Wire's Shadows occlusion" };
             s_resetFrame = Time.frameCount + 1;
@@ -323,6 +332,7 @@ namespace WiresShadows
             s_cb?.Release(); s_cb = null;
             s_boxBuf?.Release(); s_boxBuf = null;
             s_resBuf?.Release(); s_resBuf = null;
+            s_stateBuf?.Release(); s_stateBuf = null;
             ReleaseTargets();
             if (s_mask != null) Object.Destroy(s_mask);
             s_mask = null;
@@ -362,22 +372,23 @@ namespace WiresShadows
 
         private static void Record(Camera cam, float move)
         {
-            int w = cam.pixelWidth, h = cam.pixelHeight;
-            if (w <= 0 || h <= 0) return;
+            CommandBuffer cb = s_cb;
+            cb.Clear();
+            if (s_count == 0 || Time.frameCount % TestEvery != 0) return;
+            if (cam.pixelWidth <= 0 || cam.pixelHeight <= 0) return;
+            int w = Mathf.Max(1, (cam.pixelWidth + 3) / 4), h = Mathf.Max(1, (cam.pixelHeight + 3) / 4);
             EnsureTargets(w, h);
             int cap = Mathf.Max(1, s_slots.Length);
             if (s_boxBuf == null || s_boxBuf.count < cap * 2)
             {
-                s_boxBuf?.Release(); s_resBuf?.Release();
+                s_boxBuf?.Release(); s_resBuf?.Release(); s_stateBuf?.Release();
                 s_boxBuf = new ComputeBuffer(cap * 2, 16);
-                s_resBuf = new ComputeBuffer(cap + 1, 4);
+                s_resBuf = new ComputeBuffer(cap + 2, 4);
+                s_stateBuf = new ComputeBuffer(cap, 4);
                 s_boxDirty = true;
+                ShowAll(); // the new state starts empty: nothing hidden
             }
             if (s_boxDirty) { s_boxBuf.SetData(s_boxes, 0, 0, Mathf.Max(1, s_count) * 2); s_boxDirty = false; }
-
-            CommandBuffer cb = s_cb;
-            cb.Clear();
-            if (s_count == 0) return;
             // level 0: the depth, with the moving things painted out
             cb.Blit(BuiltinRenderTextureType.CameraTarget, s_levels[0], s_mask, 1);
             cb.SetRenderTarget(s_levels[0]);
@@ -408,8 +419,13 @@ namespace WiresShadows
             cb.SetComputeVectorParam(Compute, "_Cam", new Vector4(proj[0, 0], proj[1, 1], move, s_count));
             cb.SetComputeVectorParam(Compute, "_ZB", zb);
             cb.SetComputeIntParams(Compute, "_HiZInfo", w, h, s_levels.Length, Time.frameCount);
+            cb.SetComputeIntParam(Compute, "_Reset", s_gpuReset ? 1 : 0);
+            s_gpuReset = false;
+            cb.SetComputeBufferParam(Compute, s_kClear, "_Result", s_resBuf);
+            cb.DispatchCompute(Compute, s_kClear, 1, 1, 1);
+            cb.SetComputeBufferParam(Compute, s_kTest, "_State", s_stateBuf);
             cb.DispatchCompute(Compute, s_kTest, (s_count + 63) / 64, 1, 1);
-            cb.RequestAsyncReadback(s_resBuf, (s_count + 1) * 4, 0, s_onRead);
+            cb.RequestAsyncReadback(s_resBuf, (s_count + 2) * 4, 0, s_onRead);
         }
 
         // Characters, ships and carts on screen: their renderers, looked up again every second or so

@@ -33,7 +33,9 @@ namespace WiresShadows
             internal float LitAt = -10f;  // when it was last switched on
             internal bool Instant;       // next render shows at full strength
             internal int ReleasedFrame = -1;
+            internal int MapStamp;       // counts its cached map redraws (machines behind walls are counted again)
             internal Rigidbody Body;     // a loose item's physics body
+            internal sbyte CanMove = -1; // 1: on something with a body (item, ship, cart, character); 0: a fixed piece's; -1: not looked yet
             internal bool Rolling;       // using the game's own shadows while it moves
             internal bool Staged;        // re-rendering into the staging cube, swapped in when done
             internal readonly List<Renderer> Explicit = new List<Renderer>();  // untagged shaders, drawn directly
@@ -1915,6 +1917,7 @@ namespace WiresShadows
             _active = false;
             LitRelease();
             Occlusion.Disable();
+            SeenRelease();
             TiledRelease();
             JobsShutdown();
             ReleaseAll();
@@ -2823,6 +2826,7 @@ namespace WiresShadows
                 if (!reassignedForTurn && _active && (loading || TeleportStreaming()))
                     Reassign();
             }
+            SeenRead(); // machines behind walls (Machines.cs)
             if (_finishNow) { _finishNow = false; FinishAllNow(); _finishWhileScreen = true; } // arrived from a teleport
             else if (_finishWhileScreen) FinishWhileScreen();
             if (Swings.Count > 0)
@@ -2874,6 +2878,10 @@ namespace WiresShadows
                     MovingLight(t.Light, false, "settled");
                 }
                 if (!t.Ready || t.Dirty)
+                    continue;
+                // A built piece's light never moves by itself: only lights on something with a
+                // body are looked at each frame.
+                if (!Movable(t))
                     continue;
                 // The object the light belongs to moved (a ship, a carried
                 // light). Animation inside it (a flame) doesn't count.
@@ -2937,7 +2945,12 @@ namespace WiresShadows
             // ONCE instead of 4->8->16->32 allocations/copies this frame.
             int newNearCubes = 0, newFarCubes = 0;
             bool releasedAnyMovingMaps = false;
-            for (int sl = 0; sl < _slots.Length; sl++)
+            // Nothing moving in any light's reach: nothing to check light by light this frame; a
+            // moving shadow still up from before is taken down (out of view too: it would show
+            // the old one when turned to).
+            bool idle = _groupCount == 0;
+            if (idle) releasedAnyMovingMaps = TakeDownMoving();
+            for (int sl = 0; !idle && sl < _slots.Length; sl++)
             {
                 DynFaces[sl] = 0;
                 Tracked t = _slots[sl];
@@ -2985,6 +2998,8 @@ namespace WiresShadows
                     Group grp = Groups[g];
                     if (!Within(grp, lp, range) || t.Stand != null && ReferenceEquals(grp.Owner, t.Stand))
                         continue;
+                    if (grp.Kind == KindMachine && MachineHiddenFrom(grp.Owner, t))
+                        continue; // behind its walls from this light (Machines.cs)
                     // Every moving thing in a light's reach is drawn into it, whatever the camera sees:
                     // the on-screen and line-of-sight culls made shadows come and go with where you
                     // looked and how your character stood. What's saved instead goes by distance from
@@ -3525,13 +3540,16 @@ namespace WiresShadows
                 }
                 _frameCb.SetViewProjectionMatrices(view, proj);
                 if (_benchSampling) _benchDraws += FaceRenderers.Count;
+                int counted = CountBegin(t);
                 foreach (int k in FaceRenderers)
                 {
                     Caster c = Casters[k];
                     if (c.Sheet != null) { _frameCb.DrawRenderer(c.R, c.Sheet, 0, s_sheetPass); continue; }
+                    if (counted >= 0) counted = CountFor(k, t, counted);
                     for (int sub = 0; sub < c.Subs; sub++)
                         _frameCb.DrawRenderer(c.R, _distMaterial, sub, 0);
                 }
+                CountEnd(counted);
                 _frameCb.DisableScissorRect();
             }
             if (gs && GsOrder.Count > 0)
@@ -3541,6 +3559,7 @@ namespace WiresShadows
                 _frameCb.SetRenderTarget(new RenderTargetIdentifier(maps, 0, CubemapFace.Unknown, -1));
                 _frameCb.SetGlobalMatrixArray(FaceVPId, GsVP);
                 _frameCb.SetGlobalFloat(SliceBaseId, slice * 6);
+                int counted = CountBegin(t);
                 foreach (int k in GsOrder)
                 {
                     Caster c = Casters[k];
@@ -3551,9 +3570,11 @@ namespace WiresShadows
                         if (s_sheetGsPass >= 0) _frameCb.DrawRenderer(c.R, c.Sheet, 0, s_sheetGsPass);
                         continue;
                     }
+                    if (counted >= 0) counted = CountFor(k, t, counted);
                     for (int sub = 0; sub < c.Subs; sub++)
                         _frameCb.DrawRenderer(c.R, _distMaterial, sub, s_gsPass);
                 }
+                CountEnd(counted);
                 if (_benchSampling) _benchDraws += GsOrder.Count;
             }
             return true;
@@ -3852,6 +3873,7 @@ namespace WiresShadows
         private void GatherCasters(Vector3 cam, List<Character> characters)
         {
             Casters.Clear();
+            System.Array.Clear(s_casterMachine, 0, s_casterMachine.Length);
             _groupCount = 0;
             float far = Plugin.Distance + 30f;
             float far2 = far * far;
@@ -4049,6 +4071,33 @@ namespace WiresShadows
                     continue;
                 GatherLights.Add(new Vector4(lp.x, lp.y, lp.z, range));
             }
+        }
+
+        // Lights on something with a body can be moved (a dropped torch, a ship's, a carried one);
+        // a built piece's can't. Looked up once per light.
+        private static bool Movable(Tracked t)
+        {
+            if (t.CanMove < 0)
+                t.CanMove = (sbyte)(t.Body != null || t.Light.GetComponentInParent<Rigidbody>() != null ? 1 : 0);
+            return t.CanMove == 1;
+        }
+
+        // Every moving shadow still up taken down, as a light with nothing moving in reach does it
+        // in the moving pass. True if there was one.
+        private bool TakeDownMoving()
+        {
+            bool any = false;
+            for (int sl = 0; sl < _slots.Length; sl++)
+            {
+                if (_dynFacesLast[sl] == 0 && _dynActive[sl] <= 0.5f) continue;
+                _dynFacesLast[sl] = 0;
+                _dynActive[sl] = 0f;
+                _nativeMovingActive[sl] = 0f;
+                if (!_framePending) FreeDynSlot(sl);
+                _pickupInvalidFaces[sl] = 0;
+                any = true;
+            }
+            return any;
         }
 
         private static bool LitByAny(Vector3 c, float radius)
@@ -4651,6 +4700,7 @@ namespace WiresShadows
                 t.Face = -1;
                 // the new cube on screen, the old one freed
                 PublishTierMap(t);
+                t.MapStamp++;
                 t.Staged = false;
                 // a new map fades in (over a second, Update), also the ones built after a portal or a
                 // world load (behind the loading screen they fade there, unseen); a light just lit

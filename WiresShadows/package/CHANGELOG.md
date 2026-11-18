@@ -1,3 +1,9 @@
+## 0.2.4
+- Performance: Occlusion culling costs less to run (its depth test at a quarter of the screen size, every other frame, and only pieces that change are sent back), so it no longer makes things slower outside where little is hidden.
+- Performance: the mod no longer costs anything for moving shadows while nothing moving is in a light's reach (it went through every light each frame), and lights on built pieces are no longer checked for having moved each frame (only lights on items, ships, carts or characters can move).
+- Fixed: thin dark lines where one beam cuts into another (cross beams, snapped beams). The other beam's surface right at the joint no longer shades the first.
+- Performance: a turning machine (windmill, spinning wheel, eitr refinery) is no longer redrawn every frame into the moving shadow of a light whose walls hide it. While a light draws its turning parts, the GPU checks whether any of their pixels reach past that light's walls; if none do over one full turn, that light stops drawing them until its cached shadow changes.
+
 ## 0.2.3
 - New: Occlusion culling (General, experimental, off by default). Build pieces fully hidden behind others (the rooms above your basement, the inside of a house from outside) aren't drawn. Their sun, moon and point light shadows stay.
 

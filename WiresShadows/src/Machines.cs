@@ -28,6 +28,11 @@ namespace WiresShadows
             // becomes stationary. Cache its bounds only AFTER settling.
             internal Caster[] RestGeometry;
             internal int RestVisibility;
+            internal Transform Spin;     // a windmill's propeller: how far it has turned
+            internal Animator Anim;      // else the animation's loops
+            internal Quaternion LastSpin;
+            internal float LastLoop = -1f;
+            internal float Turns;        // whole turns (or animation loops) since it was registered
         }
 
         private static readonly List<Machine> Machines = new List<Machine>();
@@ -74,7 +79,13 @@ namespace WiresShadows
                 if (Bom(wm) != null) roots.Add(Bom(wm));
                 if (GrindstoneField?.GetValue(wm) is Transform g && g != null) roots.Add(g);
             }
-            AddMachine(smelter, roots, smelter, wm, null);
+            Machine added = AddMachine(smelter, roots, smelter, wm, null);
+            if (added != null)
+            {
+                added.Spin = wm != null ? Propeller(wm) : null;
+                if (added.Spin != null) added.LastSpin = added.Spin.rotation;
+                else if (smelter.m_animators != null) foreach (Animator a in smelter.m_animators) if (a != null) { added.Anim = a; break; }
+            }
         }
 
         internal static void RegisterTurret(Turret turret)
@@ -87,7 +98,7 @@ namespace WiresShadows
             AddMachine(turret, roots, null, null, turret.m_turretBody != null ? turret.m_turretBody.transform : null);
         }
 
-        private static void AddMachine(Component owner, List<Transform> roots, Smelter smelter, Windmill wm, Transform turret)
+        private static Machine AddMachine(Component owner, List<Transform> roots, Smelter smelter, Windmill wm, Transform turret)
         {
             var rs = new List<Renderer>();
             foreach (Transform root in roots)
@@ -96,7 +107,7 @@ namespace WiresShadows
                         !SeeThrough(r) && !rs.Contains(r))
                         rs.Add(r);
             if (rs.Count == 0)
-                return;
+                return null;
             Bounds b = rs[0].bounds;
             foreach (Renderer r in rs) b.Encapsulate(r.bounds);
             var m = new Machine
@@ -108,12 +119,14 @@ namespace WiresShadows
                 StillHash = Quantize(b.center, 100f) * 13 + 7
             };
             Machines.Add(m);
+            MachineByOwner[owner] = m;
             if (smelter != null) MachineBySmelter[smelter] = m;
             foreach (Renderer r in m.Renderers) MachineHidden.Add(r);
             // Its cached maps were made with the parts in; take them out (redrawn, not searched again).
             s_machine = true;
             PieceChanged(m.Center, owner);
             s_machine = false;
+            return m;
         }
         private static bool s_machine;
 
@@ -162,6 +175,8 @@ namespace WiresShadows
                 {
                     if (!object.ReferenceEquals(m.Smelter, null)) MachineBySmelter.Remove(m.Smelter);
                     foreach (Renderer r in m.Renderers) MachineHidden.Remove(r);
+                    MachineByOwner.Remove(m.Owner);
+                    if (Pairs.TryGetValue(m, out var gone)) { foreach (Pair p in gone.Values) { p.State = 2; s_pairFree.Push(p.Index); } Pairs.Remove(m); }
                     Machines.RemoveAt(i);
                     continue;
                 }
@@ -181,19 +196,151 @@ namespace WiresShadows
                     // when the processor itself is idle. Never cache a
                     // wind-powered or active moving silhouette.
                     m.RestGeometry = null;
+                    if (m.Spin != null)
+                    {
+                        m.Turns += Quaternion.Angle(m.Spin.rotation, m.LastSpin) / 360f;
+                        m.LastSpin = m.Spin.rotation;
+                    }
+                    else if (m.Anim != null)
+                    {
+                        float loop = m.Anim.GetCurrentAnimatorStateInfo(0).normalizedTime;
+                        if (m.LastLoop >= 0f) m.Turns += Mathf.Max(0f, loop - m.LastLoop);
+                        m.LastLoop = loop;
+                    }
+                    int before = _groupCount;
                     AddGroup(m.Center, m.Radius, Time.frameCount, false, m.Renderers, false, KindMachine);
+                    TagMachine(m, before);
                     continue;
                 }
                 int visibility = DropGeometryVisibility(m.Renderers);
                 if (m.RestGeometry == null || m.RestVisibility != visibility)
                     CacheRestMachineGeometry(m);
+                int was = _groupCount;
                 if (m.RestGeometry != null)
                     AddCachedCasterGroup(m.Center, m.Radius,
                         m.StillHash ^ m.RestVisibility, m.RestGeometry, KindMachine);
                 else
                     AddGroup(m.Center, m.Radius, m.StillHash ^ visibility,
                         false, m.Renderers, false, KindMachine);
+                TagMachine(m, was);
             }
+        }
+
+        // ---- Machines behind walls ----
+        // While a light draws a machine's turning parts into its moving map, the GPU marks it if any
+        // of their pixels is lit by that light past its own walls (WireShadowDistance, WireCount).
+        // Unmarked over one whole turn: whatever the parts would shade is in a wall's shadow already,
+        // so that light stops drawing them. Asked again when that light's cached map is redrawn.
+        private sealed class Pair { internal Machine M; internal int Index; internal int Stamp; internal float Start, Asked; internal byte State; } // 0 counting, 1 hidden, 2 seen
+        private const int MaxPairs = 1024;
+        private static readonly Dictionary<Component, Machine> MachineByOwner = new Dictionary<Component, Machine>();
+        private static readonly Dictionary<Machine, Dictionary<Tracked, Pair>> Pairs = new Dictionary<Machine, Dictionary<Tracked, Pair>>();
+        private static readonly List<Pair> s_counting = new List<Pair>();
+        private static readonly Stack<int> s_pairFree = new Stack<int>();
+        private static int s_pairNext;
+        private static Machine[] s_casterMachine = new Machine[256];
+        private static ComputeBuffer s_seenBuf;
+        private static bool s_seenPending;
+        private static readonly uint[] s_zero = new uint[1];
+        private static readonly int CountIndexId = Shader.PropertyToID("_WireCountIndex"),
+            CountSlotId = Shader.PropertyToID("_WireCountSlot"), MachineSeenId = Shader.PropertyToID("_WireMachineSeen");
+
+        // the casters of the group just added belong to this machine
+        private static void TagMachine(Machine m, int groupBefore)
+        {
+            if (_groupCount <= groupBefore) return;
+            Group g = Groups[_groupCount - 1];
+            g.Owner = m.Owner;
+            if (s_casterMachine.Length < Casters.Count) System.Array.Resize(ref s_casterMachine, Mathf.NextPowerOfTwo(Casters.Count));
+            for (int k = g.Start; k < g.Start + g.Count; k++) s_casterMachine[k] = m;
+        }
+
+        private static bool MachineHiddenFrom(Object owner, Tracked t)
+        {
+            if (!(owner is Component c) || !MachineByOwner.TryGetValue(c, out Machine m) || (m.Spin == null && m.Anim == null))
+                return false;
+            if (!Pairs.TryGetValue(m, out var byLight)) Pairs[m] = byLight = new Dictionary<Tracked, Pair>();
+            if (!byLight.TryGetValue(t, out Pair p))
+            {
+                if (s_pairFree.Count == 0 && s_pairNext >= MaxPairs) return false;
+                byLight[t] = p = new Pair { M = m, Index = s_pairFree.Count > 0 ? s_pairFree.Pop() : s_pairNext++, Stamp = int.MinValue };
+            }
+            if (p.Stamp != t.MapStamp)
+            {
+                // a new cached map (built, broken, a door): counted afresh
+                p.Stamp = t.MapStamp; p.Start = p.Asked = m.Turns; p.State = 0;
+                EnsureSeenBuffer();
+                s_seenBuf.SetData(s_zero, 0, p.Index, 1);
+                if (!s_counting.Contains(p)) s_counting.Add(p);
+            }
+            return p.State == 1;
+        }
+
+        // The shader's count index for caster k drawn for light t: 0 when not counting.
+        private static int CountIndex(int k, Tracked t)
+        {
+            Machine m = k < s_casterMachine.Length ? s_casterMachine[k] : null;
+            if (m == null || !Pairs.TryGetValue(m, out var byLight) || !byLight.TryGetValue(t, out Pair p) || p.State != 0) return 0;
+            return p.Index + 1;
+        }
+
+        // Around a light's moving-map draws: -1 when nothing is being counted, else the index set last.
+        private int CountBegin(Tracked t)
+        {
+            if (s_counting.Count == 0 || s_seenBuf == null) return -1;
+            _frameCb.SetRandomWriteTarget(1, s_seenBuf);
+            _frameCb.SetGlobalFloat(CountSlotId, t.Slot);
+            return 0;
+        }
+
+        private int CountFor(int k, Tracked t, int counted)
+        {
+            int ci = CountIndex(k, t);
+            if (ci != counted) _frameCb.SetGlobalFloat(CountIndexId, ci);
+            return ci;
+        }
+
+        private void CountEnd(int counted)
+        {
+            if (counted < 0) return;
+            if (counted != 0) _frameCb.SetGlobalFloat(CountIndexId, 0f);
+            _frameCb.ClearRandomWriteTargets();
+        }
+
+        private static void EnsureSeenBuffer()
+        {
+            if (s_seenBuf == null) s_seenBuf = new ComputeBuffer(MaxPairs, 4);
+        }
+
+        // Once a frame (LateUpdate): what last frame's draws marked, read back without waiting.
+        private static void SeenRead()
+        {
+            if (s_counting.Count == 0 || s_seenPending || s_seenBuf == null) return;
+            foreach (Pair p in s_counting) p.Asked = p.M.Turns;
+            s_seenPending = true;
+            UnityEngine.Rendering.AsyncGPUReadback.Request(s_seenBuf, SeenBack);
+        }
+
+        private static void SeenBack(UnityEngine.Rendering.AsyncGPUReadbackRequest req)
+        {
+            s_seenPending = false;
+            if (req.hasError) return;
+            var seen = req.GetData<uint>();
+            for (int i = s_counting.Count - 1; i >= 0; i--)
+            {
+                Pair p = s_counting[i];
+                if (p.State != 0) { s_counting.RemoveAt(i); continue; }
+                if (seen[p.Index] != 0) p.State = 2;
+                else if (p.Asked - p.Start >= 1f) p.State = 1;
+                if (p.State != 0) s_counting.RemoveAt(i);
+            }
+        }
+
+        private static void SeenRelease()
+        {
+            s_seenBuf?.Release(); s_seenBuf = null;
+            s_seenPending = false;
+            s_counting.Clear(); Pairs.Clear(); s_pairFree.Clear(); s_pairNext = 0;
         }
     }
 
