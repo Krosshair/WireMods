@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -53,6 +53,7 @@ namespace WiresShadows
             // its near-plane stand-ins (FindProxies).
             internal readonly List<Transform> AddedRoots = new List<Transform>();
             internal bool ProxiesStale;
+            internal float RegisteredAt; // when it was registered (Reassign's classification)
             internal bool Interact;      // something you did changed it, in view: first in the 2 ms a frame
             internal bool Ready;         // has a complete map
             internal bool SizeOnly;      // waiting for a redraw only to change its map's size
@@ -610,6 +611,8 @@ namespace WiresShadows
                     Unregister(l);
         }
 
+        private const float SettleChecks = 5f; // seconds after registering that a fixed light is still classified again (Reassign)
+        private static readonly System.Comparison<Tracked> ByPriority = (a, b) => a.Priority.CompareTo(b.Priority);
         private static readonly List<Light> PieceLights = new List<Light>();
         private static readonly List<Light> GoneLights = new List<Light>();
 
@@ -708,7 +711,8 @@ namespace WiresShadows
                 OriginalShadowStrength = light.shadowStrength,
                 OriginalShadowNearPlane = light.shadowNearPlane,
                 Sconce = IsSconce(light),
-                FakeFlame = fire != null
+                FakeFlame = fire != null,
+                RegisteredAt = Time.time
             };
             Lights.Add(t);
             ByLight[light] = t;
@@ -863,7 +867,12 @@ namespace WiresShadows
             internal float Until;
         }
         private static readonly List<Placement> Placements = new List<Placement>();
-        private const float PlacementSeconds = 10f; // a cap, in case a light never gets to it
+        // A cap, in case a light never gets to it. It was 10 s: placing and breaking a lot kept up
+        // to 10 s of placements drawn into every moving map at once, so each frame got slower the
+        // more you built. Picked: long enough for the lights in view to catch up (a face every
+        // third frame for the lesser ones).
+        private const float PlacementSeconds = 3f;
+        private static readonly Plane[] PlacementView = new Plane[6];
         // Something you did (placing, putting on or taking off a stand), not the world streaming in.
         private static int s_interaction;
         // Something removed (broken, taken, eaten): still drawable this frame, so its lights wait one.
@@ -961,6 +970,8 @@ namespace WiresShadows
         // done and needs just those faces: a whole map would be a long frame.
         private static Vector3 s_lastChange;
         private static bool s_strongestPending; // a removal: the next frame, once it's gone
+        private static bool s_strongestThisFrame; // a placement: this frame, once, before it's drawn
+        private static Tracked s_strongest; // the light that matters most for the last change: its other faces next frame
         private void FinishStrongest()
         {
             Tracked best = null;
@@ -973,20 +984,25 @@ namespace WiresShadows
                 if (here > bestLight) { bestLight = here; best = t; }
             }
             if (best == null || !PatchVisible(this, best)) return;
-            while (best.DoorFaces != 0)
-            {
-                int before = best.DoorFaces;
-                RenderDoorFace(best);
-                if (best.DoorFaces == before) break;
-            }
+            // Only the face the change is in, now (about 2.8 ms); its other faces follow on the next
+            // frames, first in line. All of them at once was a spike next to a few lights.
+            int main = FacesFor(s_lastChange - best.Center, 0f) & best.DoorFaces;
+            if (main == 0) main = best.DoorFaces & -best.DoorFaces;
+            int rest = best.DoorFaces & ~main;
+            best.DoorFaces = main;
+            RenderDoorFace(best);
+            best.DoorFaces |= rest;
+            s_strongest = best;
             if (best.DoorFaces == 0) best.Interact = false;
             UpdateGlobals();
         }
         private static void StrongestNow()
         {
             if (Instance == null) return;
+            // once a frame, just before it's drawn (LateUpdate): placing food is a piece and a food
+            // at once, and each redrew the same light's faces in the same frame
             if (s_removing) s_strongestPending = true;
-            else Instance.FinishStrongest();
+            else s_strongestThisFrame = true;
         }
 
         private static void PlacedNow(Piece piece)
@@ -1005,6 +1021,8 @@ namespace WiresShadows
 
         private void UpdatePlacements()
         {
+            Camera view = Utils.GetMainCamera();
+            if (view != null) GeometryUtility.CalculateFrustumPlanes(view, PlacementView);
             for (int i = Placements.Count - 1; i >= 0; i--)
             {
                 Placement p = Placements[i];
@@ -1016,8 +1034,12 @@ namespace WiresShadows
                     {
                         if (t == null || t.Light == null) continue;
                         float reach = Range(t) + p.Radius;
+                        // only lights in view: one off screen draws its faces once you look its
+                        // way, and waiting for it held the placement in the moving maps for the
+                        // whole cap
                         if ((t.Center - p.Center).sqrMagnitude <= reach * reach &&
-                            (t.Dirty || t.Face >= 0 || t.DoorFaces != 0))
+                            (t.Dirty || t.Face >= 0 || t.DoorFaces != 0) &&
+                            (view == null || GeometryUtility.TestPlanesAABB(PlacementView, new Bounds(t.Light.transform.position, Vector3.one * (Range(t) * 2f)))))
                         {
                             done = false;
                             break;
@@ -1105,12 +1127,25 @@ namespace WiresShadows
             // Placed by a player (food and meads on a table: the game makes it a piece, no physics):
             // in the cached maps like a stand's item, not the moving maps.
             internal bool Placed;
+            internal bool Loose; // a dropped item that came to rest: cached like placed food till it moves
             internal Vector3 PlacedCenter;
             internal float PlacedRadius;
         }
         private static readonly Dictionary<ItemDrop, DropCaster> Drops = new Dictionary<ItemDrop, DropCaster>();
         private static readonly HashSet<Renderer> DropVisuals = new HashSet<Renderer>();
         private static readonly List<DropCaster> PlacedDrops = new List<DropCaster>();
+
+        // A renderer whose bounds count for what a piece or a placed item covers: it casts a shadow
+        // (not a particle effect, not set to cast none) and it's part of the object as shown (not
+        // switched off itself, nor a part switched off below the object's root: those report bounds
+        // at the world's origin). The root itself may be on its way out (removed), so it's not asked.
+        private static bool CastsHere(Renderer r)
+        {
+            if (r == null || !r.enabled || r is ParticleSystemRenderer || r.shadowCastingMode == ShadowCastingMode.Off) return false;
+            for (Transform p = r.transform; p != null && p.parent != null; p = p.parent)
+                if (!p.gameObject.activeSelf) return false;
+            return true;
+        }
 
         private static void PlaceDrop(DropCaster d)
         {
@@ -1121,6 +1156,12 @@ namespace WiresShadows
             {
                 if (r == null) continue;
                 DropVisuals.Remove(r);
+                // Only what casts a shadow, as for a piece (PieceChangedCore). Food prefabs carry
+                // switched-off parts (the bread's spare "pie" model) and steam that casts nothing; a
+                // switched-off renderer's bounds sit at the world's origin, which stretched the
+                // food's area across the map: its removal queued every face of every light and the
+                // light you saw it by waited its turn (the half to one second it hung on).
+                if (!CastsHere(r)) continue;
                 if (first) { b = r.bounds; first = false; } else b.Encapsulate(r.bounds);
             }
             d.PlacedCenter = first ? d.CurrentPosition : b.center;
@@ -1164,6 +1205,19 @@ namespace WiresShadows
             c.WakeRenders();
         }
 
+        // Its moving shadow kept while the lights in view put it into their cached maps (as a
+        // placed piece's: UpdatePlacements), so it never goes missing in between.
+        private static void BridgeDrop(DropCaster d)
+        {
+            if (d.Item == null) return;
+            Renderer[] rs = System.Array.FindAll(d.Renderers, r => r != null && CastsHere(r));
+            if (rs.Length == 0) return;
+            Placements.Add(new Placement
+            {
+                Root = d.Item.transform, Renderers = rs, Center = d.PlacedCenter, Radius = d.PlacedRadius,
+                Hash = d.Item.GetInstanceID(), Frame = Time.frameCount, Until = Time.time + PlacementSeconds
+            });
+        }
         private static void UnplaceDrop(DropCaster d)
         {
             if (!d.Placed) return;
@@ -1299,9 +1353,19 @@ namespace WiresShadows
             {
                 ItemDrop it = Resting[i];
                 bool back;
+                DropCaster d = null;
                 if (it == null) back = false;
-                else if (!Drops.TryGetValue(it, out DropCaster d)) back = true;
-                else back = !(d.Mounted || d.Placed) || (it.transform.position - d.CurrentPosition).sqrMagnitude > 0.0004f;
+                else if (!Drops.TryGetValue(it, out d)) back = true;
+                else back = !(d.Mounted || d.Placed) || (it.transform.position - d.CurrentPosition).sqrMagnitude > 0.0004f ||
+                    (d.Loose && d.Body != null && !d.Body.IsSleeping());
+                // a dropped item at rest moved again (kicked, hit): out of the cached maps, moving again
+                if (back && d != null && d.Loose)
+                {
+                    UnplaceDrop(d);
+                    d.Loose = false; d.Stable = false; d.LastMotion = Time.time;
+                    foreach (Renderer r in d.Renderers) if (r != null) DropVisuals.Add(r);
+                    _dropChangedFrame = Time.frameCount;
+                }
                 if (it == null || back)
                 {
                     if (back) Items.Add(it);
@@ -1753,8 +1817,7 @@ namespace WiresShadows
                     hasAnyRenderer = true;
                     // Particle effects aren't a solid shadow caster; their
                     // enormous animated bounds can invalidate every light.
-                    if (renderer is ParticleSystemRenderer ||
-                        renderer.shadowCastingMode == ShadowCastingMode.Off)
+                    if (!CastsHere(renderer))
                         continue;
                     if (!hasBounds) { affected = renderer.bounds; hasBounds = true; }
                     else affected.Encapsulate(renderer.bounds);
@@ -1830,6 +1893,7 @@ namespace WiresShadows
         {
             _active = false;
             TiledRelease();
+            JobsShutdown();
             ReleaseAll();
             foreach (Tracked t in Lights)
                 Unsuppress(t);
@@ -2121,6 +2185,10 @@ namespace WiresShadows
                 Tracked t = Lights[i];
                 Light light = t.Light;
                 if (light == null) continue;
+                // A fixed light (a sconce, a hearth, a lamp) settled in long ago can't become carried
+                // or put on a stand: only items and lights just registered are looked at again (each
+                // look is several parent searches, for every light, every second and on every turn).
+                if (!t.Item && Time.time - t.RegisteredAt > SettleChecks) continue;
                 if (light.GetComponentInParent<Character>() != null)
                 {
                     Release(t);
@@ -2151,7 +2219,7 @@ namespace WiresShadows
                 t.Priority = Priority(t, eye);
                 t.WantTier = _tiered ? WantTier(t, main) : 0;
             }
-            Lights.Sort((a, b) => a.Priority.CompareTo(b.Priority));
+            Lights.Sort(ByPriority);
 
             // Slotted lights stay until they're well out of range, so walking
             // around doesn't keep re-rendering lights at the edge.
@@ -2691,7 +2759,10 @@ namespace WiresShadows
         private void LateUpdate()
         {
             long t0 = Timing.Start(), b0 = _benchSampling ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
+            SeenRead(); SearchRead(); // last frame's worker-thread queries (ShadowCache.Jobs)
+            if (s_strongestThisFrame) { s_strongestThisFrame = false; FinishStrongest(); }
             LateUpdateWork();
+            SeenSchedule(); SearchSchedule();
             Timing.Stop(Timing.Part.Late, t0);
             if (b0 != 0L) _benchCpuTicks += System.Diagnostics.Stopwatch.GetTimestamp() - b0;
         }
@@ -2887,7 +2958,7 @@ namespace WiresShadows
                         continue;
                     // Wholly in this light's cached shadow (a wall between them): its own shadow
                     // falls inside that one and changes nothing. Only things moving every frame.
-                    if (grp.Volatile && !SeenByLight(grp, lp))
+                    if (grp.Volatile && !SeenCached(sl, grp, lp)) // last frame's answer, worked out on the workers
                         continue;
                     // Use each renderer's already-gathered world bounds for
                     // exact conservative face COVERAGE instead of hashing the
@@ -3741,31 +3812,10 @@ namespace WiresShadows
             return GeometryUtility.TestPlanesAABB(view, b);
         }
 
-        // Can this light see any of it? Five lines from the light to the middle, top, bottom
-        // and sides of it, against what the cached maps hold still (pieces, terrain, rocks). Any
-        // line through: seen. Started 35 cm out so the light's own lamp or sconce doesn't count.
+        // What the cached maps hold still (pieces, terrain, rocks): what SeenCached's lines test against.
         private static int s_occluders;
         private static int Occluders => s_occluders != 0 ? s_occluders
             : (s_occluders = LayerMask.GetMask("piece", "static_solid", "terrain"));
-        private static bool SeenByLight(Group g, Vector3 lp)
-        {
-            Vector3 d = g.Center - lp;
-            float dist = d.magnitude;
-            if (dist < .6f) return true;
-            Vector3 dir = d / dist;
-            Vector3 side = Vector3.Cross(dir, Vector3.up);
-            side = side.sqrMagnitude > 1e-4f ? side.normalized : Vector3.right;
-            Vector3 up = Vector3.Cross(side, dir);
-            float r = g.Radius * .8f;
-            Vector3 from = lp + dir * .35f;
-            int mask = Occluders;
-            return !Physics.Linecast(from, g.Center, mask, QueryTriggerInteraction.Ignore) ||
-                   !Physics.Linecast(from, g.Center + up * r, mask, QueryTriggerInteraction.Ignore) ||
-                   !Physics.Linecast(from, g.Center - up * r, mask, QueryTriggerInteraction.Ignore) ||
-                   !Physics.Linecast(from, g.Center + side * r, mask, QueryTriggerInteraction.Ignore) ||
-                   !Physics.Linecast(from, g.Center - side * r, mask, QueryTriggerInteraction.Ignore);
-        }
-
         // Characters cast moving shadows out to the light's whole range.
         private const float DimEdge = 1f;
         // The fainter the light where the moving things are, the less often their shadows are
@@ -3831,6 +3881,17 @@ namespace WiresShadows
                     d.Stable = true;
                     d.StaticPosition = pos;
                     d.StaticRotation = tr.rotation;
+                    // Come to rest on the ground: into the cached maps like placed food, off the
+                    // every-frame list (it was checked and drawn into the moving maps every frame for
+                    // as long as it lay there). Its moving shadow stays till the lights in view have
+                    // it (a placement); if it's moved again it comes back (ReviewResting).
+                    if (!d.Mounted && d.Body != null && d.Body.IsSleeping())
+                    {
+                        d.Loose = true;
+                        PlaceDrop(d);
+                        BridgeDrop(d);
+                        continue; // the resting branch above takes it off the list next frame
+                    }
                 }
                 d.CurrentPosition = pos;
                 d.CurrentRotation = tr.rotation;
@@ -3856,14 +3917,26 @@ namespace WiresShadows
                 if (p.Root != null && (p.Center - cam).sqrMagnitude <= far2)
                     AddGroup(p.Center, p.Radius, p.Hash, false, p.Renderers, true, KindSwing);
             AddParticleGroups(cam, far2);
-            // a broken piece's falling chunks, for the few seconds they last
+            // A broken piece's falling chunks, for the few seconds they last: one group per piece (not
+            // one per chunk), redrawn every frame only while a chunk still moves, at rest drawn once.
+            // Breaking a lot made dozens of chunk groups, each redrawn every frame in every light.
             for (int i = Fragments.Count - 1; i >= 0; i--)
             {
-                Renderer[] rs = Fragments[i];
-                if (rs[0] == null) { Fragments[i] = Fragments[Fragments.Count - 1]; Fragments.RemoveAt(Fragments.Count - 1); continue; }
-                Bounds b = rs[0].bounds;
+                Fragment fr = Fragments[i];
+                for (int k = fr.Renderers.Count - 1; k >= 0; k--)
+                    if (fr.Renderers[k] == null) { fr.Renderers.RemoveAt(k); fr.Bodies.RemoveAt(k); fr.Array = null; }
+                if (fr.Renderers.Count == 0) { Fragments[i] = Fragments[Fragments.Count - 1]; Fragments.RemoveAt(Fragments.Count - 1); continue; }
+                Bounds b = fr.Renderers[0].bounds;
+                bool moving = false;
+                for (int k = 0; k < fr.Renderers.Count; k++)
+                {
+                    if (k > 0) b.Encapsulate(fr.Renderers[k].bounds);
+                    Rigidbody body = fr.Bodies[k];
+                    if (body != null && !body.IsSleeping()) moving = true;
+                }
                 if ((b.center - cam).sqrMagnitude > far2) continue;
-                AddGroup(b.center, b.extents.magnitude, Time.frameCount, false, rs, true, KindDrop);
+                if (fr.Array == null || fr.Array.Length != fr.Renderers.Count) fr.Array = fr.Renderers.ToArray();
+                AddGroup(b.center, b.extents.magnitude, moving ? Time.frameCount : fr.Id, false, fr.Array, true, KindDrop);
             }
             AddMachineGroups(cam, far);
             // A mounted item participates in the moving map ONLY during
@@ -3880,7 +3953,15 @@ namespace WiresShadows
         // own models with its materials and a physics body, on the "effect" layer (which the static
         // maps never draw), each given 2 to 4 s (TimedDestruction). Vanilla Unity shadows them, so the
         // moving maps do too while they fall.
-        private static readonly List<Renderer[]> Fragments = new List<Renderer[]>(32);
+        private sealed class Fragment
+        {
+            internal readonly List<Renderer> Renderers = new List<Renderer>(8);
+            internal readonly List<Rigidbody> Bodies = new List<Rigidbody>(8);
+            internal Renderer[] Array;
+            internal int Frame, Id;
+            internal Vector3 At;
+        }
+        private static readonly List<Fragment> Fragments = new List<Fragment>(32);
         private static readonly int EffectLayer = LayerMask.NameToLayer("effect");
 
         internal static void Timed(TimedDestruction td)
@@ -3889,8 +3970,16 @@ namespace WiresShadows
             if (go.layer != EffectLayer || go.GetComponent<ZNetView>() != null || go.GetComponent<Rigidbody>() == null) return;
             MeshRenderer r = go.GetComponent<MeshRenderer>();
             if (r == null) return;
-            if (Fragments.Count > 256) Fragments.RemoveAll(rs => rs[0] == null);
-            Fragments.Add(new Renderer[] { r });
+            // the chunks of one piece come in the same frame, close together: one group
+            Vector3 at = go.transform.position;
+            Fragment last = Fragments.Count > 0 ? Fragments[Fragments.Count - 1] : null;
+            if (last == null || last.Frame != Time.frameCount || (last.At - at).sqrMagnitude > 9f)
+            {
+                last = new Fragment { Frame = Time.frameCount, Id = go.GetInstanceID(), At = at };
+                Fragments.Add(last);
+            }
+            last.Renderers.Add(r);
+            last.Bodies.Add(go.GetComponent<Rigidbody>());
         }
 
         private void AddStandGroup(StandCaster s)
@@ -4081,6 +4170,9 @@ namespace WiresShadows
             long interactStart = 0L;
             while (true)
             {
+                // one face a frame outside loading, and not in a frame that already had one or is about
+                // to (the immediate redraw for a change runs in LateUpdate, after this)
+                if (!Loading() && (FaceDrawnThisFrame || s_strongestThisFrame)) { burst = 0; yield return null; continue; }
                 Tracked job = null;
                 // Right after a world load or teleport: lights without a map yet that
                 // are in view go first (checked live, the 1 s priorities may be stale),
@@ -4158,13 +4250,13 @@ namespace WiresShadows
                         interactStart = System.Diagnostics.Stopwatch.GetTimestamp();
                     }
                     // the faces it covers, on the map you see, even if a resize is due
-                    // the faces it covers, on the map you see, even if a resize is due
                     if (PatchVisible(this, job)) RenderDoorFace(job);
                     if (!job.Ready || job.DoorFaces == 0) job.Interact = false;
-                    if (System.Diagnostics.Stopwatch.GetTimestamp() - interactStart < UrgentBudget)
-                        continue;
+                    // The light that matters (brightest where it happened) was redrawn the moment it
+                    // happened (FinishStrongest). These others show it more faintly: a face every
+                    // third frame, not every frame, so placing or breaking doesn't slow the next frames.
                     burst = 0;
-                    yield return null;
+                    for (int w = 0, wait = ReferenceEquals(job, s_strongest) ? 1 : LesserEvery; w < wait; w++) yield return null;
                     continue;
                 }
                 // Anything else round a light that only some faces need (a far change, the world
@@ -4239,15 +4331,22 @@ namespace WiresShadows
             if (success) t.DoorFaces &= ~(1 << face);
         }
 
+        // A map needed this frame (the loading screen, arriving): searched at once, not a frame ahead.
+        private static bool _renderingNow;
         private void RenderNow(Tracked t)
         {
             t.Dirty = true;
-            do
+            _renderingNow = true;
+            try
             {
-                int oldFace = t.Face;
-                RenderFace(t);
-                if (oldFace == t.Face) break;
-            } while (t.Face >= 0 && t.Light != null);
+                do
+                {
+                    int oldFace = t.Face;
+                    RenderFace(t);
+                    if (oldFace == t.Face) break;
+                } while (t.Face >= 0 && t.Light != null);
+            }
+            finally { _renderingNow = false; }
         }
 
         private static float _arrivalStreamUntil = -10f;
@@ -4259,6 +4358,8 @@ namespace WiresShadows
         // a couple of seconds of lag on getting home.
         private const int FillFacesPerFrame = 1;
         private static readonly long UrgentBudget = System.Diagnostics.Stopwatch.Frequency / 500; // 2 ms
+        // Frames between faces for the lights less important to a change (picked: a third of the cost per frame).
+        private const int LesserEvery = 3;
         private static readonly Plane[] FillFrustum = new Plane[6];
 
         private static bool InView(Tracked t) =>
@@ -4381,10 +4482,19 @@ namespace WiresShadows
                 t.SizeOnly = false;
                 // A full refresh supersedes any partial door-face updates.
                 t.DoorFaces = 0;
-                if (!sameCasters) t.DoorPrepared = false;
+                // (its lists stay marked current while the new ones are gathered over frames: a change
+                // meanwhile patches the map on screen with them, instead of gathering everything at once)
                 // Its surroundings still loading in (after a portal): not yet (AreaWait).
                 if (!ReadyToRender(t))
                     return;
+                // its surroundings searched on the worker threads, then sorted a little each frame
+                // (ShadowCache.Jobs): the render starts once both are done
+                bool gathered = false;
+                if (!sameCasters && !_renderingNow)
+                {
+                    if (!SearchReady(t) || !Prepared(t)) { t.DirtyAt = Time.time; return; }
+                    gathered = true;
+                }
                 // Every render goes into a new cube of its own (Tiers): the old map stays on screen
                 // until the new one is done, so none waits for another.
                 if (!StartTierRender(t))
@@ -4402,7 +4512,7 @@ namespace WiresShadows
                 t.Center = RestingPosition(t.Light);
                 t.RootPos = t.Light.transform.root.position;
                 t.RootRot = t.Light.transform.root.rotation;
-                if (!sameCasters) FindCasters(t);
+                if (!sameCasters && !gathered) { t.DoorPrepared = false; FindCasters(t); }
             }
             if (!DrawFace(t)) return;
             if (++t.Face >= 6)
@@ -4415,8 +4525,16 @@ namespace WiresShadows
         private static readonly List<Renderer> ChangedShadowMode = new List<Renderer>();
         private static readonly List<ShadowCastingMode> PriorShadowModes = new List<ShadowCastingMode>();
 
+        // Faces drawn this frame (each about 2.8 ms): outside loading, the queue draws at most one a
+        // frame, and none in a frame something else already drew one in (the immediate redraw for
+        // something you did). Placing could start the queue right inside the game's own update and
+        // the immediate redraw ran too: two or more faces in one frame.
+        private static int s_faceFrame = -1, s_facesThisFrame;
+        private static bool FaceDrawnThisFrame => s_faceFrame == Time.frameCount && s_facesThisFrame > 0;
         private bool DrawFace(Tracked t, bool partial = false)
         {
+            if (s_faceFrame != Time.frameCount) { s_faceFrame = Time.frameCount; s_facesThisFrame = 0; }
+            s_facesThisFrame++;
             long start = Timing.Start();
             try { return DrawFaceCore(t); }
             finally { Timing.Stop(Timing.Part.Face, start); }
@@ -4556,6 +4674,20 @@ namespace WiresShadows
         private static void FindCasters(Tracked t) { long t0 = Timing.Start(); FindCastersCore(t); Timing.Stop(Timing.Part.Find, t0); }
         private static void FindCastersCore(Tracked t)
         {
+            Prep pr = Begin(t, t);
+            Step(pr, long.MaxValue);
+            End(pr, t, true);
+        }
+
+        // The gather in three parts, so a full map's can be spread over frames (Prepare): what's
+        // known at once (doors, machines, stands, placed food, what's in reach), then each object in
+        // reach sorted into the lists, then the light's own part taken out and the near-plane
+        // stand-ins. "into" gets the lists: the light itself, or a copy while its map stays in use.
+        private sealed class Prep { internal Tracked P; internal readonly List<Transform> Roots = new List<Transform>(256); internal int Next; internal Component Own; internal Vector3 Center; }
+        private static Prep Begin(Tracked t, Tracked into)
+        {
+            Tracked keep = t;
+            t = into;
             t.Hide.Clear();
             t.Show.Clear();
             t.Explicit.Clear();
@@ -4599,7 +4731,8 @@ namespace WiresShadows
                 foreach (Renderer r in d.Renderers)
                     if (r != null) AddStaticItemRenderer(t, r);
             }
-            int n = CollectStaticHits(t.Center, Range(t));
+            int n = TakeSearch(keep, t.Center, Range(t)); // found on the workers (ShadowCache.Jobs), else now
+            if (n < 0) n = CollectStaticHits(t.Center, Range(t));
             for (int i = 0; i < n; i++)
                 if (Hits[i] != null)
                     Roots.Add(Hits[i].transform.root);
@@ -4613,31 +4746,60 @@ namespace WiresShadows
                 foreach (Renderer r in Renderers)
                     if (!r.forceRenderingOff) t.Hide.Add(r);
             }
-            foreach (Transform root in Roots)
-                SortRoot(t, root);
-            // The replacement camera hides own-piece renderers via t.Hide,
-            // but its independent untagged-material and two-sided-sheet
-            // command-buffer passes bypass that visibility flag. Exclude only
-            // the owning piece in those paths too, and ONLY for lights that
-            // did not cast shadows in vanilla. All other geometryâ€”including
-            // nearby walls, door frames, and beamsâ€”continues to occlude.
+            var pr = new Prep { P = t, Own = own, Center = t.Center };
+            pr.Roots.AddRange(Roots);
+            return pr;
+        }
+
+        // Sorts objects in reach into the lists until the time given; true when all are done.
+        private static bool Step(Prep pr, long until)
+        {
+            while (pr.Next < pr.Roots.Count)
+            {
+                Transform root = pr.Roots[pr.Next++];
+                if (root != null) SortRoot(pr.P, root);
+                if (System.Diagnostics.Stopwatch.GetTimestamp() > until) return pr.Next >= pr.Roots.Count;
+            }
+            return true;
+        }
+
+        private static void End(Prep pr, Tracked t, bool fresh)
+        {
+            Tracked into = pr.P;
+            Component own = pr.Own;
+            // The replacement camera hides own-piece renderers via Hide, but its untagged-material
+            // and two-sided-sheet command-buffer passes bypass that. Exclude only the owning piece
+            // in those paths too, and ONLY for lights that did not cast shadows in vanilla. All
+            // other geometry (nearby walls, door frames, beams) continues to occlude.
             if (own != null)
             {
                 Transform ownTransform = own.transform;
-                t.Sheets.RemoveAll(r => r != null && r.transform.IsChildOf(ownTransform));
-                for (int i = t.Explicit.Count - 1; i >= 0; --i)
+                into.Sheets.RemoveAll(r => r != null && r.transform.IsChildOf(ownTransform));
+                for (int i = into.Explicit.Count - 1; i >= 0; --i)
                 {
-                    Renderer r = t.Explicit[i];
+                    Renderer r = into.Explicit[i];
                     if (r == null || !r.transform.IsChildOf(ownTransform)) continue;
-                    t.Explicit.RemoveAt(i);
-                    t.ExplicitSub.RemoveAt(i);
+                    into.Explicit.RemoveAt(i);
+                    into.ExplicitSub.RemoveAt(i);
                 }
-                t.Show.RemoveAll(r => r != null && r.transform.IsChildOf(ownTransform));
+                into.Show.RemoveAll(r => r != null && r.transform.IsChildOf(ownTransform));
             }
-            FindProxies(t);
+            FindProxies(into);
+            if (into != t)
+            {
+                // spread over frames into a copy: its lists replace the light's now
+                t.Hide.Clear(); t.Hide.AddRange(into.Hide);
+                t.Show.Clear(); t.Show.AddRange(into.Show);
+                t.Explicit.Clear(); t.Explicit.AddRange(into.Explicit);
+                t.ExplicitSub.Clear(); t.ExplicitSub.AddRange(into.ExplicitSub);
+                t.Sheets.Clear(); t.Sheets.AddRange(into.Sheets);
+                t.ProxyMeshes.Clear(); t.ProxyMeshes.AddRange(into.ProxyMeshes);
+                t.ProxyMatrices.Clear(); t.ProxyMatrices.AddRange(into.ProxyMatrices);
+                t.NearProxies = into.NearProxies;
+            }
             t.DoorPrepared = true;
-            t.AddedRoots.Clear();
-            t.ProxiesStale = false;
+            // pieces placed while it was spread out stay queued (sorted in on the next patch)
+            if (fresh) { t.AddedRoots.Clear(); t.ProxiesStale = false; }
         }
 
         // One object's renderers into a light's lists: hidden, shown, drawn both-sided or drawn

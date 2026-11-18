@@ -26,12 +26,12 @@ namespace WiresShadows
         private ComputeBuffer _tPosBuf, _tColorBuf, _tRectBuf, _tDepthBuf, _tTileBuf, _tCapture, _tDummy;
         private Material _tMat;
         private CommandBuffer _tCb, _tCaptureOn, _tCaptureOff;
-        private Camera _tCam;
+        private Camera _tCam, _capCam;
         private Texture2D _tLut;
         private bool _tHaveLut, _tReading, _tAddedDepth;
         private readonly int[] _tWhy = new int[7]; // the one-time check: lights left out, by reason
         private float _tNextRead;
-        private int _tTilesX, _tTilesY, _tKernel = -1;
+        private int _tTilesX, _tTilesY, _tKernel = -1, _tCount;
         private readonly Vector4[] _tPos = new Vector4[MaxTiled], _tColor = new Vector4[MaxTiled], _tRect = new Vector4[MaxTiled], _tDepth = new Vector4[MaxTiled];
         private readonly System.Collections.Generic.Dictionary<Tracked, int> _tSlotOf = new System.Collections.Generic.Dictionary<Tracked, int>();
 
@@ -63,7 +63,7 @@ namespace WiresShadows
             }
             if (_tPosBuf == null) TiledMake();
             if (!_tHaveLut) { TiledCapture(cam); return; }
-            int n = TiledGather(cam);
+            int n = _tCount = TiledGather(cam);
             int w = cam.pixelWidth, h = cam.pixelHeight;
             int tx = (w + TileSize - 1) / TileSize, ty = (h + TileSize - 1) / TileSize;
             if (_tTileBuf == null || tx != _tTilesX || ty != _tTilesY)
@@ -156,18 +156,24 @@ namespace WiresShadows
                     rect = new Vector4(x0 - 1f, y0 - 1f, x1 + 1f, y1 + 1f);
                     if (rect.z < 0f || rect.x > w || rect.w < 0f || rect.y > h) { _tWhy[6]++; continue; } // off screen
                 }
-                // Unity's _LightColor: colour times intensity, made linear as Unity does it
-                Color col = l.color;
-                if (GraphicsSettings.lightsUseColorTemperature && l.useColorTemperature) col *= Mathf.CorrelatedColorTemperatureToRGB(l.colorTemperature);
-                Color lc = !linear ? col * l.intensity : GraphicsSettings.lightsUseLinearIntensity ? col.linear * l.intensity : (col * l.intensity).linear;
                 int slot = _tSlotOf.TryGetValue(t, out int sl) ? sl : -1;
                 _tPos[n] = new Vector4(p.x, p.y, p.z, 1f / (r * r));
-                _tColor[n] = new Vector4(lc.r, lc.g, lc.b, slot);
+                _tColor[n] = UnityLightColor(l, linear);
+                _tColor[n].w = slot;
                 _tRect[n] = rect;
                 _tDepth[n] = new Vector4(Mathf.Max(0f, depth - r), depth + r, 0f, 0f);
                 n++;
             }
             return n;
+        }
+
+        // Unity's _LightColor: colour times intensity, made linear as Unity does it
+        private static Vector4 UnityLightColor(Light l, bool linear)
+        {
+            Color col = l.color;
+            if (GraphicsSettings.lightsUseColorTemperature && l.useColorTemperature) col *= Mathf.CorrelatedColorTemperatureToRGB(l.colorTemperature);
+            Color lc = !linear ? col * l.intensity : GraphicsSettings.lightsUseLinearIntensity ? col.linear * l.intensity : (col * l.intensity).linear;
+            return new Vector4(lc.r, lc.g, lc.b, -1f);
         }
 
         private void TiledMake()
@@ -229,6 +235,7 @@ namespace WiresShadows
                 _tCaptureOff.DisableShaderKeyword(CaptureKeyword);
                 cam.AddCommandBuffer(CameraEvent.BeforeLighting, _tCaptureOn);
                 cam.AddCommandBuffer(CameraEvent.AfterLighting, _tCaptureOff);
+                _capCam = cam;
             }
             if (_tReading || Time.unscaledTime < _tNextRead) return;
             _tNextRead = Time.unscaledTime + .5f;
@@ -253,11 +260,12 @@ namespace WiresShadows
 
         private void TiledCaptureDone()
         {
-            if (_tCam != null)
+            if (_capCam != null)
             {
-                if (_tCaptureOn != null) _tCam.RemoveCommandBuffer(CameraEvent.BeforeLighting, _tCaptureOn);
-                if (_tCaptureOff != null) _tCam.RemoveCommandBuffer(CameraEvent.AfterLighting, _tCaptureOff);
+                if (_tCaptureOn != null) _capCam.RemoveCommandBuffer(CameraEvent.BeforeLighting, _tCaptureOn);
+                if (_tCaptureOff != null) _capCam.RemoveCommandBuffer(CameraEvent.AfterLighting, _tCaptureOff);
             }
+            _capCam = null;
             _tCaptureOn?.Release(); _tCaptureOn = null;
             _tCaptureOff?.Release(); _tCaptureOff = null;
             _tCapture?.Release(); _tCapture = null;
@@ -265,10 +273,10 @@ namespace WiresShadows
         }
 
         // Off (or a new camera): Unity draws every light itself again.
-        private void TiledOff()
+        private void TiledOff(bool keepCapture = false)
         {
-            if (_tPosBuf == null && _tCapture == null) { if (_tDummy == null) EnsureTiledDummy(); return; } // already off: nothing to do each frame
-            TiledCaptureDone();
+            if (_tPosBuf == null && (keepCapture || _tCapture == null)) { if (_tDummy == null) EnsureTiledDummy(); return; } // already off: nothing to do each frame
+            if (!keepCapture) TiledCaptureDone();
             if (_tCam != null && _tCb != null) _tCam.RemoveCommandBuffer(CameraEvent.AfterLighting, _tCb);
             _tCb?.Release(); _tCb = null;
             _tPosBuf?.Release(); _tPosBuf = null;
@@ -283,6 +291,7 @@ namespace WiresShadows
             if (_tCam != null && _tAddedDepth) _tCam.depthTextureMode &= ~DepthTextureMode.Depth;
             _tAddedDepth = false;
             _tCam = null;
+            _tCount = 0;
             EnsureTiledDummy();
         }
 

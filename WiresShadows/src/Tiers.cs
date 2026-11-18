@@ -90,6 +90,11 @@ namespace WiresShadows
             int old = _poolUsed[tier].Count;
             if (cubes <= old) return true;
             if (!force && PoolBytes() + (cubes - old) * CubeBytes(tier) > _poolBudget) return false;
+            // Room to spare, not one cube at a time: every growth is a new texture and a copy of every
+            // map in it, a hitch on the frame it happens (walking about grew a pool by one cube a
+            // dozen times in a row). A quarter more, at least 4, as far as the memory share allows.
+            int roomy = Mathf.Max(cubes, old + Mathf.Max(4, old / 4));
+            if (force || PoolBytes() + (roomy - old) * CubeBytes(tier) <= _poolBudget) cubes = roomy;
             int r = TierRes(tier);
             var next = new RenderTexture(r, r, NativeDepthBits, RenderTextureFormat.Shadowmap)
             {
@@ -149,7 +154,10 @@ namespace WiresShadows
                 List<bool> used = _poolUsed[k];
                 int n = used.Count, u = 0;
                 foreach (bool b in used) if (b) u++;
-                int size = Mathf.Max(1, u);
+                // packed once a quarter of it is empty (as before the headroom), to what it uses plus
+                // an eighth (at least 2) to spare: packing to the exact size made the next re-render
+                // grow it again, and waiting for half empty let a pool sit at twice what it held
+                int size = Mathf.Max(1, u + Mathf.Max(2, u / 8));
                 if (n - size < Mathf.Max(1, n / 4)) continue;
                 int r = TierRes(k);
                 var next = new RenderTexture(r, r, NativeDepthBits, RenderTextureFormat.Shadowmap)

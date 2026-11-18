@@ -28,10 +28,6 @@ Wire's Shadows first, vanilla second.
 * **No fire wiggle.** In vanilla a fire's light shakes around a little. A cached shadow is rendered from one spot, so here the light holds still. Its brightness still flickers while the light is nearby and visible (flicker culling is adjustable in General).
 * **No swaying shadows.** Banners, hanging cloth and herbs cast their shadow at rest, not moving with the wind.
 
-## Known issues
-
-* Breaking or taking placed food can leave its shadow for up to about a second before it goes. Building pieces don't.
-
 ## Settings
 
 * **Enabled:** off brings back the game's own lighting and shadows.
@@ -47,7 +43,7 @@ Wire's Shadows first, vanilla second.
 
 The goal: run the same as vanilla with point lights maxed out, or slightly better, while looking much better.
 
-On my PC (RTX 4090, i5-13600KF, 128 GB RAM), in my base of about 6,000 pieces, two benchmarks in a row gave 15.35 ms a frame (65 fps) with the mod and 19.95 ms (50 fps) in vanilla, and 20.17 ms (50 fps) against 24.85 ms (40 fps). It depends on what's happening, so I can't guarantee it's always faster.
+On my PC (RTX 4090, i5-13600KF, 128 GB RAM), in my base of about 6,000 pieces, the latest benchmark (0.2.1) gave 16.26 ms a frame (62 fps) with the mod and 20.26 ms (49 fps) in vanilla, 4 ms a frame faster. Earlier ones there: 15.35 ms (65 fps) against 19.95 ms (50 fps), and 20.17 ms (50 fps) against 24.85 ms (40 fps). It depends on what's happening, so I can't guarantee it's always faster.
 
 Measure it yourself: turn on Benchmark in an in-game config menu (such as Shudnal's Configuration Manager).
 
