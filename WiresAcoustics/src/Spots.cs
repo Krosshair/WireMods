@@ -41,6 +41,7 @@ namespace WiresAcoustics
         // EffectList.Create postfix (Follow), before the sounds are followed or measured. May set the owner.
         internal static void Place(EffectList list, GameObject[] made, Vector3 basePos, Transform baseParent, ref Transform given)
         {
+            if (!Plugin.Placement.Value) return;
             if (baseParent != null && StationPart(list, made, basePos, baseParent, ref given)) return;
             Transform root = baseParent != null ? baseParent : given;
             // made at a character's pivot with no owner given (pets, animals jumping, a player's tool):

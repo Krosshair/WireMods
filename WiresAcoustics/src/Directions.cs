@@ -25,11 +25,17 @@ namespace WiresAcoustics
         private static float s_slowNext;
         private static Vector3 s_jobEar; // your head when the job was scheduled: the sounds' positions are worked back from it
 
+        private static NativeArray<Vector2> s_dop; // per sound: last distance (-1: none yet), smoothed speed away from you (Doppler)
+        private static Vector3 s_lastEar;
+        private static float s_lastAt = -1f;
+
         private struct Job : IJobParallelForTransform
         {
             public Vector3 Pos, Ear;
             public Quaternion InvRot;
+            public float Dt; // since the last job; 0: skip the speed (first job, a teleport)
             public NativeArray<Vector4> Dirs, Ears;
+            public NativeArray<Vector2> Dop;
 
             public void Execute(int i, TransformAccess t)
             {
@@ -43,6 +49,15 @@ namespace WiresAcoustics
                 float me = e.magnitude;
                 Vector3 toEar = me > .01f ? e / me : Vector3.up;
                 Ears[i] = new Vector4(toEar.x, toEar.y, toEar.z, me);
+                // Doppler: how fast it's moving away from your head, smoothed over a few frames
+                Vector2 dp = Dop[i];
+                if (dp.x >= 0f && Dt > 1e-4f)
+                {
+                    float v = Mathf.Clamp((me - dp.x) / Dt, -Doppler.MaxSpeed, Doppler.MaxSpeed);
+                    dp.y = Mathf.Lerp(dp.y, v, .2f);
+                }
+                dp.x = me;
+                Dop[i] = dp;
             }
         }
 
@@ -79,6 +94,8 @@ namespace WiresAcoustics
                     if (f == null) continue;
                     Vector4 r = s_dirs[i], er = s_ears[i];
                     f.LastDist = er.w;
+                    f.Doppler = f.Placed && Plugin.RealDistance.Value && Plugin.DopplerOn.Value ? Doppler.Speed / (Doppler.Speed + s_dop[i].y) : 1f;
+                    if (f.Kind == AcousticFilter.Kinds.Other && (f.Doppler != 1f || f.OtherPitchKnown)) Doppler.ApplyOther(f);
                     Vector3 local = new Vector3(r.x, r.y, r.z);
                     if (slow && f.Placed)
                     {
@@ -90,7 +107,7 @@ namespace WiresAcoustics
                         // Upwind is held to 10 dB, not the measured 20: a choice for the game (not from a
                         // source), so a sound you can see in front of you doesn't vanish in a breeze.
                         float speed = 12f * Vector3.Dot(wind, toListener), ramp = Mathf.Clamp01((er.w - 15f) / 97f);
-                        float carryDb = speed >= 0f ? 3f * Mathf.Clamp01(speed / 7f) * ramp : -10f * Mathf.Clamp01(-speed / 4f) * ramp;
+                        float carryDb = !Plugin.Wind.Value ? 0f : speed >= 0f ? 3f * Mathf.Clamp01(speed / 7f) * ramp : -10f * Mathf.Clamp01(-speed / 4f) * ramp;
                         f.DistanceGain = f.PastRange(er.w) * Mathf.Pow(10f, carryDb / 20f);
                         // an area (a hearth, lava) sounds as wide as it looks from here
                         if (f.AreaRadius > 0f) f.Width = Mathf.Max(f.BaseWidth, Area.WidthAt(f.AreaRadius, r.w));
@@ -110,7 +127,12 @@ namespace WiresAcoustics
             Apply();
             if (List.Count == 0) return;
             s_jobEar = Hearing.At;
-            s_job = new Job { Pos = listener.position, Ear = Hearing.At, InvRot = Quaternion.Inverse(listener.rotation), Dirs = s_dirs, Ears = s_ears }.ScheduleReadOnly(s_taa, 16); // read-only: never holds up the game moving things
+            float t = Time.time;
+            // a jump of your head (a teleport, a portal): no speed from it
+            float dt = s_lastAt >= 0f && (Hearing.At - s_lastEar).sqrMagnitude < Doppler.Jump * Doppler.Jump ? t - s_lastAt : 0f;
+            s_lastEar = Hearing.At; s_lastAt = t;
+            s_job = new Job { Pos = listener.position, Ear = Hearing.At, InvRot = Quaternion.Inverse(listener.rotation), Dt = dt,
+                              Dirs = s_dirs, Ears = s_ears, Dop = s_dop }.ScheduleReadOnly(s_taa, 16); // read-only: never holds up the game moving things
             JobHandle.ScheduleBatchedJobs();
             s_pending = true;
         }
@@ -129,6 +151,8 @@ namespace WiresAcoustics
                     f.Slot = List.Count;
                     List.Add(f);
                     s_taa.Add(f.transform);
+                    Grow();
+                    s_dop[f.Slot] = new Vector2(-1f, 0f); // no speed till it has a distance
                 }
                 else if (!want && f.Slot >= 0)
                 {
@@ -137,18 +161,25 @@ namespace WiresAcoustics
                     AcousticFilter moved = List[last];
                     List[i] = moved;
                     if (!ReferenceEquals(moved, null)) moved.Slot = i;
+                    s_dop[i] = s_dop[last]; // its Doppler state moves with it
                     List.RemoveAt(last);
                     f.Slot = -1;
+                    f.Doppler = 1f;
                 }
             }
             Changed.Clear();
-            if (!s_dirs.IsCreated || s_dirs.Length < List.Count)
-            {
-                if (s_dirs.IsCreated) { s_dirs.Dispose(); s_ears.Dispose(); }
-                int cap = Mathf.NextPowerOfTwo(Mathf.Max(256, List.Count));
-                s_dirs = new NativeArray<Vector4>(cap, Allocator.Persistent);
-                s_ears = new NativeArray<Vector4>(cap, Allocator.Persistent);
-            }
+        }
+
+        private static void Grow()
+        {
+            if (s_dirs.IsCreated && s_dirs.Length >= List.Count) return;
+            int cap = Mathf.NextPowerOfTwo(Mathf.Max(256, List.Count));
+            var dop = new NativeArray<Vector2>(cap, Allocator.Persistent);
+            if (s_dop.IsCreated) { NativeArray<Vector2>.Copy(s_dop, dop, s_dop.Length); s_dop.Dispose(); }
+            s_dop = dop;
+            if (s_dirs.IsCreated) { s_dirs.Dispose(); s_ears.Dispose(); }
+            s_dirs = new NativeArray<Vector4>(cap, Allocator.Persistent);
+            s_ears = new NativeArray<Vector4>(cap, Allocator.Persistent);
         }
 
         // The mod switched off: no jobs, but sounds coming and going still update the list.
@@ -173,6 +204,7 @@ namespace WiresAcoustics
             Changed.Clear();
             if (s_taa.isCreated) s_taa.Dispose();
             if (s_dirs.IsCreated) { s_dirs.Dispose(); s_ears.Dispose(); }
+            if (s_dop.IsCreated) s_dop.Dispose();
         }
     }
 }

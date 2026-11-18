@@ -31,7 +31,7 @@ A sound behind a wall also reaches you through the openings: a window, a door, a
 Every surface absorbs the lows and highs by published data for what it is. Snow swallows sound, moss and forest floors soften it, grass a bit less, paving and stone reflect it, water reflects almost everything. Just like IRL. Cool, right?
 
 ### Distance and air
-Sounds fade with distance the way real sound does, instead of cutting out after a few metres: a quiet sound still reaches far, just quietly. Fires are as loud as how much is burning, so a sconce is a soft crackle and a hearth fills the room. The air takes the highs off far sounds as the international standard says it does, with the weather: warm, cold and freezing are matched to the real Norwegian weather Valheim is modelled on.
+Sounds fade with distance the way real sound does, instead of cutting out after a few metres: a quiet sound still reaches far, just quietly. Sound takes time to travel, so far sounds arrive late, and sounds coming toward you or going away shift in pitch (Doppler), both from your character's head. Fires are as loud as how much is burning, so a sconce is a soft crackle and a hearth fills the room. The air takes the highs off far sounds as the international standard says it does, with the weather: warm, cold and freezing are matched to the real Norwegian weather Valheim is modelled on.
 
 ### Wind
 Downwind a sound carries a few dB further; upwind it can drop a lot from about 100 m away, as measured outdoors. The wind itself is shaped by what's round you: in the lee of a wall, a rock or a hill it drops to a low rumble, it's heard from where it comes round and over what's in the way, and it gusts and lulls instead of blowing as one even loop.
@@ -64,7 +64,7 @@ The ray tracing runs on Unity's worker threads, and the per-sound processing run
 
 ## Settings
 
-- **General:** Enabled, Room reverb, Muffling, HRTF (headphones), Realistic distance.
+- **General:** Enabled, Room reverb, Muffling, HRTF (headphones), Realistic distance, Travel time, Doppler, Under water, Air, Wind, Sound placement, Voice chat.
 - **Tuning:** Reverb strength, Muffling strength, HRTF strength.
 - **Debug:** Debug log: the measured space, muffled sounds and the mod's costs, every few seconds.
 - Turning the mod off restores the game's own reverb zones, reverb sends and sound placement without a reload (for whatever is still loaded). Only the 128 voices stay until you restart the game: changing that restarts Unity's audio.

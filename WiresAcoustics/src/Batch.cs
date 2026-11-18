@@ -338,7 +338,7 @@ namespace WiresAcoustics
             return false;
         }
 
-        private static RaycastCommand Cast(Vector3 from, Vector3 to, QueryParameters q)
+        internal static RaycastCommand Cast(Vector3 from, Vector3 to, QueryParameters q)
         {
             Vector3 d = to - from;
             float dist = d.magnitude;
@@ -350,32 +350,35 @@ namespace WiresAcoustics
         private static readonly RaycastHit[] Line = new RaycastHit[MaxHits];
 
         // One line (three rays from cmd on): what two of them agree on.
-        private static float Walls(int cmd, Vector3 to, ref Occlusion.Block b)
+        private static float Walls(int cmd, Vector3 to, ref Occlusion.Block b) => Walls(s_cmds, s_hits, cmd, to, ref b);
+
+        // Also for new sounds' checks (Starts), from their own buffers.
+        internal static float Walls(NativeArray<RaycastCommand> cmds, NativeArray<RaycastHit> hits, int cmd, Vector3 to, ref Occlusion.Block b)
         {
             Occlusion.Block b0 = b, b1 = b, b2 = b;
-            float o0 = Ray(cmd, to, ref b0);
-            float o1 = Ray(cmd + 1, to, ref b1);
-            float o2 = Ray(cmd + 2, to, ref b2);
+            float o0 = Ray(cmds, hits, cmd, to, ref b0);
+            float o1 = Ray(cmds, hits, cmd + 1, to, ref b1);
+            float o2 = Ray(cmds, hits, cmd + 2, to, ref b2);
             int k = Occlusion.Median(b0, b1, b2);
             b = k == 0 ? b0 : k == 1 ? b1 : b2;
             return k == 0 ? o0 : k == 1 ? o1 : o2;
         }
 
         // Hits of one ray, and the ridge if the ground was among them (from the ray's own start).
-        private static float Ray(int cmd, Vector3 to, ref Occlusion.Block b)
+        private static float Ray(NativeArray<RaycastCommand> cmds, NativeArray<RaycastHit> hits, int cmd, Vector3 to, ref Occlusion.Block b)
         {
             bool hadGround = b.Terrain;
             b.Terrain = false;
             int n = 0;
             for (int h = 0; h < MaxHits; h++)
             {
-                RaycastHit hit = s_hits[cmd * MaxHits + h];
+                RaycastHit hit = hits[cmd * MaxHits + h];
                 // the first empty slot ends the ray's hits: Unity doesn't write the ones after it, so
                 // they can still hold hits from an earlier batch (RaycastCommand, Unity docs)
                 if (hit.colliderInstanceID == 0) break;
                 Line[n++] = hit;
             }
-            Vector3 from = s_cmds[cmd].from;
+            Vector3 from = cmds[cmd].from;
             float occ = Occlusion.Along(Line, n, from, to, ref b, n >= MaxHits);
             if (b.Terrain) Occlusion.Ridge(from, to, ref b);
             b.Terrain |= hadGround;

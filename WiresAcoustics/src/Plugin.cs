@@ -16,9 +16,10 @@ namespace WiresAcoustics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.acoustics";
-        public const string Version = "0.5.12";
+        public const string Version = "0.6.0";
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled, RoomReverb, Occlusion, Hrtf, RealDistance, DebugLog;
+        internal static ConfigEntry<bool> TravelTime, DopplerOn, UnderwaterOn, Air, Wind, Placement, VoiceChatOn;
         internal static ConfigEntry<float> ReverbStrength, OcclusionStrength, HrtfStrength;
         private Harmony m_harmony;
 
@@ -45,6 +46,16 @@ namespace WiresAcoustics
             Occlusion = Setting("General", "Muffling", true, "Sounds behind walls, buildings or hills are muffled and quieter, more so through several layers.");
             Hrtf = Setting("General", "HRTF (headphones)", true,
                 "Where a sound is around your head: a tiny delay and muffling for the far ear, duller sounds from behind, and the outer ear's cue for above and below, instead of plain left/right panning. Made for headphones; turn off on speakers. On surround (5.1, 7.1) output the game's own panning is used.");
+            TravelTime = Setting("General", "Travel time", true,
+                "Sound takes time to reach you (350 m/s from your character's head): a sound far away starts as late as its distance makes it, up to half a second.");
+            DopplerOn = Setting("General", "Doppler", true,
+                "Sounds coming toward you are higher, going away lower. Needs Realistic distance (off: the game's own).");
+            UnderwaterOn = Setting("General", "Under water", true, "With your head under water everything is muffled, and sounds under water are muffled when you're above it.");
+            Air = Setting("General", "Air", true, "The further a sound travels, the more of its highs the air takes away (by the weather).");
+            Wind = Setting("General", "Wind", true, "Wind carries sound: downwind of a sound it reaches further, upwind less.");
+            Placement = Setting("General", "Sound placement", true,
+                "Sounds come from where they're made: a weapon's hand, a door's hinge, a chest's lid, the part of a station you used, a bird up in the open air, your own unplaced sounds at you. Off: where the game plays them.");
+            VoiceChatOn = Setting("General", "Voice chat", true, "Proximity voice chat (if installed) is placed, muffled by walls and dulled by distance like any sound.");
             ReverbStrength = Setting("Tuning", "Reverb strength", 1f, "How loud the room's reverb is (1 = as designed, 0 = none).", new AcceptableValueRange<float>(0f, 2f));
             HrtfStrength = Setting("Tuning", "HRTF strength", 1f, "How strong the direction cues are: the far ear's dulling and level drop, the shading from behind, the delay between the ears (1 = as modelled, 2 = exaggerated).", new AcceptableValueRange<float>(0f, 2f));
             OcclusionStrength = Setting("Tuning", "Muffling strength", 1f, "How much walls muffle and quieten sounds (1 = as designed, 0 = none).", new AcceptableValueRange<float>(0f, 1.5f));
@@ -80,7 +91,7 @@ namespace WiresAcoustics
             PlayerSounds.RestoreAll();
             Ambience.RestorePlaced();
             Room.Shutdown();
-            Batch.Shutdown();
+            Batch.Shutdown(); Starts.Shutdown();
             Ocean.Dispose();
             Directions.Shutdown();
             m_harmony?.UnpatchSelf();

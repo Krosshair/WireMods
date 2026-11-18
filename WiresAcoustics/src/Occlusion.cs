@@ -11,7 +11,6 @@ namespace WiresAcoustics
     [HarmonyPatch(typeof(ZSFX), "UpdateReverb")]
     internal static class Occlusion
     {
-        private static readonly RaycastHit[] Hits = new RaycastHit[MaxHits];
         internal const int MaxHits = 16; // hits recorded per ray
         // Soft layers (anything that isn't a wall, ground or a sized obstacle): no source, a judgement value.
         private static readonly float[] Gain = { 1f, .6f, .4f, .28f };
@@ -21,6 +20,17 @@ namespace WiresAcoustics
         private static int s_checked, s_muffled, s_added, s_loopChecks;
         private static float s_worstOcc;
         private static string s_worst;
+
+        // A new sound's wall check came back (Starts): the rest of its start, with that answer.
+        private static bool s_resume;
+        private static float s_resumeOcc;
+        private static Block s_resumeBlock;
+        internal static void Resume(ZSFX z, AudioSource src, float occ, Block block)
+        {
+            s_resume = true; s_resumeOcc = occ; s_resumeBlock = block;
+            try { Run(z, src); }
+            finally { s_resume = false; }
+        }
 
         private static void Postfix(ZSFX __instance, AudioSource ___m_audioSource)
         {
@@ -51,7 +61,7 @@ namespace WiresAcoustics
             if (f != null && f.WorldRandomAmbient)
             {
                 Ambience.Forget(f);
-                if (!src.isPlaying) InOpenAir(__instance.transform);
+                if (!src.isPlaying && !s_resume && Plugin.Placement.Value) { Starts.HoldAir(__instance, src); return; } // its open-air spot first (Starts)
             }
             if (src.spatialBlend < .5f)
             {
@@ -91,15 +101,17 @@ namespace WiresAcoustics
             Block block = Block.Clear;
             // your own sounds (footsteps, swings, your gear): nothing stands between your head and
             // your own body, so no check (three rays each, at every step)
-            float occ = starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f) ? Blocking(Hearing.Eye, to, out block) : 0f; // what's in the way: from the camera (Hearing)
-            // You can see the thing it comes from: no muffle. The sound's spot can be hidden while the
-            // thing isn't (a chest's lid under the chest stacked on it, its side right in front of
-            // you), so the side of its box facing you is checked too, only when the spot was blocked.
-            if (occ > .05f && f != null && f.ShapeRoot != null && f.AreaRadius > 0f &&
-                Blocking(Hearing.Eye, FacingPoint(f, Hearing.Eye), out Block seen) <= .05f)
+            float occ = 0f;
+            if (s_resume) { occ = s_resumeOcc; block = s_resumeBlock; } // its check is in (Starts)
+            else if (starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f))
             {
-                occ = 0f;
-                block = seen;
+                // what's in the way, from the camera (Hearing), on the worker threads; it starts next
+                // frame with the answer. You can see the thing it comes from: no muffle. The sound's
+                // spot can be hidden while the thing isn't (a chest's lid under the chest stacked on
+                // it, its side right in front of you), so the side of its box facing you goes too.
+                Own = null;
+                Starts.Hold(__instance, src, to, f != null && f.ShapeRoot != null && f.AreaRadius > 0f ? FacingPoint(f, Hearing.Eye) : (Vector3?)null);
+                return;
             }
             Own = null;
             s_checked++;
@@ -155,7 +167,6 @@ namespace WiresAcoustics
             }
         }
 
-        private static readonly RaycastHit[] OutHits = new RaycastHit[8];
 
         // How much of the room's reverb a sound gets: past the room's critical distance it's mostly
         // reverb (Room.Critical). Times what gets through to you: Unity's room reverb hears a sound
@@ -177,32 +188,7 @@ namespace WiresAcoustics
         // within 10 m of you is moved further out, 4 m at a time, till it's past it or 10 m off (a
         // bird right above your bed sounded like it was in the room; pushed past a whole base, behind
         // five walls, it was gone). Distances by ear, no source.
-        private const float CallHeight = 1f, CallStep = 4f, NotOver = 10f;
-        private static void InOpenAir(Transform t)
-        {
-            Vector3 p = t.position, away = p - Hearing.At;
-            away.y = 0f;
-            away = away.sqrMagnitude > 1e-4f ? away.normalized : Vector3.forward;
-            Vector3 last = t.position;
-            bool any = false;
-            for (int step = 0; step < 6; step++, p += away * CallStep)
-            {
-                int n = Physics.RaycastNonAlloc(new Vector3(p.x, p.y + 150f, p.z), Vector3.down, OutHits, 300f, Room.Mask, QueryTriggerInteraction.Ignore);
-                float highest = float.MinValue;
-                int top = -1;
-                for (int i = 0; i < n; i++)
-                    if (OutHits[i].colliderInstanceID != 0 && OutHits[i].point.y > highest) { highest = OutHits[i].point.y; top = i; }
-                if (top < 0) return;
-                float sea = ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : highest;
-                last = new Vector3(p.x, Mathf.Max(highest, sea) + CallHeight, p.z);
-                any = true;
-                Vector3 flat = p - Hearing.At; flat.y = 0f;
-                if (flat.sqrMagnitude < NotOver * NotOver && (Solids.Of(OutHits[top])?.Built ?? false)) continue; // a building right by you: further out
-                t.position = last;
-                return;
-            }
-            if (any) t.position = last;
-        }
+        internal const float CallHeight = 1f, CallStep = 4f, NotOver = 10f; // found on the worker threads (Starts.PlaceInOpenAir)
 
         // How much is between the listener and a sound, in walls. A wall, floor, roof, beam, hill or
         // rock counts 1, furniture and props 0.25 (sound bends around them), a trunk 0.1, anything
@@ -223,30 +209,6 @@ namespace WiresAcoustics
             return c + new Vector3(Mathf.Clamp(p.x, -Mathf.Max(0f, h.x), Mathf.Max(0f, h.x)),
                                    Mathf.Clamp(p.y, -Mathf.Max(0f, h.y), Mathf.Max(0f, h.y)),
                                    Mathf.Clamp(p.z, -Mathf.Max(0f, h.z), Mathf.Max(0f, h.z)));
-        }
-
-        internal static float Blocking(Vector3 from, Vector3 to, out Block block)
-        {
-            block = Block.Clear;
-            if ((to - from).magnitude <= SourceClearance + .1f) return 0f;
-            Lines(from, to, out Vector3 side, out Vector3 up);
-            Block b0 = Block.Clear, b1 = Block.Clear, b2 = Block.Clear;
-            float o0 = One(from, to, to, ref b0);
-            float o1 = One(from + side, to + side, to, ref b1);
-            float o2 = One(from + up, to + up, to, ref b2);
-            int k = Median(b0, b1, b2);
-            block = k == 0 ? b0 : k == 1 ? b1 : b2;
-            return k == 0 ? o0 : k == 1 ? o1 : o2;
-        }
-
-        private static float One(Vector3 from, Vector3 end, Vector3 to, ref Block b)
-        {
-            Vector3 d = end - from;
-            float dist = d.magnitude;
-            int n = Physics.RaycastNonAlloc(from, d / dist, Hits, dist - SourceClearance, Room.Mask, QueryTriggerInteraction.Ignore);
-            float occ = Along(Hits, n, from, to, ref b, n >= Hits.Length);
-            if (b.Terrain) Ridge(from, end, ref b);
-            return occ;
         }
 
         // The offsets of the two lines beside one from a to b: sideways and up, square to it.
@@ -599,6 +561,7 @@ namespace WiresAcoustics
             foreach (AcousticFilter f in AcousticFilter.Live)
             {
                 if (f == null || !f.Voice || f.Source == null) continue;
+                if (!Plugin.VoiceChatOn.Value) { f.Hrtf = false; f.Placed = false; f.Set(1f, 22000f, false); f.AirCutoff = 22000f; continue; } // as the voice chat plays it
                 bool placed = f.Source.spatialBlend >= .5f;
                 bool on = Plugin.Hrtf.Value && placed;
                 f.Kind = AcousticFilter.Kinds.Voice;

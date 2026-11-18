@@ -36,6 +36,7 @@ namespace WiresAcoustics
         // (Occlusion: sounds on the player's own objects): true if it's now placed.
         internal static bool Place(ZSFX z, AudioSource src)
         {
+            if (!Plugin.Placement.Value) return false;
             if (!Plugin.Enabled.Value || z == null || src == null || src.spatialBlend >= .5f) return false;
             AcousticFilter cue = z.GetComponent<AcousticFilter>();
             if (cue != null && cue.Cue) return false;

@@ -31,7 +31,7 @@ namespace WiresAcoustics
         // Anything else: 30 cm under, so splashes at the surface stay clear.
         internal static bool Muffles(Vector3 p, Transform source)
         {
-            if (ListenerBelow || High(p) || Floating.GetLiquidLevel(p) <= p.y + .3f) return false;
+            if (!Plugin.UnderwaterOn.Value || ListenerBelow || High(p) || Floating.GetLiquidLevel(p) <= p.y + .3f) return false;
             Character c = source != null ? source.GetComponentInParent<Character>() : null;
             if (c == null) c = CharacterAt(p);
             if (c == null) return true;
@@ -63,7 +63,7 @@ namespace WiresAcoustics
         // Every frame, from the game's audio update.
         internal static void Update(Vector3 listener, float dt)
         {
-            ListenerBelow = Below(listener);
+            ListenerBelow = Plugin.UnderwaterOn.Value && Below(listener);
             s_amount = Mathf.MoveTowards(s_amount, ListenerBelow ? 1f : 0f, Fade * dt);
             AcousticFilter.SetGlobal(Mathf.Lerp(1f, Gain, s_amount), Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(Cutoff), s_amount)), s_amount > .001f);
         }

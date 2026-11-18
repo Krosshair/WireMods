@@ -1,3 +1,9 @@
+## 0.6.0
+- Added back: sound takes time to travel, now at 350 m/s from your character's head. A sound far away starts as late as its distance makes it (up to half a second).
+- Added back: Doppler. Sounds coming toward you are higher, going away lower, measured from your character's head (camera movement doesn't affect it).
+- Performance: a new sound's wall check and a random bird or insect call's open-air spot are worked out on worker threads instead of the main thread. The sound starts once they're in (a frame later), already muffled right; that frame counts as part of its travel time. Your own sounds still start at once.
+- Added: a setting for each feature: Travel time, Doppler, Under water, Air, Wind, Sound placement, Voice chat (with the existing Room reverb, Muffling, HRTF and Realistic distance).
+
 ## 0.5.12
 - Station sounds come from the part you used: the smelter's coal and ore intakes and its output, the fermenter's intake and tap, the cooking station's fuel intake.
 - A sound isn't muffled when you can see the side of what it comes from, even if its usual spot is covered (a chest under another in a stacked wall).

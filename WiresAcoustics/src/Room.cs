@@ -167,7 +167,7 @@ namespace WiresAcoustics
                 if (roomReverb && !s_wasRoomReverb) { s_nextScan = 0f; Room.Invalidate(); }
                 s_wasRoomReverb = roomReverb;
                 if (s_wasHrtf && !hrtf) { Directions.Flush(); AcousticFilter.ReleaseHrtf(); }
-                if (s_wasOn && !on) { PortalLoop.Clear(); Batch.Flush(); AcousticFilter.ReleaseAll(); PlayerSounds.RestoreAll(); Ambience.RestorePlaced(); Underwater.Reset(); Follow.Clear(); }
+                if (s_wasOn && !on) { PortalLoop.Clear(); Batch.Flush(); Starts.Flush(); AcousticFilter.ReleaseAll(); PlayerSounds.RestoreAll(); Ambience.RestorePlaced(); Underwater.Reset(); Follow.Clear(); }
                 s_wasOn = on; s_wasHrtf = hrtf;
                 if (!on) { Underwater.Reset(); Directions.Idle(); }
                 if (Plugin.Enabled.Value && __instance.GetActiveAudioListener() is AudioListener l)
@@ -180,6 +180,7 @@ namespace WiresAcoustics
                     long r = Cost.Start(), rest = 0L;
                     Hearing.Update(lt);
                     Underwater.Update(Hearing.At, Time.deltaTime);
+                    Starts.Step(); // last frame's new sounds: checked, now started
                     AcousticFilter.Strength = Mathf.Clamp(Plugin.HrtfStrength.Value, 0f, 2f);
                     long c = Cost.Start();
                     if (r != 0L) rest += c - r;
@@ -216,6 +217,7 @@ namespace WiresAcoustics
                 {
                     long c = Cost.Start();
                     Batch.Step(Hearing.Eye); // walls and ways round them: from the camera (Hearing)
+                    Starts.Schedule(); // this frame's new sounds to the worker threads
                     Cost.Add(ref Cost.Batch, c);
                 }
                 Cost.AddTick(t0, gc0);

@@ -144,6 +144,10 @@ namespace WiresAcoustics
         internal float CheckedTime = -1e6f;
         internal int CheckedGen;
         internal float LastDist = 1e6f;            // from the listener (Directions, Occlusion), for Budget
+        internal float Doppler = 1f;               // pitch factor from coming and going (Doppler), worked out on the workers
+        internal float OtherBase, OtherWritten;    // Doppler.ApplyOther: the pitch before the shift, the one written
+        internal bool OtherPitchKnown;
+        internal bool StartHeld;                   // a new sound waiting for its wall check (Starts)
         internal bool InBudget;                    // in Budget's list of playing sounds
         // How wide the game made the source (its own spread, before ours): 0 a point, 1 all around.
         // Wide sources (a waterfall, a shield dome) get less of the HRTF's direction.
@@ -175,6 +179,7 @@ namespace WiresAcoustics
 
         internal static float AirAt(float dist)
         {
+            if (!Plugin.Air.Value) return 22000f;
             float[] air = Airs[AirWeather] ?? (Airs[AirWeather] = AirTable(Temperatures[AirWeather], Humidity));
             float x = Mathf.Clamp(dist, 0f, AirMax) / AirStep;
             int i = Mathf.Min((int)x, air.Length - 2);
@@ -413,8 +418,8 @@ namespace WiresAcoustics
         // within a few metres, logarithmic ones that stop getting quieter at their range) replaced by
         // the inverse-distance law, 6 dB quieter each time the distance doubles, from the game's own
         // full-volume distance, out to 200 times that, as Unity's own fall-off (from the listener, at
-        // your character's head as the game has it). No Doppler shift (Unity's blipped whenever the
-        // listener jumped). The game's settings are kept and put back.
+        // your character's head as the game has it). Unity's Doppler off (it blipped whenever the
+        // listener jumped): ours instead (Doppler.cs). The game's settings are kept and put back.
         private bool m_physical;
         private AudioRolloffMode m_origMode;
         private AnimationCurve m_origCurve;
@@ -468,6 +473,8 @@ namespace WiresAcoustics
                 Source.maxDistance = m_origMax;
                 Source.dopplerLevel = m_origDoppler;
                 m_origCurve = null;
+                Doppler = 1f;
+                if (OtherPitchKnown) { Source.pitch = OtherBase; OtherPitchKnown = false; } // our shift taken back
             }
             m_physical = on;
         }
