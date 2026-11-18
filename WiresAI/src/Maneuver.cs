@@ -53,7 +53,7 @@ namespace WiresAI
         }
 
         // Everyone is a bit smarter than vanilla; clever ones far more often.
-        private static float SmartChance(Individual p) => .12f + .5f * Mathf.Clamp01((p.Tactics + 1f) * .5f);
+        private static float SmartChance(Individual p) => .12f + .5f * Wits(p);
 
         // Crowds leave the fancy stuff mostly to the clever ones.
         private static float TacticsChance(Individual p, int allies)
@@ -76,7 +76,7 @@ namespace WiresAI
             float finesse = b.Overpower > 0f ? 1f - .85f * b.Overpower : 1f - .5f * b.Overpower;
 
             // Runners: smart ones aim further ahead instead of trailing behind.
-            Vector3 vel = target.GetVelocity(); vel.y = 0f;
+            Vector3 vel = Moving(target); vel.y = 0f;
             if (vel.magnitude > 4f && Vector3.Dot(vel, toTarget) > 0f)
                 InterceptTime(ai) = Mathf.Lerp(b.Intercept, 2f, Mathf.Clamp01(p.Tactics + .3f));
             else
@@ -86,8 +86,10 @@ namespace WiresAI
             string why = null;
             float holdDist = 0f, holdTime = 0f;
             float smart = SmartChance(p);
-            // Archers and spitters: back off when you close in.
-            if (p.Ranged && dist < 6f && Roll(p, ++b.Decisions) < smart + .3f)
+            // Archers and spitters: back off when you close in, but only while they can't shoot anyway
+            // (a bow shoots point-blank: its minimum range is 0); turning their back on you with a
+            // shot ready just gave you a free hit.
+            if (p.Ranged && dist < 6f && ReadyAttack(ai, b, true) == null && Roll(p, ++b.Decisions) < smart + .3f)
             { pick = Move.Hold; why = "keep-distance"; holdDist = 12f; holdTime = 2.5f; }
             // Casters stay behind their melee friends.
             else if (p.Caster && dist < 7f && b.MatesNearTarget > 0 && Roll(p, ++b.Decisions) < smart + .2f)
@@ -180,7 +182,8 @@ namespace WiresAI
             PauseTimer(ai) = ai.m_circleTargetInterval + .01f;
             b.ManeuverUntil = Time.time + duration;
             // hiding and run-ups are how it gets to attack at all; the rest give way to a ready swing
-            b.BreaksForAttack = why != "hide" && why != "run-up" && why != "keep-distance" && why != "caster-back";
+            // (an archer backing off turns to shoot again as soon as it's ready)
+            b.BreaksForAttack = why != "hide" && why != "run-up" && why != "caster-back";
             // clever ones turn back to it in time, so they're facing it when the attack is ready
             b.PreTurn = Roll(p, ++b.Decisions) < SmartChance(p);
             b.Counts[0]++;
@@ -229,7 +232,7 @@ namespace WiresAI
             {
                 // no target (wandering, going home): nothing to do, before any lookup
                 if (!(__instance is MonsterAI ai) || Target(ai) == null || !Brains.TryGetValue(ai, out Behavior b)) return;
-                if (b.Maneuver == Move.None) { Anticipate(ai, b); return; }
+                if (b.Maneuver == Move.None) { Straight(ai, b, ref point); Anticipate(ai, b); return; }
                 if (Time.time >= b.ManeuverUntil) { StopManeuver(b); return; }
                 // came into reach with an attack ready: go for it (decided once per maneuver)
                 if (b.BreaksForAttack && ReadyAttack(ai, b, b.PreTurn) is ItemDrop.ItemData w)
@@ -288,7 +291,7 @@ namespace WiresAI
                 why = "roll-punish";
             }
             else if (kind == OpenStagger)
-            { chance = .5f + .3f * Mathf.Clamp01((p.Tactics + 1f) * .5f); why = "player-staggered"; }
+            { chance = .5f + .3f * Wits(p); why = "player-staggered"; }
             if (Roll(p, ++b.Decisions) >= chance) return;
             StopManeuver(b);
             if (b.Action == Posture.Retreat) return;
@@ -357,6 +360,13 @@ namespace WiresAI
                 float now = Time.time;
                 if (b.Maneuver != Move.None && now >= b.ManeuverUntil) StopManeuver(b);
                 Character target = Target(__instance);
+                // packmates have every turn at it: hold just out of reach instead (Turns.cs)
+                if (!HasTurn(__instance, b))
+                {
+                    if (Phys.TryGetValue(b.Character, out Physical wp) && wp.Individual != null) Instance.WaitTurn(__instance, b, wp.Individual);
+                    __result = false;
+                    return false;
+                }
                 if (now < b.HoldUntil)
                 {
                     // a feint or a chain step gives way when the target leaves itself open

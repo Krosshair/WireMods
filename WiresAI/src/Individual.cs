@@ -83,7 +83,7 @@ namespace WiresAI
             // Sight: its own draw, so nothing above changes, and tied to nothing else (a dim one
             // can have sharp eyes). Up to about a quarter better or worse.
             var senses = new Deterministic(seed ^ 0x5E115E5u);
-            Sight = 1f + .25f * SpreadScale * (float)Math.Tanh(senses.Gaussian() / 1.1f);
+            Sight = 1f + Tune.SightSpread * SpreadScale * (float)Math.Tanh(senses.Gaussian() / 1.1f);
         }
 
         internal readonly float Sight = 1f;

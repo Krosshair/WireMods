@@ -1,3 +1,16 @@
+## 0.3.1
+- Pack turns: only so many of a pack attack you at once (two; one more for an aggressive pack, one fewer for a clever or timid one). The rest hold just out of reach and step in the moment one finishes. Dim, enraged or lone creatures and bosses don't wait. Replaces the old "wait your turn" rule.
+- Fixed: creatures swung at nothing from too far away. An early swing counted on them running on at full speed through the wind-up, but the game slows an attacking creature to a crawl; it's now counted the game's way.
+- Fixed: archers turned their back and ran when you got close, even with a shot ready. They now shoot point-blank when they can, back off only while reloading, and turn to shoot again as soon as they're ready.
+- Under the hood: the AI is one system in stages (what a creature knows, who it is, what it decides, the moment, how it moves), with every value picked for the game in one place, each with its reason.
+- Noticing: creatures look for you by how close you are: twice a second up close, once a second nearby, slower than vanilla far away. Anything right next to a creature is noticed whichever way it faces, so they no longer walk right past you.
+- Chasing: closing in on you they go straight at you instead of where you'll be, so they don't overrun you (they still lead you when you're far and getting away).
+- Stuck: one that's running after you but hasn't got any closer tries a way round.
+- Searching is less random: a pack only spreads out if you're really gone from where they lost you, each to its own fixed side, and after that they follow the way you went for a few steps before wandering.
+- Swinging early (and closing in on a retreating target) works from a creature's very first attack: until an attack has been seen to hit, when it hits is read from the creature's own animations.
+- They read how you're really moving, not every twitch: tapping left and right no longer sends them the wrong way or makes them whiff. Only movement you keep up counts.
+- Misjudging an attack is now a small error (about 5% of its reach), like a player's, instead of whiffing at air.
+
 ## 0.3.0
 - No more long pauses: when not chaining, the next attack is ready sooner, by aggression. Only dim creatures circle the vanilla way; the rest face you, or walk back round to your front.
 - Attacking comes first: the moment they reach you they attack, no wait. In reach with an attack ready they always swing instead of repositioning or circling, with any attack that reaches (not just the one in hand), and clever ones turn to you in time. Aggressive ones also reposition and feint less overall.

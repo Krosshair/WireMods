@@ -134,7 +134,7 @@ namespace WiresAI
             if (s.Left < 0)
             {
                 // how much it wants to keep going: aggression (-1..1, pulled toward its pack's) and confidence (0..1)
-                float drive = Mathf.Clamp01(.15f + .5f * (GroupAggression(p, b) + 1f) * .5f + .5f * Mathf.Clamp01(b.Confidence));
+                float drive = Mathf.Clamp01(Tune.ChainBase + .5f * (GroupAggression(p, b) + 1f) * .5f + .5f * Mathf.Clamp01(b.Confidence));
                 if (Roll(p, ++b.Decisions) >= drive) { NoChain(ai, b, p, target, done); return; }
                 s.Left = 1 + Mathf.FloorToInt(3f * drive * Roll(p, ++b.Decisions)); // up to 4 in a row
             }
@@ -153,7 +153,7 @@ namespace WiresAI
             // repeats itself (the same attack again, or the only one it has), so it doesn't look
             // like the same thing spammed; now and then even when it switches.
             bool same = next == done || Options.Count <= 1;
-            if (Roll(p, ++b.Decisions) >= (same ? .75f : .25f)) { b.HoldUntil = 0f; b.DelayDecided = true; return; }
+            if (Roll(p, ++b.Decisions) >= (same ? Tune.StepSame : Tune.StepSwitch)) { b.HoldUntil = 0f; b.DelayDecided = true; return; }
             Vector3 to = target.transform.position - h.transform.position; to.y = 0f;
             float r = Roll(p, ++b.Decisions);
             Vector3 dir = r < .4f ? Vector3.Cross(Vector3.up, to) : r < .8f ? -Vector3.Cross(Vector3.up, to) : -to;
@@ -219,7 +219,7 @@ namespace WiresAI
             {
                 if (!(__instance is MonsterAI ai) || !Brains.TryGetValue(ai, out Behavior b)) return true;
                 float now = Time.time;
-                if (now - b.LastStop > ArrivalGap) Arrived(ai, b);
+                if (now - b.LastStop > Tune.Arrived) Arrived(ai, b);
                 b.LastStop = now;
                 if (Target(ai) is Character t) WatchTurn(b, t, now);
                 if (_stepping <= 0 || !ChainStates.TryGetValue(ai, out ChainState s) || !s.Stepping) return true;

@@ -12,7 +12,7 @@ namespace WiresAI
     public sealed partial class WiresAIPlugin : BaseUnityPlugin
     {
         public const string Guid = "kajetan.valheim.wiresai";
-        public const string Version = "0.3.0";
+        public const string Version = "0.3.1";
         // Required on server and clients, gameplay settings follow the server.
         private static readonly ServerSync.ConfigSync Sync = new ServerSync.ConfigSync(Guid)
         {
@@ -79,7 +79,10 @@ namespace WiresAI
             internal bool HoldIsFeint; // HoldUntil is a feint or a chain step (not waiting out a roll)
             internal bool TimingDecided, TimesHits; // this attack: does it judge where the target will be
             internal float BodyLength;
-            internal bool Searching; internal Vector3 LastSeenVel; // Senses.cs
+            internal bool Searching; internal Vector3 LastSeenVel; internal int SearchSteps; // Senses.cs
+            internal float NextTactics; // when it next considers repositioning
+            internal float TurnCheckedAt = -1f; internal bool TurnOk = true; // Turns.cs
+            internal float LastLookAt, LastLookGap; internal Vector3 LastLookPos; // Pathing.cs: the last look, for the stuck check
             internal float Escalation; // bosses: how far into the fight, 0..1
             internal float Intercept;
             internal Vector3 HoldDir, MatesCentroid; internal float HoldDist, StaggeredAt = -10000f;
@@ -527,7 +530,7 @@ namespace WiresAI
                     .35f*rage - .15f*fear;
                 if (leader != self && leader != null) drive += .12f * Mathf.Min(1f, groupFactor);
                 // Target turning tail: everyone gets braver, bold ones chase hard.
-                Vector3 away = enemy.GetVelocity(); away.y = 0f;
+                Vector3 away = Moving(enemy); away.y = 0f;
                 Vector3 dir = enemy.transform.position - self.transform.position; dir.y = 0f;
                 if (Vector3.Dot(away, dir.normalized) > 2f)
                 {
@@ -579,6 +582,7 @@ namespace WiresAI
                     Mathf.Clamp(imbalance,-1f,1f),now);
                 Individual dp = decisionPhys.Individual;
                 Search(ai, b, dp, enemy);
+                StuckCheck(ai, b, dp, enemy, now);
                 if (b.Maneuver == Move.None)
                 {
                     ApplyPosture(ai,b);
@@ -596,8 +600,11 @@ namespace WiresAI
                 ItemDrop.ItemData ready = b.Action != Posture.Retreat ? ReadyAttack(ai, b, false) : null;
                 bool swing = ready != null;
                 if (swing) Ready(ai, b, ready);
-                if (!swing && !TryRunUp(ai, b, dp, enemy, now))
+                // repositioning considered at vanilla's look rate (2 s), however often it now looks:
+                // looking more often up close is for noticing, not for more chances to dance around
+                if (!swing && now >= b.NextTactics && !TryRunUp(ai, b, dp, enemy, now))
                 {
+                    b.NextTactics = now + Tune.TacticsEvery;
                     ChooseManeuver(ai,b,enemy,dp,now);
                     TryFront(ai, b, dp, enemy);
                 }
@@ -761,6 +768,7 @@ namespace WiresAI
                 if (Instance == null || !Instance.Active || !(__instance is MonsterAI ai)) return;
                 if (Brains.TryGetValue(ai, out Behavior b) && Instance.GivesUp(ai, b)) { __result = null; return; }
                 Instance.Refresh(ai,__result,0f);
+                if (Instance._behaviour.Value > 0f) SetLookTimer(ai); // next look by how close a player is (Pathing.cs)
             }
         }
         [HarmonyPatch(typeof(MonsterAI),"OnDamaged")]
