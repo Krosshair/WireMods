@@ -1,3 +1,9 @@
+## 0.2.2
+- Performance: rain, snow, mist and wind dust are lit by every nearby point light in one draw instead of being drawn again for each light (the game's way), fewer draw calls in bad weather near a lit base. Setting: Weather lit in one pass (on).
+- Fixed: a placed piece with several lights (a Dvergr lantern) lit up in steps, one light after another. They now come on together and fade in as one.
+- Changed: moving shadows no longer depend on where you look. Every moving thing in a light's reach is drawn into it (shadows came and went as you turned the camera or your character); what's saved instead goes by distance from your character, how often a light's moving shadows are redrawn.
+- Fixed: a cape's moving shadow smeared across the floor as you moved. A shadow face with a character in it is now redrawn whole instead of only around the character's bounds, which a cape's cloth swings outside.
+
 ## 0.2.1
 - Fixed: breaking, taking or eating placed food left its shadow for up to about a second. It now goes as quickly as a building piece's.
 - Performance: physics checks moved off the main thread to Unity's worker threads: whether each light can see a moving thing (every frame), and the search of a light's surroundings before a full shadow map (found a frame ahead; redraws for something you did still search at once).

@@ -6,10 +6,13 @@ In vanilla Valheim only the few lights nearest you get shadows, and the game red
 
 ## Comparison
 
-Wire's Shadows first, vanilla second.
+Two scenes, each with Wire's Shadows first and vanilla second.
 
-![Wire's Shadows](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/compare-mod.jpg)
-![Vanilla](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/compare-vanilla.jpg)
+![Wire's Shadows, scene 1](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/shadows1.jpg)
+![Vanilla, scene 1](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/vanilla1.jpg)
+
+![Wire's Shadows, scene 2](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/shadows2.jpg)
+![Vanilla, scene 2](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/vanilla2.jpg)
 
 ## Features
 

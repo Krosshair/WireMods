@@ -18,7 +18,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.2.1";
+        public const string Version = "0.2.2";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -44,6 +44,7 @@ namespace WiresShadows
         internal static ConfigEntry<bool> QuickBenchmark;
         internal static ConfigEntry<bool> DebugLog;
         internal static ConfigEntry<bool> TiledLights;
+        internal static ConfigEntry<bool> LitParticles;
         internal static ConfigEntry<bool> FlickerCulling;
         internal static ConfigEntry<float> FlickerDistance;
         internal static ConfigEntry<bool> TimingLog;
@@ -95,6 +96,9 @@ namespace WiresShadows
                 "Measures the mod against vanilla where you stand (about a minute) and shows the frame times. Resets itself.");
             TiledLights = Setting("General", "Tiled lights", false,
                 "Experimental. Every point light in one pass instead of one pass each. Off: the game's way, one at a time.");
+            LitParticles = Setting("General", "Weather lit in one pass", true,
+                "Rain, snow, mist and wind dust lit by every nearby point light in one draw, instead of the game drawing them again for each light (one more draw call per light per weather effect). Same look. Off: the game's way.");
+            LitParticles.SettingChanged += (_, __) => ShadowCache.LitSettingChanged();
             FlickerCulling = Setting("General", "Flicker culling", true,
                 "Skip brightness flicker for distant and completely off-screen lights; preserve TTL/fade/accessibility.");
             FlickerDistance = Setting("General", "Flicker distance", 15f,
@@ -126,7 +130,8 @@ namespace WiresShadows
                     else if (s.name == "Hidden/WireShadowCombine") ShadowCache.CombineShader = s;
                     else if (s.name == "Hidden/WireShadowNativeDepthCopy") ShadowCache.NativeCopyShader = s;
                     else if (s.name == "Hidden/WireAOApply") AmbientOcclusion.BounceShader = s;
-                    else if (s.name == "Hidden/WireTiledLights") ShadowCache.TiledShader = s;                }
+                    else if (s.name == "Hidden/WireTiledLights") ShadowCache.TiledShader = s;
+                    else if (s.name == "Wire/LitParticles") ShadowCache.LitParticlesShader = s;                }
                 foreach (ComputeShader cs in bundle.LoadAllAssets<ComputeShader>())
                     if (cs.name == "WireTiledLights") ShadowCache.TiledCompute = cs;
             }

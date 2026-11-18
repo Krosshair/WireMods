@@ -1,16 +1,16 @@
 ManifestFileVersion: 0
 UnityVersion: 6000.0.75f1
-CRC: 1517070774
+CRC: 3605033576
 Hashes:
   AssetFileHash:
     serializedVersion: 2
-    Hash: 8df3ea41590a8f96bbd982ea4c1579b8
+    Hash: dc9660447448fd77e39dd89173186f10
   TypeTreeHash:
     serializedVersion: 2
     Hash: 8d1d92437860ef1e6eac6eb62fc95ba0
   IncrementalBuildHash:
     serializedVersion: 2
-    Hash: 34487299aaeea136436fa6adff9a2459
+    Hash: 48b7eaacd7fad211a1a887bd6d4297c5
 HashAppended: 0
 ClassTypes:
 - Class: 21
@@ -29,6 +29,7 @@ Assets:
 - Assets/Shaders/WireToonDeferredShading.shader
 - Assets/Shaders/WireAO/WireAOApply.shader
 - Assets/Shaders/WireShadowFrontBackInstanced.mat
+- Assets/Shaders/WireLitParticles.shader
 - Assets/Shaders/WireTiledLights.compute
 - Assets/Shaders/WireShadowFrontBack.shader
 Dependencies: []

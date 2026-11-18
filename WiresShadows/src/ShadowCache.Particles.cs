@@ -1,0 +1,164 @@
+using System.Collections.Generic;
+using HarmonyLib;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+namespace WiresShadows
+{
+    // Weather particles (rain, snow, mist, wind dust) lit by every point light in one draw. The game's
+    // Custom/LitParticles is a forward shader: Unity draws it once and then again for each point light
+    // reaching it, so rain over a lit base was drawn over and over. Its materials get Wire/LitParticles
+    // (the same shader, plus the mod's point lights in its main pass) when the weather turns them on.
+    // Per frame, only while one is in use: the lights' positions and colours (they flicker), or the
+    // tiled lights' own buffers when those are on.
+    internal sealed partial class ShadowCache
+    {
+        internal static Shader LitParticlesShader;
+        private static Shader s_gameLitParticles;
+        private static readonly Dictionary<Material, Shader> s_litSwapped = new Dictionary<Material, Shader>();
+
+        private ComputeBuffer _lPosBuf, _lColorBuf;
+        private readonly Plane[] _lPlanes = new Plane[6];
+        private bool _lBound;
+
+        private static readonly int LitPosId = Shader.PropertyToID("_WireLitPos"), LitColorId = Shader.PropertyToID("_WireLitColor"),
+            LitCountId = Shader.PropertyToID("_WireLitCount");
+
+        private static bool LitWanted =>
+            Plugin.LitParticles != null && Plugin.LitParticles.Value && Plugin.UseShader.Value &&
+            LitParticlesShader != null && LitParticlesShader.isSupported;
+
+        private static readonly AccessTools.FieldRef<EnvMan, GameObject[]> CurrentPSystems =
+            AccessTools.FieldRefAccess<EnvMan, GameObject[]>("m_currentPSystems");
+
+        // EnvMan turns weather particles on: their materials get the one-pass shader (once each).
+        [HarmonyPatch(typeof(EnvMan), "SetParticleArrayEnabled")]
+        private static class WeatherParticlesOn
+        {
+            private static void Postfix(GameObject[] psystems, bool enabled)
+            {
+                if (enabled && LitWanted) LitSwap(psystems);
+            }
+        }
+
+        private static void LitSwap(GameObject[] psystems)
+        {
+            if (psystems == null) return;
+            foreach (GameObject go in psystems)
+            {
+                if (go == null) continue;
+                foreach (ParticleSystemRenderer r in go.GetComponentsInChildren<ParticleSystemRenderer>(true))
+                    foreach (Material m in r.sharedMaterials)
+                    {
+                        if (m == null || s_litSwapped.ContainsKey(m)) continue;
+                        Shader s = m.shader;
+                        if (s == null) continue;
+                        if (s_gameLitParticles == null && s.name == "Custom/LitParticles") s_gameLitParticles = s;
+                        if (s != s_gameLitParticles) continue;
+                        int queue = m.renderQueue;
+                        m.shader = LitParticlesShader;
+                        m.renderQueue = queue;
+                        s_litSwapped[m] = s;
+                    }
+            }
+        }
+
+        // The setting turned off: the game's shader back on every material.
+        private static void LitRestore()
+        {
+            foreach (KeyValuePair<Material, Shader> kv in s_litSwapped)
+                if (kv.Key != null)
+                {
+                    int queue = kv.Key.renderQueue;
+                    kv.Key.shader = kv.Value;
+                    kv.Key.renderQueue = queue;
+                }
+            s_litSwapped.Clear();
+        }
+
+        // Setting changed (Plugin): swap now, for the weather already showing, or put the game's back.
+        internal static void LitSettingChanged()
+        {
+            if (LitWanted)
+            {
+                if (EnvMan.instance != null) LitSwap(CurrentPSystems(EnvMan.instance));
+            }
+            else LitRestore();
+        }
+
+        // From RunFrame, after TiledFrame, for the main camera.
+        private void LitFrame(Camera cam)
+        {
+            if (!LitWanted || s_litSwapped.Count == 0) { LitUnbind(); return; }
+            if (!_tHaveLut) { if (!TiledWanted) TiledCapture(cam); LitUnbind(); return; } // Unity's falloff isn't copied yet: Unity lights them meanwhile
+            if (TiledWanted && _tPosBuf != null)
+            {
+                // the tiled pass has them gathered already
+                Shader.SetGlobalBuffer(LitPosId, _tPosBuf);
+                Shader.SetGlobalBuffer(LitColorId, _tColorBuf);
+                Shader.SetGlobalFloat(LitCountId, _tCount);
+            }
+            else
+            {
+                if (_lPosBuf == null)
+                {
+                    _lPosBuf = new ComputeBuffer(MaxTiled, 16);
+                    _lColorBuf = new ComputeBuffer(MaxTiled, 16);
+                }
+                int n = LitGather(cam);
+                _lPosBuf.SetData(_tPos, 0, 0, Mathf.Max(1, n));
+                _lColorBuf.SetData(_tColor, 0, 0, Mathf.Max(1, n));
+                Shader.SetGlobalBuffer(LitPosId, _lPosBuf);
+                Shader.SetGlobalBuffer(LitColorId, _lColorBuf);
+                Shader.SetGlobalFloat(LitCountId, n);
+            }
+            Shader.SetGlobalTexture(AttenId, _tLut);
+            _lBound = true;
+        }
+
+        // The tiled pass is off: the lights reaching anything in view, the same ones it would take.
+        private int LitGather(Camera cam)
+        {
+            GeometryUtility.CalculateFrustumPlanes(cam, _lPlanes);
+            bool linear = QualitySettings.activeColorSpace == ColorSpace.Linear;
+            int n = 0;
+            foreach (Tracked t in Lights)
+            {
+                if (n >= MaxTiled) break;
+                Light l = t != null ? t.Light : null;
+                if (l == null || !l.isActiveAndEnabled) continue;
+                if (l.type != LightType.Point || l.cookie != null || l.shadows != LightShadows.None) continue;
+                if (l.range <= 0f || l.intensity <= 0f) continue;
+                Vector3 p = l.transform.position;
+                float r = l.range;
+                bool seen = true;
+                for (int k = 0; k < 6; k++)
+                    if (_lPlanes[k].GetDistanceToPoint(p) < -r) { seen = false; break; }
+                if (!seen) continue;
+                _tPos[n] = new Vector4(p.x, p.y, p.z, 1f / (r * r));
+                _tColor[n] = UnityLightColor(l, linear);
+                n++;
+            }
+            return n;
+        }
+
+        private void LitUnbind()
+        {
+            if (!_lBound && _tDummy != null) return;
+            if (_tDummy == null) EnsureTiledDummy();
+            Shader.SetGlobalBuffer(LitPosId, _tDummy);
+            Shader.SetGlobalBuffer(LitColorId, _tDummy);
+            Shader.SetGlobalFloat(LitCountId, 0f);
+            _lBound = false;
+        }
+
+        private void LitRelease()
+        {
+            LitRestore();
+            _lPosBuf?.Release(); _lPosBuf = null;
+            _lColorBuf?.Release(); _lColorBuf = null;
+            Shader.SetGlobalFloat(LitCountId, 0f);
+            _lBound = false;
+        }
+    }
+}

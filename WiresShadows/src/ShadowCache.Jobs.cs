@@ -5,103 +5,12 @@ using UnityEngine;
 
 namespace WiresShadows
 {
-    // Physics queries on Unity's worker threads instead of the main thread.
-    //
-    // Can a light see a moving thing (SeenByLight's five lines from the light to it, against the
-    // pieces, rocks and terrain the cached maps already hold): asked each frame for every moving
-    // thing in every light, now cast together as one batch and read the next frame. A thing that
-    // steps out from behind a wall is drawn into that light's moving map a frame later; one not
-    // asked before counts as seen.
-    //
-    // A light's surroundings for a full map (the colliders in its reach, FindCasters): searched a
-    // frame ahead on the workers when the map is due, and the render starts the frame after with
-    // them. A redraw for something you did (the faces it changed) still searches at once: it's
-    // shown that frame.
+    // Physics and sorting off the main thread's frame. A light's surroundings for a full map (the
+    // colliders in its reach, FindCasters): searched a frame ahead on the workers when the map is
+    // due, then sorted a little each frame; the render starts once both are done. A redraw for
+    // something you did still searches at once: it's shown that frame.
     internal sealed partial class ShadowCache
     {
-        // ---- Line of sight for moving shadows ----
-        private struct SeenAsk { internal long Key; }
-        private static readonly List<SeenAsk> s_seenAsks = new List<SeenAsk>(128);
-        private static readonly List<RaycastCommand> s_seenQueue = new List<RaycastCommand>(640);
-        private static Dictionary<long, bool> s_seenLast = new Dictionary<long, bool>(256), s_seenNext = new Dictionary<long, bool>(256);
-        private static NativeArray<RaycastCommand> s_seenCmds;
-        private static NativeArray<RaycastHit> s_seenHits;
-        private static SeenAsk[] s_seenFlight = new SeenAsk[128];
-        private static int s_seenFlightCount;
-        private static JobHandle s_seenJob;
-        private static bool s_seenPending;
-
-        // What the light saw of it last frame (seen if not asked before); asks again for this frame.
-        private static bool SeenCached(int slot, Group g, Vector3 lp)
-        {
-            Vector3 d = g.Center - lp;
-            float dist = d.magnitude;
-            if (dist < .6f) return true;
-            Renderer first = g.Count > 0 ? Casters[g.Start].R : null;
-            long key = ((long)slot << 32) | (uint)(first != null ? first.GetInstanceID() : g.Hash);
-            Vector3 dir = d / dist;
-            Vector3 side = Vector3.Cross(dir, Vector3.up);
-            side = side.sqrMagnitude > 1e-4f ? side.normalized : Vector3.right;
-            Vector3 up = Vector3.Cross(side, dir);
-            float r = g.Radius * .8f;
-            Vector3 from = lp + dir * .35f;
-            var q = new QueryParameters(Occluders, false, QueryTriggerInteraction.Ignore, false);
-            Line(from, g.Center, q);
-            Line(from, g.Center + up * r, q);
-            Line(from, g.Center - up * r, q);
-            Line(from, g.Center + side * r, q);
-            Line(from, g.Center - side * r, q);
-            s_seenAsks.Add(new SeenAsk { Key = key });
-            return !s_seenLast.TryGetValue(key, out bool seen) || seen;
-        }
-
-        private static void Line(Vector3 from, Vector3 to, QueryParameters q)
-        {
-            Vector3 d = to - from;
-            float m = d.magnitude;
-            s_seenQueue.Add(m > 1e-4f ? new RaycastCommand(from, d / m, q, m) : new RaycastCommand(from, Vector3.up, q, 0f));
-        }
-
-        // Start of the frame's work: last frame's answers in.
-        private static void SeenRead()
-        {
-            if (!s_seenPending) return;
-            s_seenJob.Complete();
-            s_seenPending = false;
-            s_seenNext.Clear();
-            for (int i = 0; i < s_seenFlightCount; i++)
-            {
-                bool seen = false;
-                for (int k = 0; k < 5 && !seen; k++)
-                    seen = s_seenHits[i * 5 + k].colliderInstanceID == 0; // a line got through
-                s_seenNext[s_seenFlight[i].Key] = seen;
-            }
-            var swap = s_seenLast; s_seenLast = s_seenNext; s_seenNext = swap;
-        }
-
-        // End of the frame's work: this frame's lines to the workers.
-        private static void SeenSchedule()
-        {
-            int n = s_seenAsks.Count;
-            if (n == 0 || s_seenPending) { s_seenAsks.Clear(); s_seenQueue.Clear(); return; }
-            int c = s_seenQueue.Count;
-            if (!s_seenCmds.IsCreated || s_seenCmds.Length < c)
-            {
-                if (s_seenCmds.IsCreated) { s_seenCmds.Dispose(); s_seenHits.Dispose(); }
-                int cap = Mathf.NextPowerOfTwo(Mathf.Max(256, c));
-                s_seenCmds = new NativeArray<RaycastCommand>(cap, Allocator.Persistent);
-                s_seenHits = new NativeArray<RaycastHit>(cap, Allocator.Persistent);
-            }
-            for (int i = 0; i < c; i++) s_seenCmds[i] = s_seenQueue[i];
-            if (s_seenFlight.Length < n) System.Array.Resize(ref s_seenFlight, Mathf.NextPowerOfTwo(n));
-            for (int i = 0; i < n; i++) s_seenFlight[i] = s_seenAsks[i];
-            s_seenFlightCount = n;
-            s_seenAsks.Clear(); s_seenQueue.Clear();
-            s_seenJob = RaycastCommand.ScheduleBatch(s_seenCmds.GetSubArray(0, c), s_seenHits.GetSubArray(0, c), 16, 1);
-            JobHandle.ScheduleBatchedJobs();
-            s_seenPending = true;
-        }
-
         // ---- A light's surroundings, a frame ahead ----
         private const int SearchHits = 4096; // colliders per light per search; more: searched the old way
         private sealed class Search
@@ -230,11 +139,8 @@ namespace WiresShadows
 
         private static void JobsShutdown()
         {
-            if (s_seenPending) { s_seenJob.Complete(); s_seenPending = false; }
             if (s_searchPending) { s_searchJob.Complete(); s_searchPending = false; }
-            if (s_seenCmds.IsCreated) { s_seenCmds.Dispose(); s_seenHits.Dispose(); }
             if (s_searchCmds.IsCreated) { s_searchCmds.Dispose(); s_searchHits.Dispose(); }
-            s_seenLast.Clear(); s_seenNext.Clear(); s_seenAsks.Clear(); s_seenQueue.Clear();
             s_searches.Clear(); s_searchAsks.Clear(); s_preps.Clear();
         }
     }

@@ -1005,8 +1005,29 @@ namespace WiresShadows
             else s_strongestThisFrame = true;
         }
 
+        // A piece you place with lights (a Dvergr lantern has three): the game switches each on at
+        // its own next once-a-second check, so they came on one after another, in steps. Their checks
+        // are started again together the next frame, so they all come on at once, each fading in
+        // over its second as the game does.
+        private static readonly List<Piece> s_newLights = new List<Piece>(4);
+        private static void LightsTogether()
+        {
+            foreach (Piece p in s_newLights)
+            {
+                if (p == null) continue;
+                foreach (LightLod lod in p.GetComponentsInChildren<LightLod>())
+                {
+                    if (lod == null || !lod.isActiveAndEnabled) continue;
+                    lod.StopCoroutine("UpdateLoop");
+                    lod.StartCoroutine("UpdateLoop");
+                }
+            }
+            s_newLights.Clear();
+        }
+
         private static void PlacedNow(Piece piece)
         {
+            if (piece.GetComponentInChildren<LightLod>() != null) s_newLights.Add(piece);
             Renderer[] rs = System.Array.FindAll(piece.GetComponentsInChildren<Renderer>(),
                 r => r.shadowCastingMode != ShadowCastingMode.Off && !SeeThrough(r) && !(r is ParticleSystemRenderer));
             if (rs.Length == 0) return;
@@ -1892,6 +1913,7 @@ namespace WiresShadows
         private void OnDestroy()
         {
             _active = false;
+            LitRelease();
             TiledRelease();
             JobsShutdown();
             ReleaseAll();
@@ -2752,6 +2774,11 @@ namespace WiresShadows
         private static readonly int[] DynFaceStable = new int[MaxSlots * 6];
         private readonly int[] _faceStable = new int[MaxSlots * 6];
         private static readonly int[] DynPartial = new int[MaxSlots];
+        // Faces with a character in them: redrawn whole. A character's skinned parts (a cape's
+        // cloth, simulated after the model is posed) go outside the bounds Unity keeps for them, and
+        // a face redrawn only over its casters' bounds left their swing outside uncleared: the cape
+        // smeared across the map. The GPU redraws the whole face; nothing more on the CPU.
+        private static readonly int[] DynCharFaces = new int[MaxSlots];
         private readonly RectInt[] _dynVolRect = new RectInt[MaxSlots * 6]; // where the moving things were drawn last
         private readonly int[] _faceHash = new int[MaxSlots * 6]; // per moving face, as of its last draw
         private static readonly Vector3[] DynOrigin = new Vector3[MaxSlots];
@@ -2759,10 +2786,11 @@ namespace WiresShadows
         private void LateUpdate()
         {
             long t0 = Timing.Start(), b0 = _benchSampling ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
-            SeenRead(); SearchRead(); // last frame's worker-thread queries (ShadowCache.Jobs)
+            SearchRead(); // last frame's worker-thread search (ShadowCache.Jobs)
+            if (s_newLights.Count > 0) LightsTogether();
             if (s_strongestThisFrame) { s_strongestThisFrame = false; FinishStrongest(); }
             LateUpdateWork();
-            SeenSchedule(); SearchSchedule();
+            SearchSchedule();
             Timing.Stop(Timing.Part.Late, t0);
             if (b0 != 0L) _benchCpuTicks += System.Diagnostics.Stopwatch.GetTimestamp() - b0;
         }
@@ -2876,6 +2904,8 @@ namespace WiresShadows
                 CleanupDroppedItems();
             }
             Vector3 cameraPosition = main.transform.position;
+            // what moving shadows are judged by: you (your character), not where the camera points
+            Vector3 focus = Player.m_localPlayer != null ? Player.m_localPlayer.transform.position : cameraPosition;
             GeometryUtility.CalculateFrustumPlanes(main, Frustum);
             float farMovingCut = FarMovingCutoff(cameraPosition);
             CollectGatherLights(cameraPosition, farMovingCut);
@@ -2928,6 +2958,7 @@ namespace WiresShadows
                 // regardless of where its light source is located.
                 float closestCasterDistanceSq = float.PositiveInfinity;
                 float nearestMoving = float.PositiveInfinity; // the nearest thing moving every frame, as a share of the range
+                int charFaces = 0;
                 for (int f = 0; f < 6; f++) { FaceHashNow[f] = 17; StableHashNow[f] = 17; }
                 if (_benchSampling) System.Array.Clear(FaceKindsNow, 0, 6);
                 List<int> groupsForLight = _groupsBySlot[sl];
@@ -2953,13 +2984,10 @@ namespace WiresShadows
                     Group grp = Groups[g];
                     if (!Within(grp, lp, range) || t.Stand != null && ReferenceEquals(grp.Owner, t.Stand))
                         continue;
-                    // Its shadow from this light lands nowhere on screen: not drawn into this light.
-                    if (!ShadowOnScreen(grp, lp, range))
-                        continue;
-                    // Wholly in this light's cached shadow (a wall between them): its own shadow
-                    // falls inside that one and changes nothing. Only things moving every frame.
-                    if (grp.Volatile && !SeenCached(sl, grp, lp)) // last frame's answer, worked out on the workers
-                        continue;
+                    // Every moving thing in a light's reach is drawn into it, whatever the camera sees:
+                    // the on-screen and line-of-sight culls made shadows come and go with where you
+                    // looked and how your character stood. What's saved instead goes by distance from
+                    // you (how often a light's moving map is redrawn, below), not by view.
                     // Use each renderer's already-gathered world bounds for
                     // exact conservative face COVERAGE instead of hashing the
                     // whole group bounding sphere into unrelated cubemap faces.
@@ -2982,10 +3010,11 @@ namespace WiresShadows
                     if (gf == 0) continue;
                     groupsForLight.Add(g);
                     if (grp.Volatile) nearestMoving = Mathf.Min(nearestMoving, (grp.Center - lp).magnitude / Mathf.Max(.01f, range));
-                    float cameraDistanceSq = (grp.Center - cameraPosition).sqrMagnitude;
+                    float cameraDistanceSq = (grp.Center - focus).sqrMagnitude;
                     if (cameraDistanceSq < closestCasterDistanceSq)
                         closestCasterDistanceSq = cameraDistanceSq;
                     faces |= gf;
+                    if (grp.Character) charFaces |= gf;
                     // Per face: you moving doesn't redraw a face that only
                     // has items lying still.
                     for (int f = 0; f < 6; f++)
@@ -3067,7 +3096,8 @@ namespace WiresShadows
                     (Time.frameCount + sl) % updateEvery != 0)
                     continue;
                 DynDraw[sl] = draw;
-                DynPartial[sl] = partial;
+                DynPartial[sl] = partial & ~charFaces;
+                DynCharFaces[sl] = charFaces;
                 DynFaces[sl] = faces;
                 DynOrigin[sl] = lp;
                 DynCandidates.Add(sl);
@@ -3316,7 +3346,7 @@ namespace WiresShadows
             // Right before rendering, after anything (other mods too) has
             // moved the lights this frame.
             UploadLightPositions();
-            long tt = Timing.Start(); TiledFrame(cam); Timing.Stop(Timing.Part.Tiled, tt); // every known point light in one pass (ShadowCache.Tiled)
+            long tt = Timing.Start(); TiledFrame(cam); LitFrame(cam); Timing.Stop(Timing.Part.Tiled, tt); // every known point light in one pass (ShadowCache.Tiled; weather particles: ShadowCache.Particles)
             if (!_framePending)
                 return;
             _framePending = false;
@@ -3435,6 +3465,7 @@ namespace WiresShadows
                     if ((LightCasterFaces[ci] & VolatileBit) != 0) vol = Union(vol, casterRect);
                 }
                 bool partial = !firstUse && (partialFaces & (1 << f)) != 0;
+                if ((DynCharFaces[rectBase / 6] & (1 << f)) != 0) { partial = false; rect = new RectInt(0, 0, size, size); }
                 RectInt lastVol = _dynVolRect[rectBase + f];
                 _dynVolRect[rectBase + f] = vol;
                 if (partial)
@@ -3797,8 +3828,6 @@ namespace WiresShadows
         // behind it away from the light, out to the light's reach (no light, no shadow past
         // that), widening the way a shadow does. None of it in the camera's view: nothing to
         // draw. A face it leaves is redrawn without it (its face mask changes), so nothing stale stays.
-        private static bool ShadowOnScreen(Group g, Vector3 lp, float range) =>
-            ShadowOnScreen(Frustum, g.Center, g.Radius, lp, range);
         private static bool ShadowOnScreen(Plane[] view, Vector3 center, float radius, Vector3 lp, float range)
         {
             Vector3 d = center - lp;
@@ -3812,10 +3841,6 @@ namespace WiresShadows
             return GeometryUtility.TestPlanesAABB(view, b);
         }
 
-        // What the cached maps hold still (pieces, terrain, rocks): what SeenCached's lines test against.
-        private static int s_occluders;
-        private static int Occluders => s_occluders != 0 ? s_occluders
-            : (s_occluders = LayerMask.GetMask("piece", "static_solid", "terrain"));
         // Characters cast moving shadows out to the light's whole range.
         private const float DimEdge = 1f;
         // The fainter the light where the moving things are, the less often their shadows are

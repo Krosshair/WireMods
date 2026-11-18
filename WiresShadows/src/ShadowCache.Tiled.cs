@@ -51,7 +51,7 @@ namespace WiresShadows
         // From RunFrame, for the main camera, after the lights have moved for the frame.
         private void TiledFrame(Camera cam)
         {
-            if (!TiledWanted) { TiledOff(); return; }
+            if (!TiledWanted) { TiledOff(LitWanted); return; } // the falloff copy carries on for the weather particles
             if (_tCam != cam) { TiledOff(); _tCam = cam; }
             // The tiles' depth: the camera's depth texture, which the game's camera doesn't ask
             // Unity for (without it the tiles all read as sky and nothing was lit). One depth copy a
