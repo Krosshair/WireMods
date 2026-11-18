@@ -1,3 +1,6 @@
+## 0.2.3
+- New: Occlusion culling (General, experimental, off by default). Build pieces fully hidden behind others (the rooms above your basement, the inside of a house from outside) aren't drawn. Their sun, moon and point light shadows stay.
+
 ## 0.2.2
 - Performance: rain, snow, mist and wind dust are lit by every nearby point light in one draw instead of being drawn again for each light (the game's way), fewer draw calls in bad weather near a lit base. Setting: Weather lit in one pass (on).
 - Fixed: a placed piece with several lights (a Dvergr lantern) lit up in steps, one light after another. They now come on together and fade in as one.

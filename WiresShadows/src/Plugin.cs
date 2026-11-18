@@ -18,7 +18,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.2.2";
+        public const string Version = "0.2.3";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -45,6 +45,7 @@ namespace WiresShadows
         internal static ConfigEntry<bool> DebugLog;
         internal static ConfigEntry<bool> TiledLights;
         internal static ConfigEntry<bool> LitParticles;
+        internal static ConfigEntry<bool> OcclusionCulling;
         internal static ConfigEntry<bool> FlickerCulling;
         internal static ConfigEntry<float> FlickerDistance;
         internal static ConfigEntry<bool> TimingLog;
@@ -99,6 +100,9 @@ namespace WiresShadows
             LitParticles = Setting("General", "Weather lit in one pass", true,
                 "Rain, snow, mist and wind dust lit by every nearby point light in one draw, instead of the game drawing them again for each light (one more draw call per light per weather effect). Same look. Off: the game's way.");
             LitParticles.SettingChanged += (_, __) => ShadowCache.LitSettingChanged();
+            OcclusionCulling = Setting("General", "Occlusion culling", false,
+                "Experimental. Build pieces fully hidden behind others (the rooms upstairs from the basement, the inside of a house from outside) aren't drawn; their shadows stay. Off: the game's way.");
+            OcclusionCulling.SettingChanged += (_, __) => { if (!OcclusionCulling.Value) Occlusion.Disable(); };
             FlickerCulling = Setting("General", "Flicker culling", true,
                 "Skip brightness flicker for distant and completely off-screen lights; preserve TTL/fade/accessibility.");
             FlickerDistance = Setting("General", "Flicker distance", 15f,
@@ -131,9 +135,11 @@ namespace WiresShadows
                     else if (s.name == "Hidden/WireShadowNativeDepthCopy") ShadowCache.NativeCopyShader = s;
                     else if (s.name == "Hidden/WireAOApply") AmbientOcclusion.BounceShader = s;
                     else if (s.name == "Hidden/WireTiledLights") ShadowCache.TiledShader = s;
-                    else if (s.name == "Wire/LitParticles") ShadowCache.LitParticlesShader = s;                }
+                    else if (s.name == "Wire/LitParticles") ShadowCache.LitParticlesShader = s;
+                    else if (s.name == "Hidden/WireOcclusionMask") Occlusion.MaskShader = s;                }
                 foreach (ComputeShader cs in bundle.LoadAllAssets<ComputeShader>())
                     if (cs.name == "WireTiledLights") ShadowCache.TiledCompute = cs;
+                    else if (cs.name == "WireOcclusion") Occlusion.Compute = cs;
             }
             if (_shader == null || !_shader.isSupported || ShadowCache.DistanceShader == null ||
                 ShadowCache.CombineShader == null)
@@ -169,7 +175,7 @@ namespace WiresShadows
 
 
             gameObject.AddComponent<ShadowCache>();
-            UseShader.SettingChanged += (_, __) => { Apply(); AmbientOcclusion.Apply(); };
+            UseShader.SettingChanged += (_, __) => { Apply(); AmbientOcclusion.Apply(); if (!UseShader.Value) Occlusion.Disable(); };
             Apply();
         }
 

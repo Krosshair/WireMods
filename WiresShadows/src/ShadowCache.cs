@@ -1914,6 +1914,7 @@ namespace WiresShadows
         {
             _active = false;
             LitRelease();
+            Occlusion.Disable();
             TiledRelease();
             JobsShutdown();
             ReleaseAll();
@@ -3346,7 +3347,7 @@ namespace WiresShadows
             // Right before rendering, after anything (other mods too) has
             // moved the lights this frame.
             UploadLightPositions();
-            long tt = Timing.Start(); TiledFrame(cam); LitFrame(cam); Timing.Stop(Timing.Part.Tiled, tt); // every known point light in one pass (ShadowCache.Tiled; weather particles: ShadowCache.Particles)
+            long tt = Timing.Start(); TiledFrame(cam); LitFrame(cam); Occlusion.Frame(cam); Timing.Stop(Timing.Part.Tiled, tt); // every known point light in one pass (ShadowCache.Tiled; weather particles: ShadowCache.Particles)
             if (!_framePending)
                 return;
             _framePending = false;
@@ -4611,6 +4612,8 @@ namespace WiresShadows
                 PriorShadowModes.Add(r.shadowCastingMode);
                 r.shadowCastingMode = ShadowCastingMode.On;
             }
+            // pieces the occlusion culling hides from the camera still cast here
+            Occlusion.ShowFor(t.Center, Range(t), ChangedShadowMode, PriorShadowModes);
             // The scratch face of this map's size (the render's, or the one on screen for a door's
             // single face): the front (R) and back (G) in one camera render (OnePass).
             bool rendering = t.RenderCube >= 0;

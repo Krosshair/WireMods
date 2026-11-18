@@ -36,7 +36,8 @@ Two scenes, each with Wire's Shadows first and vanilla second.
 * **Enabled:** off brings back the game's own lighting and shadows.
 * **Flicker culling:** on by default. Stops unnecessary brightness flicker calculations for lights beyond the configured distance or whose full light influence is off screen. Those lights hold steady brightness; nearby visible lights keep their normal flicker. Light lifetime, fades and reduced-flashing settings are preserved.
 * **Flicker distance:** 15 metres by default, measured from your player. Changing this setting does not change shadow or illumination range.
-* **Tiled lights:** off by default; the optional batched lighting path remains available.
+* **Tiled lights:** experimental, off by default. Every point light in one pass instead of one pass each.
+* **Occlusion culling:** experimental, off by default. Build pieces fully hidden behind others (the rooms above your basement, the inside of a house from outside) aren't drawn. Their shadows stay.
 * **Timing log:** off by default. What the mod's own work costs per frame, in the log every 5 seconds.
 * **Debug log:** off by default. Writes what the mod does to the log; turns itself on while a benchmark runs.
 * **Benchmark:** about a minute. Measures the mod against vanilla where you stand and shows the frame times, and what moving shadows, point lights and the lighting shader each cost.
