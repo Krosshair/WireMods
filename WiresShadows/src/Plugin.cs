@@ -18,7 +18,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.2.5";
+        public const string Version = "0.2.6";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -45,6 +45,7 @@ namespace WiresShadows
         internal static ConfigEntry<bool> DebugLog;
         internal static ConfigEntry<bool> TiledLights;
         internal static ConfigEntry<bool> LitParticles;
+        internal static ConfigEntry<bool> ModAO;
         internal static ConfigEntry<bool> OcclusionCulling;
         internal static ConfigEntry<bool> FlickerCulling;
         internal static ConfigEntry<float> FlickerDistance;
@@ -100,6 +101,9 @@ namespace WiresShadows
             LitParticles = Setting("General", "Weather lit in one pass", true,
                 "Rain, snow, mist and wind dust lit by every nearby point light in one draw, instead of the game drawing them again for each light (one more draw call per light per weather effect). Same look. Off: the game's way.");
             LitParticles.SettingChanged += (_, __) => ShadowCache.LitSettingChanged();
+            ModAO = Setting("General", "Ambient occlusion", true,
+                "The game's ambient occlusion coloured by the surface it lands on, at full resolution and steady from frame to frame. Off: the game's own ambient occlusion. Needs Enabled on.");
+            ModAO.SettingChanged += (_, __) => { AmbientOcclusion.Apply(); AmbientOcclusion.Resolution(); };
             OcclusionCulling = Setting("General", "Occlusion culling", false,
                 "Experimental. Build pieces fully hidden behind others (the rooms upstairs from the basement, the inside of a house from outside) aren't drawn; their shadows stay. Off: the game's way.");
             OcclusionCulling.SettingChanged += (_, __) => { if (!OcclusionCulling.Value) Occlusion.Disable(); };
@@ -175,7 +179,7 @@ namespace WiresShadows
 
 
             gameObject.AddComponent<ShadowCache>();
-            UseShader.SettingChanged += (_, __) => { Apply(); AmbientOcclusion.Apply(); if (!UseShader.Value) Occlusion.Disable(); };
+            UseShader.SettingChanged += (_, __) => { Apply(); AmbientOcclusion.Apply(); AmbientOcclusion.Resolution(); if (!UseShader.Value) Occlusion.Disable(); };
             Apply();
         }
 

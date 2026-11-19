@@ -1,3 +1,7 @@
+## 0.2.6
+- New: Ambient occlusion setting (General, on). Off gives the game's own ambient occlusion while the rest of the mod stays on.
+- Fixed: ambient occlusion shimmering on distant grass and trees moving in the wind, most of all at a lower render scale. With the mod the game's ambient occlusion samples the same directions every frame instead of rotating them and averaging frames (which swaying plants threw off), at full resolution instead of half, with one sample level more. Same look otherwise.
+
 ## 0.2.5
 - Fixed: thin shadow lines where beams overlap (one beam's edge shading the other right where they meet). Edges sticking out less than a hair past a piece they overlap no longer shade it, and surfaces no longer shade themselves right where pieces meet.
 

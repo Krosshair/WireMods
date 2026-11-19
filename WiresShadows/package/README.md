@@ -34,6 +34,7 @@ Two scenes, each with Wire's Shadows first and vanilla second.
 ## Settings
 
 * **Enabled:** off brings back the game's own lighting and shadows.
+* **Ambient occlusion:** on by default. The game's ambient occlusion coloured by the surface it lands on, at full resolution and steady from frame to frame. Off: the game's own.
 * **Flicker culling:** on by default. Stops unnecessary brightness flicker calculations for lights beyond the configured distance or whose full light influence is off screen. Those lights hold steady brightness; nearby visible lights keep their normal flicker. Light lifetime, fades and reduced-flashing settings are preserved.
 * **Flicker distance:** 15 metres by default, measured from your player. Changing this setting does not change shadow or illumination range.
 * **Tiled lights:** experimental, off by default. Every point light in one pass instead of one pass each.
