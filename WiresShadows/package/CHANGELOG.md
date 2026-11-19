@@ -1,3 +1,6 @@
+## 0.2.8
+- Performance: moving shadows cost the graphics card less again. 0.2.7 drew them once per object for every light around (less work for the processor), but in a way graphics cards run slowly; now in smaller steps they handle as fast as before.
+
 ## 0.2.7
 - Performance: moving shadows (you and other moving things) are drawn once per object for every light around instead of once per light. Next to a dozen lights that was a dozen draws per part of a character every frame, now one.
 

@@ -3680,9 +3680,9 @@ namespace WiresShadows
                 {
                     List<int> list = s_byCaster[k];
                     Caster c = Casters[k];
-                    for (int at = 0; at < list.Count; at += 21)
+                    for (int at = 0; at < list.Count; at += 6)
                     {
-                        int n = Mathf.Min(21, list.Count - at);
+                        int n = Mathf.Min(6, list.Count - at); // as the pass: 6 entries a draw
                         if (s_sortedCount + n > s_sorted.Length) System.Array.Resize(ref s_sorted, Mathf.NextPowerOfTwo(s_sortedCount + n));
                         _frameCb.SetGlobalFloat(EntryStartId, s_sortedCount);
                         _frameCb.SetGlobalFloat(EntryCountId, n);
