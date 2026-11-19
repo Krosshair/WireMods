@@ -1919,6 +1919,7 @@ namespace WiresShadows
             LitRelease();
             Occlusion.Disable();
             SeenRelease();
+            s_entryBuf?.Release(); s_entryBuf = null;
             TiledRelease();
             JobsShutdown();
             ReleaseAll();
@@ -2079,7 +2080,8 @@ namespace WiresShadows
 
             // The cached maps' pools: what's left of the memory share after the moving maps and scratch.
             long r2 = (long)res * res;
-            long other = (long)(_fitNearMoving + _fitFarMoving) * 6 * r2 * 2 + r2 * 2 * 24;
+            long other = (long)(_fitNearMoving + _fitFarMoving) * 6 * r2 * 2 + r2 * 2 * 24
+                + (SystemInfo.supportsGeometryShaders ? r2 * 4 * 6 * (ScratchCubes - 1) : 0); // the batch's extra scratch cubes (RGHalf)
             int vram = SystemInfo.graphicsMemorySize;
             long budget = vram > 0 ? ((long)(vram * VramShare) << 20) - other : long.MaxValue / 4;
             _tiered = SetUpTiers(System.Math.Max(budget, 0L));
@@ -2099,7 +2101,7 @@ namespace WiresShadows
             if (_movScratch != null) { _movScratch.Release(); Destroy(_movScratch); _movScratch = null; }
             _dynMaps = CubeArray(16, 1, RenderTextureFormat.RGHalf, "WireDynShadowMaps");
             _farDynMaps = CubeArray(16, 1, RenderTextureFormat.RGHalf, "WireFarDynShadowMaps");
-            _movScratch = CubeArray(res, 1, RenderTextureFormat.RGHalf, "WireMovingScratch");
+            _movScratch = CubeArray(res, SystemInfo.supportsGeometryShaders ? ScratchCubes : 1, RenderTextureFormat.RGHalf, "WireMovingScratch"); // room for a batch (Batching)
             if (!_dynMaps.IsCreated() || !_farDynMaps.IsCreated() || !_movScratch.IsCreated())
             {
                 Plugin.Log.LogError("Couldn't create moving-shadow maps at " + res + " px.");
@@ -3218,6 +3220,7 @@ namespace WiresShadows
             if (_frameCb == null)
                 _frameCb = new CommandBuffer { name = "WireMovingShadows" };
             _frameCb.Clear();
+            s_entryCount = 0; _slotUsed = 0;
             for (int k = 0; k < DynCandidates.Count; k++)
             {
                 int sl = DynCandidates[k];
@@ -3242,6 +3245,15 @@ namespace WiresShadows
                 // Faces drawn last frame but not now are cleared; when a slot
                 // starts using its moving map, all its other faces are too.
                 int toClear = (faces != 0 && _dynFacesLast[sl] == 0 ? 63 : _dynFacesLast[sl]) & ~faces;
+                // The batch: each face this light touches gets its own scratch slot; drawn together
+                // with the other lights' (FlushBatch) once the slots run out or the frame's lights are done.
+                if (Batching)
+                {
+                    int need = 0;
+                    for (int f = 0; f < 6; f++) if (((draw | toClear) & (1 << f)) != 0) need++;
+                    if (_slotUsed + need > _movScratch.volumeDepth) FlushBatch();
+                    for (int f = 0; f < 6; f++) _faceSlot[sl * 6 + f] = ((draw | toClear) & (1 << f)) != 0 ? _slotUsed++ : f;
+                }
                 if (draw != 0)
                     DrawMovingDirect(t, pl, draw, DynOrigin[sl], sl * 6, _dynFacesLast[sl] == 0, _dynFacesLast[sl] == 0 ? 0 : DynPartial[sl]);
                 for (int f = 0; f < 6; f++)
@@ -3251,7 +3263,7 @@ namespace WiresShadows
                         // the empty-distance sentinel, not (60000, 0).
                         if (_combine == null)
                             _combine = new Material(CombineShader) { hideFlags = HideFlags.HideAndDontSave };
-                        _frameCb.SetRenderTarget(new RenderTargetIdentifier(drawMaps, 0, CubemapFace.Unknown, drawBase + f));
+                        _frameCb.SetRenderTarget(new RenderTargetIdentifier(drawMaps, 0, CubemapFace.Unknown, FaceSlice(sl * 6, f)));
                         _frameCb.DrawProcedural(Matrix4x4.identity, _combine, 2, MeshTopology.Triangles, 3);
                         _dynRect[sl * 6 + f] = default;
                     }
@@ -3271,7 +3283,9 @@ namespace WiresShadows
                             // new pixels in the scratch cube (what's there is another light's).
                             if (drawn && (touched.width <= 0 || touched.height <= 0))
                                 continue;
-                            QueueNativeMovingFace(t, drawMaps, drawBase + f, pl, f, touched);
+                            // batched: after the batch's draws (FlushBatch)
+                            if (Batching) s_jobs.Add(new Job { T = t, Slice = FaceSlice(sl * 6, f), Cube = pl, Face = f, Touched = touched });
+                            else QueueNativeMovingFace(t, drawMaps, drawBase + f, pl, f, touched);
                         }
                 }
                 _nativeMovingActive[sl] = nativeMoving && !_nativeMovingFailed && faces != 0 ? 1f : 0f;
@@ -3281,6 +3295,7 @@ namespace WiresShadows
                 // The cached moving map now contains the result of this pickup.
                 _pickupInvalidFaces[sl] = 0;
             }
+            if (Batching) { FlushBatch(); UploadEntries(); }
             _framePending = true;
             UploadDynActive();
             UploadNativeMovingActive();
@@ -3521,10 +3536,24 @@ namespace WiresShadows
                 var sc = new Rect(rect.x, rect.y, rect.width, rect.height);
                 // Direct nearest-depth map, no RGHalf intermediate and
                 // no midpoint-combine pass. Existing face caching unchanged.
-                _frameCb.SetRenderTarget(new RenderTargetIdentifier(maps, 0, CubemapFace.Unknown, slice * 6 + f));
+                _frameCb.SetRenderTarget(new RenderTargetIdentifier(maps, 0, CubemapFace.Unknown, FaceSlice(rectBase, f)));
                 _frameCb.EnableScissorRect(sc);
                 _frameCb.DrawProcedural(Matrix4x4.identity, _combine, 2, MeshTopology.Triangles, 3);
                 if (_benchSampling) { if (partial) _benchPartialFaces++; else _benchFullFaces++; }
+                if (Batching)
+                {
+                    // recorded, drawn with every other light's in FlushBatch
+                    _frameCb.DisableScissorRect();
+                    Matrix4x4 faceVp = GL.GetGPUProjectionMatrix(proj, true) * view;
+                    var center = new Vector4(lp.x, lp.y, lp.z, FaceSlice(rectBase, f));
+                    foreach (int k in FaceRenderers)
+                    {
+                        Caster c = Casters[k];
+                        if (c.Sheet != null) { SheetFace(c, maps, FaceSlice(rectBase, f), view, proj); continue; }
+                        AddEntry(k, faceVp, center, new Vector4(CountIndex(k, t), t.Slot, 0f, 0f));
+                    }
+                    continue;
+                }
                 if (gs)
                 {
                     // drawn below, once per object for all its faces
@@ -3584,6 +3613,111 @@ namespace WiresShadows
         // The one-draw-for-all-faces pass (WireShadowDistance "WIREGS"), if the bundle has it and
         // the GPU runs geometry shaders; -1 otherwise (one draw per face, as before).
         private static int s_gsPass = -2;
+        // ---- Moving shadows batched over lights ----
+        // Each frame's moving faces, from all lights, each in a scratch slot of its own, then every
+        // moving object drawn once for all of them (WireShadowDistance "WIREGSBATCH"): a character in
+        // reach of a dozen lights was a dozen draws per part, now one. The faces are then converted
+        // into each light's moving map as before. Falls back to one light at a time without the pass.
+        internal const int ScratchCubes = 4; // face slots per batch: 24 (picked); more lights than that: another batch
+        private struct Entry { public Matrix4x4 Vp; public Vector4 Center; public Vector4 Extra; } // 96 bytes
+        private struct Job { public Tracked T; public int Slice, Cube, Face; public RectInt Touched; }
+        private static int s_batchPass = -2;
+        private int _slotUsed;
+        private readonly int[] _faceSlot = new int[MaxSlots * 6];
+        private static Entry[] s_entries = new Entry[512], s_sorted = new Entry[512];
+        private static int s_entryCount, s_sortedCount;
+        private static ComputeBuffer s_entryBuf;
+        private static readonly Dictionary<int, List<int>> s_byCaster = new Dictionary<int, List<int>>();
+        private static readonly List<int> s_casterOrder = new List<int>();
+        private static readonly List<Job> s_jobs = new List<Job>();
+        private static readonly int EntriesId = Shader.PropertyToID("_WireEntries"), EntryStartId = Shader.PropertyToID("_WireEntryStart"),
+            EntryCountId = Shader.PropertyToID("_WireEntryCount");
+
+        private bool Batching
+        {
+            get
+            {
+                if (s_batchPass == -2)
+                {
+                    if (_distMaterial == null && DistanceShader != null)
+                        _distMaterial = new Material(DistanceShader) { hideFlags = HideFlags.HideAndDontSave };
+                    s_batchPass = _distMaterial != null && SystemInfo.supportsGeometryShaders ? _distMaterial.FindPass("WIREGSBATCH") : -1;
+                    Plugin.Note("[moving] " + (s_batchPass >= 0 ? "every light's moving shadows in one draw per object" : "one light at a time"));
+                }
+                return s_batchPass >= 0 && _movScratch != null && _movScratch.volumeDepth > 6;
+            }
+        }
+
+        // The scratch slice of a light's face (rectBase = its slot * 6): its batch slot, or the face of the one scratch cube.
+        private int FaceSlice(int rectBase, int f) => Batching ? _faceSlot[rectBase + f] : f;
+
+        private static void AddEntry(int caster, Matrix4x4 vp, Vector4 center, Vector4 extra)
+        {
+            if (s_entryCount == s_entries.Length) System.Array.Resize(ref s_entries, s_entries.Length * 2);
+            s_entries[s_entryCount] = new Entry { Vp = vp, Center = center, Extra = extra };
+            if (!s_byCaster.TryGetValue(caster, out List<int> list)) { s_byCaster[caster] = list = new List<int>(8); s_casterOrder.Add(caster); }
+            list.Add(s_entryCount++);
+        }
+
+        // A particle sprite: its own pass, one face at a time (rare).
+        private void SheetFace(Caster c, RenderTexture maps, int slice, Matrix4x4 view, Matrix4x4 proj)
+        {
+            if (s_sheetPass < 0) return;
+            _frameCb.SetRenderTarget(new RenderTargetIdentifier(maps, 0, CubemapFace.Unknown, slice));
+            _frameCb.SetViewProjectionMatrices(view, proj);
+            _frameCb.DrawRenderer(c.R, c.Sheet, 0, s_sheetPass);
+        }
+
+        // Draws what was recorded since the last flush, then converts those faces; the slots are free again.
+        private void FlushBatch()
+        {
+            if (s_casterOrder.Count > 0)
+            {
+                _frameCb.SetRenderTarget(new RenderTargetIdentifier(_movScratch, 0, CubemapFace.Unknown, -1));
+                bool counting = s_counting.Count > 0 && s_seenBuf != null;
+                if (counting) _frameCb.SetRandomWriteTarget(1, s_seenBuf);
+                foreach (int k in s_casterOrder)
+                {
+                    List<int> list = s_byCaster[k];
+                    Caster c = Casters[k];
+                    for (int at = 0; at < list.Count; at += 21)
+                    {
+                        int n = Mathf.Min(21, list.Count - at);
+                        if (s_sortedCount + n > s_sorted.Length) System.Array.Resize(ref s_sorted, Mathf.NextPowerOfTwo(s_sortedCount + n));
+                        _frameCb.SetGlobalFloat(EntryStartId, s_sortedCount);
+                        _frameCb.SetGlobalFloat(EntryCountId, n);
+                        for (int e = 0; e < n; e++) s_sorted[s_sortedCount++] = s_entries[list[at + e]];
+                        for (int sub = 0; sub < c.Subs; sub++)
+                            _frameCb.DrawRenderer(c.R, _distMaterial, sub, s_batchPass);
+                        if (_benchSampling) _benchDraws++;
+                    }
+                    list.Clear();
+                }
+                if (counting) _frameCb.ClearRandomWriteTargets();
+            }
+            s_byCaster.Clear();
+            s_casterOrder.Clear();
+            s_entryCount = 0;
+            foreach (Job j in s_jobs)
+                QueueNativeMovingFace(j.T, _movScratch, j.Slice, j.Cube, j.Face, j.Touched);
+            s_jobs.Clear();
+            _slotUsed = 0;
+        }
+
+        // The frame's entries to the GPU, before the frame's command buffer runs (RunFrame).
+        private static void UploadEntries()
+        {
+            if (s_sortedCount == 0) return;
+            if (s_entryBuf == null || s_entryBuf.count < s_sortedCount)
+            {
+                s_entryBuf?.Release();
+                s_entryBuf = new ComputeBuffer(Mathf.NextPowerOfTwo(Mathf.Max(256, s_sortedCount)), 96);
+            }
+            s_entryBuf.SetData(s_sorted, 0, 0, s_sortedCount);
+            Shader.SetGlobalBuffer(EntriesId, s_entryBuf);
+            s_sortedCount = 0;
+        }
+
         private static readonly Matrix4x4[] GsVP = new Matrix4x4[6];
         private static readonly Dictionary<int, int> GsMask = new Dictionary<int, int>();
         private static readonly List<int> GsOrder = new List<int>();

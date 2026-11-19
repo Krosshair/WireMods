@@ -1,3 +1,6 @@
+## 0.2.7
+- Performance: moving shadows (you and other moving things) are drawn once per object for every light around instead of once per light. Next to a dozen lights that was a dozen draws per part of a character every frame, now one.
+
 ## 0.2.6
 - New: Ambient occlusion setting (General, on). Off gives the game's own ambient occlusion while the rest of the mod stays on.
 - Fixed: ambient occlusion shimmering on distant grass and trees moving in the wind, most of all at a lower render scale. With the mod the game's ambient occlusion samples the same directions every frame instead of rotating them and averaging frames (which swaying plants threw off), at full resolution instead of half, with one sample level more. Same look otherwise.
