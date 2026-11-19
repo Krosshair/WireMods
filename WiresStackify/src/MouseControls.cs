@@ -1,5 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace WiresStackify
 {
@@ -25,8 +26,6 @@ namespace WiresStackify
         private static readonly AccessTools.FieldRef<InventoryGui, Container> CurrentContainer = AccessTools.FieldRefAccess<InventoryGui, Container>("m_currentContainer");
         private static readonly System.Reflection.MethodInfo SetupDrag = AccessTools.Method(typeof(InventoryGui), "SetupDragItem");
         private static readonly System.Reflection.MethodInfo Selected = AccessTools.Method(typeof(InventoryGui), "OnSelectedItem");
-        private static readonly System.Reflection.MethodInfo Hovered = AccessTools.Method(typeof(InventoryGrid), "GetHoveredElement");
-        private static readonly System.Reflection.MethodInfo ElementPos = AccessTools.Method(typeof(InventoryGrid), "GetElementPos");
 
         private static void PlayMoveSound(InventoryGui gui)
         {
@@ -50,24 +49,6 @@ namespace WiresStackify
             Favorites fav = Favorites.For(p);
             return fav.IsItemFavorited(item.m_shared) ||
                    (inv == p.GetInventory() && fav.IsSlotFavorited(item.m_gridPos));
-        }
-
-        private static bool HoverOf(InventoryGrid g, out Vector2i pos)
-        {
-            pos = default;
-            if (g == null || !g.gameObject.activeInHierarchy) return false;
-            object e = Hovered.Invoke(g, null);
-            if (e == null) return false;
-            pos = (Vector2i)ElementPos.Invoke(g, new[] { e });
-            return true;
-        }
-
-        private static bool Hover(InventoryGui gui, out InventoryGrid grid, out Vector2i pos)
-        {
-            grid = PlayerGrid(gui);
-            if (HoverOf(grid, out pos)) return true;
-            grid = ContainerGrid(gui);
-            return HoverOf(grid, out pos);
         }
 
         private static Inventory Other(InventoryGui gui, Inventory of)
@@ -248,68 +229,107 @@ namespace WiresStackify
                     held.m_gridPos.x, held.m_gridPos.y);
             }
         }
-        // Held mouse buttons dragged over slots, hotbar numbers and the wheel, while the inventory is open.
-        [HarmonyPatch(typeof(InventoryGui), "Update")]
-        private static class Each
-        {
-            private static void Postfix(InventoryGui __instance)
-            {
-                if (!InventoryGui.IsVisible() || Player.m_localPlayer == null) return;
-                bool rmb = ZInput.GetMouseButton(1), lmb = ZInput.GetMouseButton(0);
-                if (!rmb)
-                {
-                    s_halfPickupPress = false;
-                    s_lastDrag = new Vector2i(-1, -1);
-                    s_lastDragGrid = null;
-                }
-                if (!lmb || !Ctrl)
-                {
-                    s_lastShift = new Vector2i(-1, -1);
-                    s_lastShiftGrid = null;
-                }
-                float wheel = ZInput.GetMouseScrollWheel();
-                bool number = false;
-                for (int k = 0; k < 8; k++) if (ZInput.GetKeyDown(KeyCode.Alpha1 + k)) { number = true; break; }
-                if (!rmb && !(lmb && Ctrl) && wheel == 0f && !number) return;
-                if (!Hover(__instance, out InventoryGrid grid, out Vector2i pos)) return;
-                Inventory inv = Inv(grid);
-                ItemDrop.ItemData item = inv.GetItemAt(pos.x, pos.y);
-                ItemDrop.ItemData held = DragItem(__instance);
+        // ---- Over a slot: told by the slot itself (SlotInput), never asked every frame ----
 
-                if (rmb && held != null && !s_halfPickupPress &&
-                    (pos != s_lastDrag || grid != s_lastDragGrid))
-                {
-                    s_lastDrag = pos;
-                    s_lastDragGrid = grid;
-                    Place(__instance, grid, pos, false);
-                }
-                if (lmb && Ctrl && held == null &&
-                    (pos != s_lastShift || grid != s_lastShiftGrid))
-                {
-                    s_lastShift = pos;
-                    s_lastShiftGrid = grid;
-                    if (item != null && !Fav(item, inv)) MoveViaVanilla(__instance, grid, item, pos);
-                }
-                if (number && item != null && held == null)
-                    for (int k = 0; k < 8; k++)
-                        if (ZInput.GetKeyDown(KeyCode.Alpha1 + k))
-                        {
-                            // the game's own drag and drop onto that hotbar slot (it swaps)
-                            InventoryGrid pg = PlayerGrid(__instance);
-                            Vector2i hot = new Vector2i(k, 0);
-                            if (inv == Inv(pg) && pos == hot) break;
-                            SetupDrag.Invoke(__instance, new object[] { item, inv, item.m_stack });
-                            Selected.Invoke(__instance, new object[] { pg, Inv(pg).GetItemAt(k, 0), hot, InventoryGrid.Modifier.Select });
-                            if (DragItem(__instance) != null) ClearDrag(__instance);
-                            break;
-                        }
-                if (wheel != 0f)
-                {
-                    InventoryGrid sourceGrid = held != null ?
-                        (DragInv(__instance) == Inv(PlayerGrid(__instance)) ? PlayerGrid(__instance) : ContainerGrid(__instance)) : grid;
-                    Scroll(__instance, held ?? item, held != null ? DragInv(__instance) : inv,
-                        wheel < 0f);
-                }
+        // The pointer came onto a slot: with the right button held and a stack in hand, one goes in
+        // (dragging across slots); with Ctrl and the left button held, the stack moves across.
+        internal static void Entered(InventoryElement element)
+        {
+            InventoryGui gui = InventoryGui.instance;
+            if (gui == null || !InventoryGui.IsVisible() || Player.m_localPlayer == null || !At(element, out InventoryGrid grid, out Vector2i pos)) return;
+            bool rmb = ZInput.GetMouseButton(1), lmb = ZInput.GetMouseButton(0);
+            if (!rmb) Released(1);
+            if (!lmb || !Ctrl) Released(0);
+            Inventory inv = Inv(grid);
+            ItemDrop.ItemData item = inv.GetItemAt(pos.x, pos.y);
+            ItemDrop.ItemData held = DragItem(gui);
+            if (rmb && held != null && !s_halfPickupPress && (pos != s_lastDrag || grid != s_lastDragGrid))
+            {
+                s_lastDrag = pos;
+                s_lastDragGrid = grid;
+                Place(gui, grid, pos, false);
+            }
+            if (lmb && Ctrl && held == null && (pos != s_lastShift || grid != s_lastShiftGrid))
+            {
+                s_lastShift = pos;
+                s_lastShiftGrid = grid;
+                if (item != null && !Fav(item, inv)) MoveViaVanilla(gui, grid, item, pos);
+            }
+        }
+
+        // A mouse button let go over a slot ends that press's sweep.
+        internal static void Released(int button)
+        {
+            if (button == 1)
+            {
+                s_halfPickupPress = false;
+                s_lastDrag = new Vector2i(-1, -1);
+                s_lastDragGrid = null;
+            }
+            else if (button == 0)
+            {
+                s_lastShift = new Vector2i(-1, -1);
+                s_lastShiftGrid = null;
+            }
+        }
+
+        // The wheel over a slot: one item across. False if there was nothing to do, so the wheel can
+        // still scroll the grid.
+        internal static bool Wheel(InventoryElement element, float delta)
+        {
+            InventoryGui gui = InventoryGui.instance;
+            if (delta == 0f || gui == null || !InventoryGui.IsVisible() || !At(element, out InventoryGrid grid, out Vector2i pos)) return false;
+            Inventory inv = Inv(grid);
+            ItemDrop.ItemData held = DragItem(gui);
+            ItemDrop.ItemData item = held ?? inv.GetItemAt(pos.x, pos.y);
+            if (item == null) return false;
+            Scroll(gui, item, held != null ? DragInv(gui) : inv, delta < 0f);
+            return true;
+        }
+
+        // A hotbar number while the pointer is over an item: it swaps with that hotbar slot, by the
+        // game's own drag and drop. The game reads no keys with the inventory open, so these are
+        // looked at by KeyWatch, which runs only while the pointer is over a slot.
+        internal static void Number(InventoryElement element, int k)
+        {
+            InventoryGui gui = InventoryGui.instance;
+            if (gui == null || DragItem(gui) != null || !At(element, out InventoryGrid grid, out Vector2i pos)) return;
+            Inventory inv = Inv(grid);
+            ItemDrop.ItemData item = inv.GetItemAt(pos.x, pos.y);
+            if (item == null) return;
+            InventoryGrid pg = PlayerGrid(gui);
+            Vector2i hot = new Vector2i(k, 0);
+            if (inv == Inv(pg) && pos == hot) return;
+            SetupDrag.Invoke(gui, new object[] { item, inv, item.m_stack });
+            Selected.Invoke(gui, new object[] { pg, Inv(pg).GetItemAt(k, 0), hot, InventoryGrid.Modifier.Select });
+            if (DragItem(gui) != null) ClearDrag(gui);
+        }
+
+        private static bool At(InventoryElement element, out InventoryGrid grid, out Vector2i pos)
+        {
+            grid = element != null ? element.GetComponentInParent<InventoryGrid>() : null;
+            pos = element != null ? element.Position : default;
+            return grid != null && Inv(grid) != null;
+        }
+
+        [HarmonyPatch(typeof(InventoryElement), nameof(InventoryElement.Initialize))]
+        private static class SlotMade
+        {
+            private static void Postfix(InventoryElement __instance)
+            {
+                if (__instance != null && __instance.GetComponent<SlotInput>() == null)
+                    __instance.gameObject.AddComponent<SlotInput>();
+            }
+        }
+
+        // The press ends wherever the button is let go; the slot it started on hears it.
+        [HarmonyPatch(typeof(UIInputHandler), nameof(UIInputHandler.OnPointerUp))]
+        private static class ButtonUp
+        {
+            private static void Postfix(PointerEventData eventData)
+            {
+                if (eventData.button == PointerEventData.InputButton.Right) Released(1);
+                else if (eventData.button == PointerEventData.InputButton.Left) Released(0);
             }
         }
 

@@ -1,4 +1,7 @@
-﻿## 0.2.1
+## 0.2.2
+- Performance: nothing runs every frame any more. Dragging over slots, the wheel and the hotbar numbers are told by the slot the pointer is on instead of being checked each frame; the numbers are only looked at while the pointer is over a slot.
+
+## 0.2.1
 - Fixed: holding Ctrl+left click on a slot could move it twice, taking along what landed in that slot during the hold.
 ## 0.2.0
 
