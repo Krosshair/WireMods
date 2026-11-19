@@ -2,6 +2,7 @@ using System.Reflection;
 using AmplifyOcclusion;
 using HarmonyLib;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace WiresShadows
 {
@@ -9,7 +10,7 @@ namespace WiresShadows
     // GTAO multi-bounce (see WireAOApply.shader). Amplify's apply shader is swapped for ours,
     // which is the same with that one step added; everything else (method, reach, strength,
     // tint) stays the game's. Swapped when Amplify makes its materials and when the mod is
-    // switched on or off; nothing per frame.
+    // switched on or off. Per frame only two values added to what Amplify records anyway.
     internal static class AmbientOcclusion
     {
         internal static Shader BounceShader;
@@ -28,39 +29,23 @@ namespace WiresShadows
             if (mat.shader != want) mat.shader = want;
         }
 
-        // Full resolution. The game runs its AO at half resolution on every setting (CameraEffects.SetSSAO,
-        // Downsample), and far away it reaches 50 m (FadeToRadius, _GameMain): distant grass and trees
-        // moving in the wind got coarse, sparse occlusion that the temporal filter couldn't hold, so it
-        // shimmered (more so at a lower render scale). Same reach, fade and strength; only the resolution.
-        private static readonly AccessTools.FieldRef<CameraEffects, AmplifyOcclusionEffect> CameraAO =
-            AccessTools.FieldRefAccess<CameraEffects, AmplifyOcclusionEffect>("m_amplifyOcclusion");
+        // The same sample directions every frame. The game's AO rotates them each frame and lets its
+        // temporal filter average the frames; grass and trees swaying in the wind write no motion, so the
+        // filter throws their history away and the raw, differently rotated frames show: shimmer. Held at
+        // 0, every frame samples alike: the filter still averages away the flicker of the half-resolution
+        // AO on moving leaves, and where it throws history away the frame looks the same anyway.
+        // Amplify sets them once per frame while it records its parameters; ours go in right after.
+        private static readonly int DirectionsId = Shader.PropertyToID("_AO_TemporalDirections");
+        private static readonly int OffsetsId = Shader.PropertyToID("_AO_TemporalOffsets");
 
-        // And the same sample directions every frame. The game's AO rotates them each frame and averages
-        // the frames (Amplify's temporal filter); grass and trees swaying in the wind write no motion,
-        // so the filter throws their history away and the raw, differently rotated frames show: shimmer.
-        // Without the filter the rotation stays at 0 (AmplifyOcclusionEffect: _AO_TemporalDirections),
-        // so AO only changes when the scene does. One sample level more and a second blur pass (picked)
-        // make up for the averaging. Off with the mod: the game's own settings.
-        private static SampleCountLevel s_gameSamples = SampleCountLevel.Medium;
-
-        internal static void Resolution()
+        [HarmonyPatch(typeof(AmplifyOcclusionEffect), "UpdateGlobalShaderConstants_AmbientOcclusion")]
+        private static class FixedDirections
         {
-            AmplifyOcclusionEffect ao = CameraEffects.instance != null ? CameraAO(CameraEffects.instance) : null;
-            if (ao == null) return;
-            bool mod = On;
-            ao.Downsample = !mod;
-            ao.FilterEnabled = !mod;
-            ao.BlurPasses = mod ? 2 : 1;
-            ao.SampleCount = mod && s_gameSamples < SampleCountLevel.VeryHigh ? s_gameSamples + 1 : s_gameSamples;
-        }
-
-        [HarmonyPatch(typeof(CameraEffects), "SetSSAO")]
-        private static class OnSSAO
-        {
-            private static void Postfix(AmplifyOcclusionEffect ___m_amplifyOcclusion)
+            private static void Postfix(CommandBuffer cb)
             {
-                if (___m_amplifyOcclusion != null) s_gameSamples = ___m_amplifyOcclusion.SampleCount; // what the game just chose
-                Resolution();
+                if (!On || cb == null) return;
+                cb.SetGlobalFloat(DirectionsId, 0f);
+                cb.SetGlobalFloat(OffsetsId, 0f);
             }
         }
 

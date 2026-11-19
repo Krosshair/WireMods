@@ -1,3 +1,6 @@
+## 0.2.9
+- Performance: ambient occlusion costs the same as the game's own again: back to the game's resolution, samples, blur and frame averaging. Only the sample directions stay the same every frame, which is what keeps it from shimmering.
+
 ## 0.2.8
 - Performance: moving shadows cost the graphics card less again. 0.2.7 drew them once per object for every light around (less work for the processor), but in a way graphics cards run slowly; now in smaller steps they handle as fast as before.
 
