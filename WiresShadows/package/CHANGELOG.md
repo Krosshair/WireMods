@@ -1,3 +1,6 @@
+## 0.3.0
+- Performance: a base's lights stopped taking turns at the shadow slots while you stand still. They were ranked by their brightness as it flickers, so they kept swapping places, and each one that came back drew its whole shadow map again (around 2.5 ms of the processor every frame at a big base, measured). They're ranked by their steady brightness now, and a light that does lose its slot keeps its map for when it gets one back, unless something round it changed meanwhile.
+
 ## 0.2.9
 - Performance: ambient occlusion costs the same as the game's own again: back to the game's resolution, samples, blur and frame averaging. Only the sample directions stay the same every frame, which is what keeps it from shimmering.
 

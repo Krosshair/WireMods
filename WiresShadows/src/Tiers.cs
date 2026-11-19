@@ -68,6 +68,7 @@ namespace WiresShadows
         private void ReleaseTiers()
         {
             ReleaseOnePassFaces();
+            DropAllKept();
             for (int k = 0; k < TierCount; k++)
             {
                 if (_pool[k] != null) { _pool[k].Release(); Destroy(_pool[k]); _pool[k] = null; }
@@ -184,6 +185,8 @@ namespace WiresShadows
                 Shader.SetGlobalTexture(TierIds[k], next);
                 for (int sl = 0; sl < MaxSlots; sl++)
                     if ((int)_mapTier[sl] == k && _mapCube[sl] >= 0f) _mapCube[sl] = moved[(int)_mapCube[sl]];
+                foreach (Tracked t in _kept)
+                    if (t.KeptTier == k && t.KeptCube >= 0) t.KeptCube = moved[t.KeptCube];
                 packed = true;
                 Plugin.Note("[tiers] " + r + " px pool: packed to " + size + " cubes, all pools " + (PoolBytes() >> 20) + " MB");
             }
@@ -195,6 +198,9 @@ namespace WiresShadows
             List<bool> used = _poolUsed[tier];
             for (int c = 0; c < used.Count; c++)
                 if (!used[c]) { used[c] = true; return c; }
+            // a kept map's cube before more memory: kept maps only use room the pool has anyway
+            int kept = TakeKeptCube(tier);
+            if (kept >= 0) return kept;
             // one more, not double: a pool grown ahead of a burst (SizePoolsForWaiting) rarely
             // needs this, and doubling left it twice the size it needed (1.8 GB) for the session
             int n = used.Count;

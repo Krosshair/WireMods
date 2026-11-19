@@ -18,6 +18,10 @@ namespace WiresShadows
         {
             internal Light Light;
             internal LightLod Lod;
+            internal LightFlicker Flicker;   // looked up once (SteadyIntensity)
+            internal bool FlickerLooked;
+            // Its last map, kept when it lost its slot (KeepMap), for a slot it gets back.
+            internal int KeptTier = -1, KeptCube = -1, KeptChange;
             internal float NativeCacheRange = 1f; // normalized range of the actually rendered native-depth map
             internal bool StagedNativeReady;
             internal Vector3 PublishedCenterBeforeStage;
@@ -744,7 +748,7 @@ namespace WiresShadows
             if (ReferenceEquals(light, null) || !ByLight.TryGetValue(light, out Tracked t))
                 return;
             if (Instance != null)
-                Instance.Release(t);
+                { Instance.Release(t); Instance.DropKept(t); }
             ByLight.Remove(light);
             Lights.Remove(t);
         }
@@ -1095,6 +1099,7 @@ namespace WiresShadows
             }
             w.Until = Time.time + SwingSeconds;
             w.Ending = false;
+            NoteChange(w.Center, w.Radius);
             foreach (Renderer r in w.Renderers) SwingHidden.Add(r);
             // Queue only affected faces on nearby lights. A bounded render
             // budget prevents synchronous GPU stalls when a gate is opened.
@@ -1205,6 +1210,7 @@ namespace WiresShadows
         {
             ShadowCache c = Instance;
             if (c == null || !c._active) return;
+            NoteChange(d.PlacedCenter, d.PlacedRadius);
             foreach (Tracked t in c._slots)
             {
                 if (t == null || t.Light == null) continue;
@@ -1257,6 +1263,7 @@ namespace WiresShadows
         {
             ShadowCache c = Instance;
             if (c == null || !c._active) return;
+            NoteChange(d.PlacedCenter, d.PlacedRadius);
             foreach (Tracked t in c._slots)
             {
                 if (t == null || t.Light == null) continue;
@@ -1467,6 +1474,7 @@ namespace WiresShadows
                         continue;
                     // Stopped: put it back into the cached maps.
                     w.Ending = true;
+                    NoteChange(w.Center, w.Radius);
                     foreach (Renderer r in w.Renderers) SwingHidden.Remove(r);
                     for (int sl = 0; sl < _slots.Length; sl++)
                     {
@@ -1602,6 +1610,7 @@ namespace WiresShadows
         {
             ShadowCache c = Instance;
             if (c == null || !c._active) return;
+            NoteChange(center, radius);
             foreach (Tracked t in c._slots)
             {
                 if (t == null || t.Light == null) continue;
@@ -1851,6 +1860,8 @@ namespace WiresShadows
                 // A destroyed piece still invalidates nearby faces by pivot.
                 if (!hasBounds && !hasAnyRenderer && !s_broken) return;
             }
+            // the slots below use their range + 4 m round a piece: the same for kept maps
+            NoteChange(hasBounds ? affected.center : position, (hasBounds ? affected.extents.magnitude : 0f) + 4f);
             bool dirtied = false;
             foreach (Tracked t in cache._slots)
             {
@@ -2220,7 +2231,7 @@ namespace WiresShadows
                 if (!t.Item && Time.time - t.RegisteredAt > SettleChecks) continue;
                 if (light.GetComponentInParent<Character>() != null)
                 {
-                    Release(t);
+                    Release(t); DropKept(t);
                     Unsuppress(t);
                     ByLight.Remove(light);
                     Lights.RemoveAt(i);
@@ -2577,10 +2588,26 @@ namespace WiresShadows
                 // full-size map over a smaller one at the same distance, and a faint light
                 // (low intensity) counts for less than a bright one of the same size.
                 float screen = cameraDist <= range ? 1f : Mathf.Clamp01(range / cameraDist);
-                float bright = Mathf.Clamp01(t.Light.intensity / 1.5f);
+                float bright = Mathf.Clamp01(SteadyIntensity(t) / 1.5f);
                 p -= ScreenWeight * screen * (0.5f + 0.5f * bright);
             }
             return t.Tiny ? p + TinyRank : p;
+        }
+
+        // A light's brightness without its flicker (LightFlicker's base), for ranking: the flicker
+        // changes it every frame, which moved lights up and down the ranking while nothing moved and
+        // swapped them in and out of their slots, each time with a whole new map.
+        private static readonly AccessTools.FieldRef<LightFlicker, float> FlickerBaseIntensity =
+            AccessTools.FieldRefAccess<LightFlicker, float>("m_baseIntensity");
+
+        private static float SteadyIntensity(Tracked t)
+        {
+            if (t.Flicker == null && !t.FlickerLooked)
+            {
+                t.FlickerLooked = true;
+                t.Flicker = t.Light.GetComponent<LightFlicker>();
+            }
+            return t.Flicker != null && t.Flicker.enabled ? FlickerBaseIntensity(t.Flicker) : t.Light.intensity;
         }
 
         // While the cache runs, no point light uses Unity's own per-frame
@@ -2644,10 +2671,19 @@ namespace WiresShadows
             t.DoorPrepared = false;
             t.SnapOnFirstMap = Loading() || Time.time < _fillUntil;
             t.Interact = false;
+            t.Face = -1;
+            if (ReuseKept(t, slot))
+            {
+                // its map from before it lost the slot: on screen at once, nothing to draw
+                t.Dirty = false;
+                t.Ready = true;
+                t.Fade = 1f;
+                UpdateGlobals();
+                return;
+            }
             t.Dirty = true;
             t.DirtyAt = Time.time;
             t.Ready = false;
-            t.Face = -1;
         }
 
         private void Release(Tracked t)
@@ -2675,7 +2711,7 @@ namespace WiresShadows
                 _dynFacesLast[t.Slot] = 0;
                 _nativeMovingActive[t.Slot] = 0f;
                 FreeDynSlot(t.Slot);
-                FreeSlotMap(t.Slot);
+                if (!KeepMap(t)) FreeSlotMap(t.Slot);
             }
             if (t.Ready) t.ReleasedFrame = Time.frameCount;
             AbortStage(t);
@@ -2716,6 +2752,7 @@ namespace WiresShadows
             UploadNativeMovingActive();
             foreach (Tracked t in _slots)
                 Release(t);
+            DropAllKept(); // everything starts over: no map from before
             System.Array.Clear(_nativeActive, 0, MaxSlots);
             Shader.SetGlobalFloatArray(NativeActiveId, _nativeActive);
             // Direct shader reset bypasses UploadArrayIfChanged: force next sync.
@@ -2896,7 +2933,7 @@ namespace WiresShadows
                     // so Register can't see it. Hand it back to vanilla.
                     if (t.Light.GetComponentInParent<Character>() != null)
                     {
-                        Release(t);
+                        Release(t); DropKept(t);
                         Unsuppress(t);
                         ByLight.Remove(t.Light);
                         Lights.Remove(t);
