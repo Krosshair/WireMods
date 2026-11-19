@@ -102,6 +102,7 @@ namespace WiresShadows
             AccessTools.FieldRefAccess<LightLod, bool>("m_shadowLod");
 
         private static readonly int LightsId = Shader.PropertyToID("_WireShadowLights");
+        private static readonly int MapResId = Shader.PropertyToID("_WireMapRes");
         private static readonly int CountId = Shader.PropertyToID("_WireShadowCount");
         private static readonly int CenterId = Shader.PropertyToID("_WireLightCenter");
 
@@ -4432,7 +4433,6 @@ namespace WiresShadows
         // each fading in as it finishes (FinishMap). It was three a frame,
         // a couple of seconds of lag on getting home.
         private const int FillFacesPerFrame = 1;
-        private static readonly long UrgentBudget = System.Diagnostics.Stopwatch.Frequency / 500; // 2 ms
         // Frames between faces for the lights less important to a change (picked: a third of the cost per frame).
         private const int LesserEvery = 3;
         private static readonly Plane[] FillFrustum = new Plane[6];
@@ -4667,6 +4667,7 @@ namespace WiresShadows
             // single face): the front (R) and back (G) in one camera render (OnePass).
             bool rendering = t.RenderCube >= 0;
             int tierNow = rendering ? t.RenderTier : (int)_mapTier[t.Slot];
+            Shader.SetGlobalFloat(MapResId, TierRes(tierNow)); // the casters' inward pull (WireShadowFrontBack)
             // Always the full-detail models: the cube camera picks LODs by its own view (wide,
             // small target), which swapped detailed pieces (the spice rack's herbs and frame)
             // for their simplified LOD in the cached shadow.

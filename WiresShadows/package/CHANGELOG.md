@@ -1,3 +1,6 @@
+## 0.2.5
+- Fixed: thin shadow lines where beams overlap (one beam's edge shading the other right where they meet). Edges sticking out less than a hair past a piece they overlap no longer shade it, and surfaces no longer shade themselves right where pieces meet.
+
 ## 0.2.4
 - Performance: Occlusion culling costs less to run (its depth test at a quarter of the screen size, every other frame, and only pieces that change are sent back), so it no longer makes things slower outside where little is hidden.
 - Performance: the mod no longer costs anything for moving shadows while nothing moving is in a light's reach (it went through every light each frame), and lights on built pieces are no longer checked for having moved each frame (only lights on items, ships, carts or characters can move).

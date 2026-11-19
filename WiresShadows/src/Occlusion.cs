@@ -45,7 +45,6 @@ namespace WiresShadows
         {
             internal Piece Piece;
             internal Renderer[] Renderers;
-            internal int Streak;
             internal bool Hidden;
             internal int Since; // answers from tests before this frame belong to whatever was here before
         }
@@ -193,7 +192,6 @@ namespace WiresShadows
                 if (r != null && r.shadowCastingMode == ShadowCastingMode.ShadowsOnly)
                     r.shadowCastingMode = ShadowCastingMode.On;
             s.Hidden = false;
-            s.Streak = 0;
             s_hidden.Remove(i);
         }
 

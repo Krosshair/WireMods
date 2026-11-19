@@ -1,7 +1,7 @@
 {
     "name": "WiresShadows",
     "description": "Every pointlight casts a shadow, and performs better than vanilla.",
-    "version_number": "0.2.4",
+    "version_number": "0.2.5",
     "website_url": "",
     "dependencies": []
 }
