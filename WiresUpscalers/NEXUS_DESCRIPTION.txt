@@ -1,0 +1,38 @@
+[size=5][b]Wire's Upscalers[/b][/size]
+
+NVIDIA® DLSS, AMD FSR™ and Intel® XeSS for Valheim, right in the game's own graphics settings. DLSS works with RenoDX (HDR) and ReShade as a whole, since it's on DX11. Unlike… the other mod that adds upscaling, this one has no dependencies and no additional bloated menus.
+
+[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresUpscalers/images/menu.jpg[/img]
+
+[size=4][b]Comparison[/b][/size]
+Native DLAA, then Valheim's own TAA.
+[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresUpscalers/images/dlaa.jpg[/img]
+[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresUpscalers/images/taa.jpg[/img]
+In a still screenshot DLAA and Valheim's TAA look very alike. In game DLAA is much sharper: Valheim's TAA is good while nothing moves, and falls apart in motion and on fine detail, which a screenshot doesn't show.
+
+[size=4][b]How it works[/b][/size]
+[list]
+[*][b]Settings → Graphics:[/b] the upscalers are added to the Smooth/Pixelated row.
+[*][b]Resolution:[/b] your game's render scale. At 100% you get the upscaler's native anti-aliasing (DLAA and the like).
+[*][b]DLSS model:[/b] Transformer 2 (DLSS 4.5), Transformer (DLSS 4) or CNN (DLSS 3).
+[*][b]FSR sharpness:[/b] AMD's own sharpening, off by default.
+[/list]
+Only the upscalers your PC can run are listed:
+[list]
+[*][b]NVIDIA® DLSS:[/b] NVIDIA RTX GPUs, DirectX 11 or 12.
+[*][b]AMD FSR™ 3:[/b] DirectX 12 only (start Valheim with -force-d3d12).
+[*][b]AMD FSR™ 4:[/b] DirectX 12 and an AMD Radeon RX 9000 GPU.
+[*][b]Intel® XeSS:[/b] DirectX 12 on any GPU, or DirectX 11 on Intel Arc.
+[/list]
+FSR and XeSS are untested so far.
+
+[size=4][b]Install[/b][/size]
+Put the whole folder in your plugins folder, not just the dll. On first launch the mod copies one file, WiresUpscalersNative.dll, into valheim_Data\Plugins\x86_64: Unity only hands its graphics device to plugins from there. Nothing else outside the mod folder is touched.
+Replaces Wire's DLSS: disable or remove it.
+
+[size=4][b]Credits[/b][/size]
+NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation. AMD, FidelityFX and FSR are trademarks of Advanced Micro Devices, Inc. Intel and XeSS are trademarks of Intel Corporation. This mod is not affiliated with or endorsed by any of them.
+Includes NVIDIA DLSS, AMD FSR and Intel XeSS, unmodified, under their licences (included in the download).
+
+Disclaimer: the code is AI assisted since I barely know C#. Not fully AI nor human.
+https://ko-fi.com/krosshair

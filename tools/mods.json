@@ -413,6 +413,18 @@
                                    "nexus_mod_id":  null,
                                    "nexus_file_id":  null,
                                    "publish":  true
+                               },
+                 "WiresUpscalers":  {
+                                   "thunderstore":  true,
+                                   "thunderstore_categories":  [
+                                                                   "client-side",
+                                                                   "mods",
+                                                                   "tweaks"
+                                                               ],
+                                   "hexium":  true,
+                                   "nexus_mod_id":  null,
+                                   "nexus_file_id":  null,
+                                   "publish":  true
                                }
              }
 }

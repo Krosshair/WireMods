@@ -126,6 +126,8 @@ if (-not $SkipBuild) {
             # WiresDLSS ships the signed upstream NVIDIA native DLLs as package assets.
             # They are redistributables, not .NET project outputs.
             if ($Mod -eq "WiresDLSS" -and $dll.Name -in @("NVUnityPlugin.dll", "nvngx_dlss.dll")) { continue }
+            # WiresUpscalers: its native part (built from native/ with build.cmd) and the vendors' DLLs
+            if ($Mod -eq "WiresUpscalers" -and $dll.Name -ne "WiresUpscalers.dll") { continue }
             Fail "Built $($dll.Name) not found at $built"
         }
         if (-not $DryRun) { Copy-Item $built $dll.FullName -Force }
@@ -274,6 +276,10 @@ function Publish-GitHub {
             # Release only source and metadata. Never commit private FG experiments,
             # downloaded toolchains or oversized native DLLs into Git history.
             & git add -A -- "WiresDLSS/src/*.cs" "WiresDLSS/src/*.csproj" "WiresDLSS/package/README.md" "WiresDLSS/package/manifest.json" "WiresDLSS/package/icon.png" "WiresDLSS/package/NVIDIA-LICENSE.txt" "WiresDLSS/package/UninstallNative.cmd" "WiresDLSS/package/UninstallNative.ps1" tools/Publish.ps1 tools/mods.json | Out-Null
+        } elseif ($Mod -eq "WiresUpscalers") {
+            # Source, native source, images and package text only: the SDKs (gigabytes) and the vendors'
+            # DLLs (over GitHub's 100 MB file limit) stay out of Git.
+            & git add -A -- "WiresUpscalers/src/*.cs" "WiresUpscalers/src/*.csproj" "WiresUpscalers/native/*.cpp" "WiresUpscalers/native/build.cmd" "WiresUpscalers/native/unity" "WiresUpscalers/images" "WiresUpscalers/package/*.md" "WiresUpscalers/package/*.txt" "WiresUpscalers/package/manifest.json" "WiresUpscalers/package/icon.png" "WiresUpscalers/NEXUS_DESCRIPTION.txt" tools/Publish.ps1 tools/mods.json | Out-Null
         } else {
             & git add -A "$Mod" tools | Out-Null
         }
