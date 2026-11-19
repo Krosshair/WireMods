@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <BepInExCore Condition="'$(BepInExCore)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Default\BepInEx\core</BepInExCore>
-    <BepInExPlugins Condition="'$(BepInExPlugins)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Default\BepInEx\plugins</BepInExPlugins>
+    <BepInExCore Condition="'$(BepInExCore)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Enngard\BepInEx\core</BepInExCore>
+    <BepInExPlugins Condition="'$(BepInExPlugins)' == ''">C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Enngard\BepInEx\plugins</BepInExPlugins>
     <ValheimManaged Condition="'$(ValheimManaged)' == ''">D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed</ValheimManaged>
 
     <TargetFramework>net472</TargetFramework>
