@@ -221,7 +221,7 @@ namespace WiresAI
                 float now = Time.time;
                 if (now - b.LastStop > Tune.Arrived) Arrived(ai, b);
                 b.LastStop = now;
-                if (Target(ai) is Character t) WatchTurn(b, t, now);
+                if (Target(ai) is Character t && t) WatchTurn(b, t, now); // a target can be gone (killed, out of the world) a frame before the AI lets go of it
                 if (_stepping <= 0 || !ChainStates.TryGetValue(ai, out ChainState s) || !s.Stepping) return true;
                 if (Time.time < s.StepUntil && !ai.GetComponent<Character>().IsDead())
                 {

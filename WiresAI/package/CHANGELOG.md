@@ -1,3 +1,6 @@
+## 0.3.2
+- Fixed: repeated errors in the log from creatures whose target had died or left the area.
+
 ## 0.3.1
 - Pack turns: only so many of a pack attack you at once (two; one more for an aggressive pack, one fewer for a clever or timid one). The rest hold just out of reach and step in the moment one finishes. Dim, enraged or lone creatures and bosses don't wait. Replaces the old "wait your turn" rule.
 - Fixed: creatures swung at nothing from too far away. An early swing counted on them running on at full speed through the wind-up, but the game slows an attacking creature to a crawl; it's now counted the game's way.
