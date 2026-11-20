@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+- Fix: preserve the desktop XCURSOR_SIZE under Proton/Wine when native cursor handles are used; all sizing is performed once at initialization.
+- Fix: native Linux/X11 cursors load the requested theme size explicitly rather than relying on the X11 fallback.
+- Windows stock/accessibility cursor handles remain unchanged without an explicit XCURSOR_SIZE.
+- No per-frame cursor polling was added.
+
 ## 0.4.1
 - Fix: respect explicit desktop XCURSOR_SIZE and Linux cursor-size configuration, including when Valheim runs as a Windows process through Proton/Wine. X11 default cursor size no longer overrides user sizing.
 - If a cursor theme contains only a smaller bitmap, resize it and its hotspot once during initialization. Windows native cursors are left untouched unless a desktop size is explicitly detected.

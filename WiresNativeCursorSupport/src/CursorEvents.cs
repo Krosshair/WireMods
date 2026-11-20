@@ -167,6 +167,7 @@ namespace WiresNativeCursorSupport
         {
             private static void Postfix(FejdStartup __instance)
             {
+                SystemCursor.Refresh();
                 Mark(__instance.m_loading);
                 Mark(__instance.m_pleaseWait);
             }

@@ -1,17 +1,15 @@
-Replaces Valheim's little eyedropper/sword cursor thing with whatever your OS uses. Changes the cursor icon depending on the interaction, supports Windows, MacOS and Linux. (Latter 2 are untested since I only have my Windows PC, so if you're using Mac or Linux I'd love to know if it ACTUALLY works lol.)
+# Wire's Native Cursor
 
-Toggleable in the accessibility tab in the settings menu.
+Uses the operating system's actual cursor instead of Valheim's custom pointer image. The native operating system draws the cursor. Cursor states change on UI events, not through per-frame updates.
 
-This mod is NOT a .png replacer like the mod I used last year to just change the valheim cursor png with my own cursor, it actually uses your operating system's cursor.
+Native backends:
+- Windows and Proton/Wine: Windows system cursor handles using the game's window messages.
+- macOS: AppKit NSCursor objects.
+- Native Linux/X11: Xcursor theme handles assigned to Valheim's X11 window.
+- Native Wayland without XWayland is not supported by this backend.
 
-Hovering over an item will change it to the hand cursor icon, a text cursor over text boxes, the move cursor while dragging an item or the map, the working cursor while crafting and the busy one while loading. Again, the exact way it looks is completely dependent on your system and what you use.
+Cursor states include arrow, clickable hand, text, dragging, working and waiting. The accessibility settings toggle returns to Valheim's default cursor when disabled.
 
-It only changes the cursor when the game says something changed (you hover something, pick an item up, start crafting), so it costs nothing while you play.
+Custom system theme, size and animation are delegated to the OS or the Wine/Proton cursor layer, rather than copying and resizing images. Windows cursor scaling has not yet been tested. macOS, native X11 and Proton/Wayland behavior need confirmation from users.
 
-Disclaimer: the code is AI assisted since I barely know C#. Not fully AI nor human.
-
-Donations: ko-fi.com/krosshair
-
-
-## Cursor size
-The native desktop cursor size is read once at startup. On Linux/Proton the mod first respects XCURSOR_SIZE; it can also read KDE (kcminputrc) and GTK cursor-size settings when HOME is exposed by the runtime. If the desktop size cannot be detected under Proton, Steam launch options can pass it explicitly: XCURSOR_SIZE=48 %command% (replace 48 with your desktop cursor size). This does not add any per-frame work.
+This mod is AI-assisted.
