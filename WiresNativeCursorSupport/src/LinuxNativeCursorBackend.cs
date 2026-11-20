@@ -356,8 +356,12 @@ namespace WiresNativeCursorSupport
                     ReadDefaultThemeInheritance();
             }
 
-            if (_size <= 0)
-                _size = 24;
+            // Desktop configuration takes precedence over X11 defaults:
+            // Proton/XWayland may report a fallback 24px size despite a larger
+            // user cursor. Resolve once, never poll each frame.
+            int preferred = DesktopCursorSize.Preferred();
+            if (preferred > 0) _size = preferred;
+            if (_size <= 0) _size = 24;
         }
 
         private static string
@@ -527,14 +531,14 @@ namespace WiresNativeCursorSupport
                     if (texture == null)
                         continue;
 
+                    Vector2 hot = new Vector2(image.xhot, image.yhot);
+                    texture = DesktopCursorSize.Resize(texture, _size, ref hot,
+                        (int)image.size);
                     CursorFrame frame =
                         new CursorFrame
                         {
                             Texture = texture,
-                            Hotspot =
-                                new Vector2(
-                                    image.xhot,
-                                    image.yhot),
+                            Hotspot = hot,
                             DelayMs =
                                 (int)image.delay
                         };

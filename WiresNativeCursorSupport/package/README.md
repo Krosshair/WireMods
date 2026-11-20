@@ -11,3 +11,7 @@ It only changes the cursor when the game says something changed (you hover somet
 Disclaimer: the code is AI assisted since I barely know C#. Not fully AI nor human.
 
 Donations: ko-fi.com/krosshair
+
+
+## Cursor size
+The native desktop cursor size is read once at startup. On Linux/Proton the mod first respects XCURSOR_SIZE; it can also read KDE (kcminputrc) and GTK cursor-size settings when HOME is exposed by the runtime. If the desktop size cannot be detected under Proton, Steam launch options can pass it explicitly: XCURSOR_SIZE=48 %command% (replace 48 with your desktop cursor size). This does not add any per-frame work.

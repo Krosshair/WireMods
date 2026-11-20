@@ -45,11 +45,18 @@ namespace WiresNativeCursorSupport
             if (!s_read)
             {
                 s_read = true;
+                int desktopSize = DesktopCursorSize.Preferred();
                 if (Application.platform == RuntimePlatform.WindowsPlayer)
                 {
                     foreach (NativeCursorKind k in new[] { NativeCursorKind.Arrow, NativeCursorKind.Hand, NativeCursorKind.Text,
                                  NativeCursorKind.Move, NativeCursorKind.Working, NativeCursorKind.Wait })
-                        s_pictures[(int)k].Texture = WindowsCursor(WindowsIds[(int)k], out s_pictures[(int)k].Hotspot);
+                    {
+                        int index = (int)k;
+                        s_pictures[index].Texture = WindowsCursor(WindowsIds[index], out s_pictures[index].Hotspot);
+                        if (desktopSize > 0)
+                            s_pictures[index].Texture = DesktopCursorSize.Resize(
+                                s_pictures[index].Texture, desktopSize, ref s_pictures[index].Hotspot);
+                    }
                 }
                 else if (Application.platform == RuntimePlatform.OSXPlayer)
                 {
@@ -59,6 +66,9 @@ namespace WiresNativeCursorSupport
                 }
                 else if (Application.platform == RuntimePlatform.LinuxPlayer)
                     s_linux = LinuxNativeCursorBackend.Initialize();
+                if (desktopSize > 0)
+                    Plugin.Log?.LogInfo("Using desktop cursor size " + desktopSize +
+                        " px (including Proton/Wine when applicable).");
             }
             Refresh();
         }
