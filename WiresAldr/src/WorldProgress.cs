@@ -25,19 +25,36 @@ namespace WiresAldr
         private static ZoneSystem cachedZone;
         private static Player cachedPlayer;
 
-        internal static bool[] ReadKeys()
+        // PlayerEvents tracks each player's keys separately. Spawn callbacks
+        // pass their location so the nearest present player supplies the keys
+        // (not necessarily the local owner in multiplayer).
+        // Never substitute server-wide keys for player-specific progression.
+        // Calls without a location retain the local player's perspective.
+        internal static bool[] ReadKeys(Vector3? location = null)
         {
             ZoneSystem zone = ZoneSystem.instance;
+            bool playerBased = zone != null && IsPlayerBased();
+            Player player = playerBased ? Player.m_localPlayer : null;
+            if (playerBased && location.HasValue)
+            {
+                Player closest = null;
+                float nearest = float.PositiveInfinity;
+                foreach (Player candidate in Player.GetAllPlayers())
+                {
+                    if (candidate == null) continue;
+                    float d = (candidate.transform.position - location.Value).sqrMagnitude;
+                    if (d < nearest) { nearest = d; closest = candidate; }
+                }
+                if (closest != null) player = closest;
+            }
             float now = Time.unscaledTime;
-            if (zone != null && zone == cachedZone && Player.m_localPlayer == cachedPlayer &&
+            if (zone != null && zone == cachedZone && player == cachedPlayer &&
                 now - cachedAt < 1f)
                 return cached;
-            // Refreshed in place: every caller reads it immediately.
+            // Refreshed in place: callers must not retain the result.
             bool[] result = cached;
-            cachedAt = now; cachedZone = zone; cachedPlayer = Player.m_localPlayer;
+            cachedAt = now; cachedZone = zone; cachedPlayer = player;
             if (zone == null) { Array.Clear(result, 0, result.Length); return result; }
-            bool playerBased = IsPlayerBased();
-            Player player = Player.m_localPlayer;
             for (int i = 0; i < result.Length; ++i)
                 result[i] = playerBased
                     ? player != null && player.HaveUniqueKey(BossKeys[i])
@@ -45,13 +62,13 @@ namespace WiresAldr
             return result;
         }
 
-        internal static float GetBonus(int biome, float ownBonus)
+        internal static float GetBonus(int biome, float ownBonus, Vector3? location = null)
         {
             if (Plugin.Enabled == null || !Plugin.Enabled.Value ||
                 biome < 0 || biome >= ProgressionMath.BiomeCount)
                 return 0;
             return (float)ProgressionMath.Bonus(
-                biome, ReadKeys(), ownBonus,
+                biome, ReadKeys(location), ownBonus,
                 Plugin.LaterFactor.Value / 100f,
                 Plugin.SkippedFactor.Value / 100f);
         }

@@ -114,6 +114,21 @@ namespace WiresAldr
             for (int tier = 0; tier < Biomes.Length; ++tier)
             {
                 var section = new StringBuilder();
+                // Base natural spawns have up to 2 stars. Each defeated
+                // Forsaken from this biome onward unlocks one further roll.
+                // Night adds one more; group leaders get one more regardless
+                // of whether Wire's AI is installed.
+                // Keep undiscovered biome information hidden.
+                if (creatures && StarRules.Enabled && KnownBiome(tier, defeated))
+                {
+                    int dayStars = 2 + MaxStars.Extra(tier);
+                    section.Append("Maximum creature stars: ")
+                        .Append(Value(dayStars + " ★"))
+                        .Append(Sub((dayStars + 1) + " ★ at night"));
+
+                    section.Append(Sub("group leaders +1 ★"));
+                    section.AppendLine();
+                }
                 if (defeated[tier] && creatures)
                     Add(section, "Creature star chance",
                         BonusBreakdown.ForBiome(tier, defeated,

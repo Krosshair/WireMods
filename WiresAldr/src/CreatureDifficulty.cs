@@ -7,16 +7,17 @@ namespace WiresAldr
     {
         internal static bool EventSpawn;
         internal static GameObject ActivePrefab;
+        internal static Vector3? ActiveSpawnPoint;
 
         internal static bool Enabled =>
             Plugin.Enabled != null && Plugin.Enabled.Value &&
             Plugin.Stars.Value && WorldProgress.Ready;
 
         internal static float Adjust(float chance, float originalBase,
-            int biome)
+            int biome, Vector3? location = null)
         {
             if (!Enabled || biome < 0 || biome >= 8) return chance;
-            float added = WorldProgress.GetBonus(biome, Plugin.StarBonus.Value);
+            float added = WorldProgress.GetBonus(biome, Plugin.StarBonus.Value, location);
             float revised = (float)ProgressionMath.StarChance(
                 chance, originalBase, added, Plugin.StarCap.Value);
             if (AldrDiagnostics.Active) AldrDiagnostics.Sample("STAR_ROLL", "native_biome_tier=" + (biome + 1) +
@@ -86,7 +87,8 @@ namespace WiresAldr
 
             float vanillaBase = creature.m_overrideLevelupChance > 0
                 ? creature.m_overrideLevelupChance : 10f;
-            __result = StarRules.Adjust(__result, vanillaBase, tier);
+            __result = StarRules.Adjust(__result, vanillaBase, tier,
+                StarRules.ActiveSpawnPoint);
         }
     }
 
@@ -111,7 +113,7 @@ namespace WiresAldr
                     return; // mixed or unknown nest: don't guess
             }
             __result = StarRules.Adjust(
-                __result, __instance.m_levelupChance, tier);
+                __result, __instance.m_levelupChance, tier, __instance.transform.position);
         }
     }
 
@@ -155,7 +157,7 @@ namespace WiresAldr
                 return;
             float baseline = levelUpChanceOverride > 0
                 ? levelUpChanceOverride : 10f;
-            __result = StarRules.Adjust(__result, baseline, tier);
+            __result = StarRules.Adjust(__result, baseline, tier, position);
         }
     }
 }

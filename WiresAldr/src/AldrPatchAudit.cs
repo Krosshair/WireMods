@@ -30,6 +30,13 @@ namespace WiresAldr
             CheckOne("Expedition save", AccessTools.Method(typeof(Player), nameof(Player.Save)));
             CheckOne("Summon XP source", AccessTools.Method(typeof(Character), nameof(Character.RaiseSkill)));
             CheckOne("Barrier XP", AccessTools.Method(typeof(SE_Shield), nameof(SE_Shield.OnDamaged)));
+            CheckOne("Armor durability", AccessTools.Method(typeof(Player), "DamageArmorDurability"), "ImpactDurability+");
+            CheckOne("Block durability", AccessTools.Method(typeof(Humanoid), "BlockAttack"), "ImpactDurability+");
+            CheckOne("Attack damage durability", AccessTools.Method(typeof(Attack), "ModifyDamage"), "ImpactDurability+");
+            CheckOne("Melee durability", AccessTools.Method(typeof(Attack), "DoMeleeAttack"), "ImpactDurability+");
+            CheckOne("Area durability", AccessTools.Method(typeof(Attack), "DoAreaAttack"), "ImpactDurability+");
+            CheckOne("Projectile durability", AccessTools.Method(typeof(Attack), "ProjectileAttackTriggered"), "ImpactDurability+");
+            CheckOne("Non-attack durability", AccessTools.Method(typeof(Attack), "DoNonAttack"), "ImpactDurability+");
             int installed = 0;
             foreach (MethodBase method in Harmony.GetAllPatchedMethods())
             {
@@ -48,7 +55,7 @@ namespace WiresAldr
             AldrDiagnostics.Log("PATCH_TOTAL", "Aldr owns " + installed +
                 " patched Valheim methods; detailed key hook checks above.");
         }
-        private static void CheckOne(string label, MethodBase method)
+        private static void CheckOne(string label, MethodBase method, string patchTypeFragment = null)
         {
             if (method == null)
             {
@@ -60,7 +67,9 @@ namespace WiresAldr
                 var info = Harmony.GetPatchInfo(method);
                 bool has = info != null &&
                     info.Prefixes.Concat(info.Postfixes).Concat(info.Transpilers)
-                        .Concat(info.Finalizers).Any(p => p.owner == Plugin.Guid);
+                        .Concat(info.Finalizers).Any(p => p.owner == Plugin.Guid &&
+                            (patchTypeFragment == null ||
+                             (p.PatchMethod.DeclaringType?.FullName ?? "").Contains(patchTypeFragment)));
                 AldrDiagnostics.Log(has ? "PATCH_OK" : "PATCH_MISSING",
                     label + ": " + method.DeclaringType.Name + "." + method.Name +
                     (has ? " registered" : " NOT REGISTERED"));

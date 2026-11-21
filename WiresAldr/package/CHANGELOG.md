@@ -1,3 +1,11 @@
+## 1.3.1
+- The Aldr Compendium now shows each discovered biome's current maximum creature stars, including the extra star possible at night and the additional star for group leaders.
+- Durability: stronger incoming hits cause more wear, shared randomly between equipped armor pieces; capes take very little. The total is based on the hit's share of your maximum health.
+- Durability: blocking wears down the shield or weapon that actually blocked, based on the incoming hit's strength.
+- Durability: weapons and tools keep their usual wear per use, varying only slightly with attack strength and a little randomness (about 5% either side of normal).
+- Fixed: group-leader tracking avoids identifying an unrelated creature as the one just spawned. Without Wire's AI, the first group member still receives the star.
+- Fixed: in player-based progression worlds, creature spawning uses a nearby player's defeated bosses when calculating native star limits and chances.
+- Diagnostics: added checks for all durability hooks.
 ## 1.3.0
 - A hit on a staggered enemy (a crit) gives twice the weapon XP.
 - A hit on a weakness gives XP multiplied by how much more damage it did (1.5x on weak, 2x on very weak). A crit on a weakness multiplies both.

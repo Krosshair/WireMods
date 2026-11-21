@@ -14,20 +14,20 @@ namespace WiresAldr
     internal static class MaxStars
     {
         // Bosses defeated from this biome's own on (biome tiers 0 Meadows .. 7 Deep North).
-        internal static int Extra(int tier)
+        internal static int Extra(int tier, Vector3? location = null)
         {
             if (!StarRules.Enabled || tier < 0 || tier >= ProgressionMath.BiomeCount) return 0;
-            bool[] keys = WorldProgress.ReadKeys();
+            bool[] keys = WorldProgress.ReadKeys(location);
             int n = 0;
             for (int i = tier; i < keys.Length; i++) if (keys[i]) n++;
             return n;
         }
 
         // The cap is soft: at night one more star is allowed (still its own roll, like every star).
-        internal static int Raise(int tier, bool interior = false)
+        internal static int Raise(int tier, bool interior = false, Vector3? location = null)
         {
             if (!StarRules.Enabled || tier < 0) return 0;
-            return Extra(tier) + (!interior && EnvMan.IsNight() ? 1 : 0);
+            return Extra(tier, location) + (!interior && EnvMan.IsNight() ? 1 : 0);
         }
     }
 
@@ -38,23 +38,29 @@ namespace WiresAldr
         private static void Prefix(SpawnSystem.SpawnData critter, Vector3 spawnPoint, bool eventSpawner, out int __state)
         {
             __state = 0;
+            StarRules.ActiveSpawnPoint = spawnPoint;
             Leaders.Skip();
             if (eventSpawner || critter == null || critter.m_prefab == null || critter.m_maxLevel <= 1) return;
             if (FishProgression.IsFish(critter.m_prefab)) return;
             int tier = BiomeCatalog.NaturalBiome(critter.m_prefab, critter.m_biome);
             if (!StarRules.HasNativeBiome(tier, critter.m_biome)) return;
-            __state = MaxStars.Raise(tier);
+            __state = MaxStars.Raise(tier, location: spawnPoint);
             critter.m_maxLevel += __state;
             Leaders.Before(critter, spawnPoint);
         }
 
         [HarmonyPostfix]
-        private static void Postfix(SpawnSystem.SpawnData critter) => Leaders.After(critter);
+        private static void Postfix(SpawnSystem.SpawnData critter)
+        {
+            Leaders.After(critter);
+            StarRules.ActiveSpawnPoint = null;
+        }
 
         [HarmonyFinalizer]
         private static System.Exception Finalizer(SpawnSystem.SpawnData critter, int __state, System.Exception __exception)
         {
             if (critter != null && __state > 0) critter.m_maxLevel -= __state;
+            StarRules.ActiveSpawnPoint = null;
             return __exception;
         }
     }
@@ -72,7 +78,7 @@ namespace WiresAldr
             if (tier < 0) return;
             foreach (SpawnArea.SpawnData s in __instance.m_prefabs)
                 if (s == null || s.m_prefab == null || BiomeCatalog.NativeCreature(s.m_prefab) != tier) return;
-            __state = MaxStars.Raise(tier);
+            __state = MaxStars.Raise(tier, location: __instance.transform.position);
             if (__state == 0) return;
             foreach (SpawnArea.SpawnData s in __instance.m_prefabs)
                 if (s.m_maxLevel > 1) s.m_maxLevel += __state;
@@ -100,7 +106,8 @@ namespace WiresAldr
             int tier = BiomeCatalog.NativeCreature(__instance.m_creaturePrefab);
             if (tier < 0 || BiomeCatalog.FromBiome(Heightmap.FindBiome(__instance.transform.position)) != tier) return;
             // Dungeon and crypt interiors (high above the world) have no night.
-            __state = MaxStars.Raise(tier, __instance.transform.position.y > 3000f);
+            __state = MaxStars.Raise(tier, __instance.transform.position.y > 3000f,
+                __instance.transform.position);
             __instance.m_maxLevel += __state;
         }
 
@@ -123,6 +130,7 @@ namespace WiresAldr
         private static readonly List<Character> s_members = new List<Character>();
         private static SpawnSystem.SpawnData s_group;
         private static bool s_counts;
+        private static int s_characterCountBeforeSpawn;
 
         private static bool s_looked;
         private static System.Func<Character, float> s_score;
@@ -143,22 +151,32 @@ namespace WiresAldr
 
         internal static void Skip() => s_counts = false;
 
-        internal static void Before(SpawnSystem.SpawnData critter, Vector3 spawnPoint) =>
-            s_counts = critter.m_levelUpMinCenterDistance <= 0f || spawnPoint.magnitude > critter.m_levelUpMinCenterDistance;
+        internal static void Before(SpawnSystem.SpawnData critter, Vector3 spawnPoint)
+        {
+            s_counts = StarRules.Enabled &&
+                (critter.m_levelUpMinCenterDistance <= 0f ||
+                 spawnPoint.magnitude > critter.m_levelUpMinCenterDistance);
+            if (s_counts)
+                s_characterCountBeforeSpawn = Character.GetAllCharacters().Count;
+        }
 
         internal static void After(SpawnSystem.SpawnData critter)
         {
             if (!s_counts || critter == null || critter.m_prefab == null) return;
             if (s_group != critter) { End(); s_group = critter; }
-            // The one just made is the newest in the game's character list (added in Awake).
+            // Only accept the character actually appended by this Spawn call.
+            // Looking at the list's last element without a pre-spawn snapshot
+            // could misidentify an existing creature of the same prefab.
             var all = Character.GetAllCharacters();
-            Character c = all.Count > 0 ? all[all.Count - 1] : null;
-            if (c != null && Utils.GetPrefabName(c.gameObject) == critter.m_prefab.name) s_members.Add(c);
+            Character c = all.Count == s_characterCountBeforeSpawn + 1
+                ? all[s_characterCountBeforeSpawn] : null;
+            if (c != null && Utils.GetPrefabName(c.gameObject) == critter.m_prefab.name)
+                s_members.Add(c);
         }
 
         internal static void End()
         {
-            if (s_members.Count >= 2)
+            if (StarRules.Enabled && s_members.Count >= 2)
             {
                 Character leader = s_members[0];
                 System.Func<Character, float> score = Score;
