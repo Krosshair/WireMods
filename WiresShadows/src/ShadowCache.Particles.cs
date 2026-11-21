@@ -22,7 +22,10 @@ namespace WiresShadows
         private bool _lBound;
 
         private static readonly int LitPosId = Shader.PropertyToID("_WireLitPos"), LitColorId = Shader.PropertyToID("_WireLitColor"),
-            LitCountId = Shader.PropertyToID("_WireLitCount");
+            LitCountId = Shader.PropertyToID("_WireLitCount"),
+            LitTileModeId = Shader.PropertyToID("_WireLitTileMode"),
+            LitTilesXId = Shader.PropertyToID("_WireLitTilesX"),
+            LitTilesYId = Shader.PropertyToID("_WireLitTilesY");
 
         private static bool LitWanted =>
             Plugin.LitParticles != null && Plugin.LitParticles.Value && Plugin.UseShader.Value &&
@@ -112,6 +115,20 @@ namespace WiresShadows
                 Shader.SetGlobalBuffer(LitColorId, _lColorBuf);
                 Shader.SetGlobalFloat(LitCountId, n);
             }
+            // Same ordered set as _tPosBuf/_tColorBuf, already culled by
+            // the regular tiled compute pass. Bind its conservative 2D tile
+            // list to weather: no extra dispatch, no per-particle CPU work.
+            // TiledFrame ran earlier this frame; its command buffer executes
+            // before transparent weather particles are rendered.
+            bool useTiles = TiledWanted && _tTileBuf != null && _tPosBuf != null &&
+                            _tCount > 0 && _tTilesX > 0 && _tTilesY > 0;
+            if (useTiles)
+            {
+                Shader.SetGlobalBuffer(TileLightsId, _tTileBuf);
+                Shader.SetGlobalFloat(LitTilesXId, _tTilesX);
+                Shader.SetGlobalFloat(LitTilesYId, _tTilesY);
+            }
+            Shader.SetGlobalFloat(LitTileModeId, useTiles ? 1f : 0f);
             Shader.SetGlobalTexture(AttenId, _tLut);
             _lBound = true;
         }

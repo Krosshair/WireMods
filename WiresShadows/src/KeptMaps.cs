@@ -96,3 +96,41 @@ namespace WiresShadows
         }
     }
 }
+
+namespace WiresShadows
+{
+    internal sealed partial class ShadowCache
+    {
+        private const float TerrainSettle = 0.5f; // s after the last edit: the game rebuilds the ground a moment later
+
+        // Ground dug, raised or levelled near lights: their maps still had the old ground. Redrawn once the
+        // digging pauses (each edit pushes it back), so carving doesn't redraw on every swing.
+        internal static void TerrainChanged(Vector3 pos, float radius)
+        {
+            ShadowCache c = Instance;
+            if (c == null || !c._active) return;
+            NoteChange(pos, radius);
+            foreach (Tracked t in c._slots)
+            {
+                if (t == null || t.Light == null) continue;
+                float reach = Range(t) + radius;
+                if ((t.Center - pos).sqrMagnitude > reach * reach) continue;
+                if (t.Face >= 0) { c.AbortStage(t); t.Face = -1; }
+                t.Dirty = true;
+                t.DirtyAt = Time.time + TerrainSettle;
+                t.SizeOnly = false;
+            }
+            c.WakeRenders();
+        }
+    }
+
+    [HarmonyLib.HarmonyPatch(typeof(TerrainComp), "DoOperation")]
+    internal static class TerrainEdited
+    {
+        private static void Postfix(Vector3 pos, TerrainOp.Settings modifier)
+        {
+            if (modifier == null || (!modifier.m_level && !modifier.m_raise && !modifier.m_smooth)) return; // paint only: same shape
+            ShadowCache.TerrainChanged(pos, modifier.GetRadius() + 1f);
+        }
+    }
+}

@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace WiresShadows
@@ -33,7 +33,7 @@ namespace WiresShadows
         private float _tNextRead;
         private int _tTilesX, _tTilesY, _tKernel = -1, _tCount;
         private readonly Vector4[] _tPos = new Vector4[MaxTiled], _tColor = new Vector4[MaxTiled], _tRect = new Vector4[MaxTiled], _tDepth = new Vector4[MaxTiled];
-        private readonly System.Collections.Generic.Dictionary<Tracked, int> _tSlotOf = new System.Collections.Generic.Dictionary<Tracked, int>();
+
 
         private static readonly int TiledPosId = Shader.PropertyToID("_WireTiledPos"), TiledCountId = Shader.PropertyToID("_WireTiledCount"),
             TiledColorId = Shader.PropertyToID("_WireTiledColor"), TileLightsId = Shader.PropertyToID("_WireTileLights"),
@@ -116,12 +116,6 @@ namespace WiresShadows
         // light, on, no cookie, no Unity shadows), with its box on screen and its depth range.
         private int TiledGather(Camera cam)
         {
-            _tSlotOf.Clear();
-            for (int s = 0; s < _slots.Length; s++)
-            {
-                Tracked st = _slots[s];
-                if (st != null && st.Ready && st.Light != null) _tSlotOf[st] = s;
-            }
             Matrix4x4 view = cam.worldToCameraMatrix, proj = cam.projectionMatrix;
             float w = cam.pixelWidth, h = cam.pixelHeight, near = cam.nearClipPlane;
             bool linear = QualitySettings.activeColorSpace == ColorSpace.Linear;
@@ -146,17 +140,28 @@ namespace WiresShadows
                 else
                 {
                     float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+                    // The eight projected light-box corners share a centre and
+                    // three scaled axes. Only clip X/Y/W reach the screen box.
+                    Vector4 pc = proj * new Vector4(c.x, c.y, c.z, 1f);
+                    Vector4 ax = proj.GetColumn(0) * r, ay = proj.GetColumn(1) * r, az = proj.GetColumn(2) * r;
                     for (int k = 0; k < 8; k++)
                     {
-                        Vector3 v = c + new Vector3((k & 1) != 0 ? r : -r, (k & 2) != 0 ? r : -r, (k & 4) != 0 ? r : -r);
-                        Vector4 clip = proj * new Vector4(v.x, v.y, v.z, 1f);
-                        float sx = (clip.x / clip.w * .5f + .5f) * w, sy = (clip.y / clip.w * .5f + .5f) * h; // pixels, y up: the screen the tiled pass works in (ComputeScreenPos, as Unity's light pass)
+                        float sx0 = (k & 1) != 0 ? 1f : -1f;
+                        float sy0 = (k & 2) != 0 ? 1f : -1f;
+                        float sz0 = (k & 4) != 0 ? 1f : -1f;
+                        float cw = pc.w + sx0 * ax.w + sy0 * ay.w + sz0 * az.w;
+                        float sx = ((pc.x + sx0 * ax.x + sy0 * ay.x + sz0 * az.x) / cw * .5f + .5f) * w;
+                        float sy = ((pc.y + sx0 * ax.y + sy0 * ay.y + sz0 * az.y) / cw * .5f + .5f) * h;
                         x0 = Mathf.Min(x0, sx); x1 = Mathf.Max(x1, sx); y0 = Mathf.Min(y0, sy); y1 = Mathf.Max(y1, sy);
                     }
                     rect = new Vector4(x0 - 1f, y0 - 1f, x1 + 1f, y1 + 1f);
                     if (rect.z < 0f || rect.x > w || rect.w < 0f || rect.y > h) { _tWhy[6]++; continue; } // off screen
                 }
-                int slot = _tSlotOf.TryGetValue(t, out int sl) ? sl : -1;
+                // The tracked light already knows its slot. Check ownership to
+                // preserve the exact readiness/membership rules of the old map.
+                int sl = t.Slot;
+                int slot = t.Ready && sl >= 0 && sl < _slots.Length &&
+                    ReferenceEquals(_slots[sl], t) ? sl : -1;
                 _tPos[n] = new Vector4(p.x, p.y, p.z, 1f / (r * r));
                 _tColor[n] = UnityLightColor(l, linear);
                 _tColor[n].w = slot;

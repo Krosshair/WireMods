@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -37,6 +37,8 @@ namespace WiresShadows
             internal float LitAt = -10f;  // when it was last switched on
             internal bool Instant;       // next render shows at full strength
             internal int ReleasedFrame = -1;
+            internal float NearEligibleSince = -1f; // far map has remained eligible for near promotion
+            internal float LastNearPromotionAt = -100f; // diagnostic for repeat promotions
             internal int MapStamp;       // counts its cached map redraws (machines behind walls are counted again)
             internal Rigidbody Body;     // a loose item's physics body
             internal sbyte CanMove = -1; // 1: on something with a body (item, ship, cart, character); 0: a fixed piece's; -1: not looked yet
@@ -63,6 +65,7 @@ namespace WiresShadows
             internal bool Interact;      // something you did changed it, in view: first in the 2 ms a frame
             internal bool Ready;         // has a complete map
             internal bool SizeOnly;      // waiting for a redraw only to change its map's size
+            internal float DownsizeSince = -1f; // first re-rank where a smaller tier was justified; reset when it isn't
             internal float Fade;         // shadow strength fading in, as LightLod does (1 s)
             internal bool SnapOnFirstMap; // registered during world load; no post-load fade
             internal readonly List<Renderer> Hide = new List<Renderer>();
@@ -1082,6 +1085,7 @@ namespace WiresShadows
 
         internal static void DoorMoved(Door door)
         {
+            Timing.Count(Timing.Part.DoorMovedEvent);
             ShadowCache c = Instance;
             if (c == null || !c._active)
                 return;
@@ -1472,8 +1476,43 @@ namespace WiresShadows
                     // swings longer than a shutter); the timer is the minimum.
                     if (Time.time < w.Until || Swinging(w.Animator))
                         continue;
-                    // Stopped: put it back into the cached maps.
+                    // Stopped: restore it to the static cache. Include the bounds
+                    // of BOTH the moving and settled poses, so a rotating long
+                    // gate cannot miss a light or cube face near its far edge.
+                    Timing.Count(Timing.Part.DoorSettledEvent);
                     w.Ending = true;
+                    bool hasSettledBounds = false;
+                    Bounds settledBounds = default;
+                    foreach (Renderer r in w.Renderers)
+                    {
+                        if (r == null) continue;
+                        if (!hasSettledBounds) { settledBounds = r.bounds; hasSettledBounds = true; }
+                        else settledBounds.Encapsulate(r.bounds);
+                    }
+                    if (hasSettledBounds)
+                    {
+                        // Minimum enclosing sphere of the old swing sphere
+                        // and the settled pose's bounding sphere. Encapsulating
+                        // the old sphere in an AABB would inflate its radius
+                        // by sqrt(3), unnecessarily redrawing extra faces.
+                        Vector3 toFinal = settledBounds.center - w.Center;
+                        float separation = toFinal.magnitude;
+                        float finalRadius = settledBounds.extents.magnitude;
+                        if (separation + finalRadius > w.Radius)
+                        {
+                            if (separation + w.Radius <= finalRadius)
+                            {
+                                w.Center = settledBounds.center;
+                                w.Radius = finalRadius;
+                            }
+                            else if (separation > 0.0001f)
+                            {
+                                float combined = 0.5f * (separation + w.Radius + finalRadius);
+                                w.Center += toFinal * ((combined - w.Radius) / separation);
+                                w.Radius = combined;
+                            }
+                        }
+                    }
                     NoteChange(w.Center, w.Radius);
                     foreach (Renderer r in w.Renderers) SwingHidden.Remove(r);
                     for (int sl = 0; sl < _slots.Length; sl++)
@@ -1481,12 +1520,26 @@ namespace WiresShadows
                         Tracked t = _slots[sl];
                         if (t == null || t.Light == null || !Reaches(t, w))
                             continue;
-                        // Door is stationary again; supersede any incomplete
-                        // removal faces with a full stable shadow-map update.
-                        t.DoorFaces = 0;
-                        t.DoorPrepared = false;
-                        t.Dirty = true;
-                        t.DirtyAt = Time.time;
+                        // A usable, complete map only needs the cube directions
+                        // touched by the door. Recollect casters once when those
+                        // faces render, now that the door is no longer hidden.
+                        // Do not cancel unrelated pending partial updates.
+                        if (t.Ready && t.Face < 0 && !t.Dirty)
+                        {
+                            int faces = FacesFor(w.Center - t.Center, w.Radius);
+                            t.DoorFaces |= faces;
+                            t.DoorPrepared = false;
+                        }
+                        else
+                        {
+                            // Incomplete or already-dirty maps need a complete
+                            // refresh: their unseen faces may contain the old pose.
+                            t.DoorFaces = 0;
+                            t.DoorPrepared = false;
+                            t.Dirty = true;
+                            t.SizeOnly = false;
+                            t.DirtyAt = Time.time;
+                        }
                     }
                     WakeRenders();
                     continue;
@@ -1497,7 +1550,8 @@ namespace WiresShadows
                 for (int sl = 0; sl < _slots.Length && !waiting; sl++)
                 {
                     Tracked t = _slots[sl];
-                    waiting = t != null && t.Light != null && (t.Dirty || t.Face >= 0) && Reaches(t, w);
+                    waiting = t != null && t.Light != null &&
+                        (t.Dirty || t.Face >= 0 || t.DoorFaces != 0) && Reaches(t, w);
                 }
                 if (!waiting)
                     Swings.RemoveAt(i);
@@ -1674,7 +1728,9 @@ namespace WiresShadows
                 Ghosts.Add(piece);
                 return;
             }
+            Timing.Count(Timing.Part.PieceLoaded);
             RegisterPiece(piece);
+
             ItemStand stand = piece.GetComponentInChildren<ItemStand>(true);
             if (stand != null) RefreshStand(stand);
             s_placed = piece.transform.root;
@@ -1794,6 +1850,8 @@ namespace WiresShadows
         internal static void PieceGone(Piece piece)
         {
             if (Ghosts.Remove(piece)) return;
+            Timing.Count(Timing.Part.PieceUnloaded);
+
             // Valheim's feast is a Piece with ItemDrop/Feast. Both Piece.OnDestroy
             // and the ItemDrop lifecycle report its removal; collapse them into
             // one event BEFORE a cached cube can draw its still-live renderer.
@@ -1884,6 +1942,9 @@ namespace WiresShadows
                     int changedFaces = FacesFor(changeCenter - t.Center, changeRadius);
                     if (changedFaces != 0)
                     {
+                        int newlyQueuedFaces = changedFaces & ~t.DoorFaces;
+                        // Count newly added face bits, not repeated notifications for the same pending face.
+                        if (newlyQueuedFaces != 0) Timing.Count(Timing.Part.DoorFacesQueued);
                         t.DoorFaces |= changedFaces; Timing.Count(Timing.Part.ByPiece);
                         // A piece placed or broken: its lists are patched, not searched again.
                         if (t.DoorPrepared && s_placed != null) t.AddedRoots.Add(s_placed);
@@ -1933,6 +1994,7 @@ namespace WiresShadows
             s_entryBuf?.Release(); s_entryBuf = null;
             TiledRelease();
             JobsShutdown();
+
             ReleaseAll();
             foreach (Tracked t in Lights)
                 Unsuppress(t);
@@ -2302,9 +2364,13 @@ namespace WiresShadows
                     continue;
                 }
                 if (BeyondGame(t, at, 0f))
+                {
+                    t.NearEligibleSince = -1f;
                     continue; // past the distance the game's own setting gives shadows at
+                }
                 if (t.Reach > maxDist)
                 {
+                    t.NearEligibleSince = -1f;
                     // Past the distant tier's reach: an ultra-distant slot, if one is free
                     // or held by something further away. Never moves anyone out of a nearer tier.
                     if (t.Slot < 0 && t.Reach <= ultraDist && _ultra > 0)
@@ -2325,17 +2391,36 @@ namespace WiresShadows
                     // Moved up into view on a distant map: switch to a full-size
                     // one (one per pass; the rest keep their distant map till then).
                     if (promotions >= MaxPromotions || t.Slot < _near || !wantNear)
+                    {
+                        t.NearEligibleSince = -1f;
                         continue;
+                    }
+                    // Already visible with a valid cached map: require a
+                    // stable near-tier demand before spending six captures.
+                    // Unready maps and loading-screen preloads are unaffected.
+                    if (t.Ready && KeepReadyVisibleSlot(t) && !Loading() &&
+                        Time.time >= _fillUntil)
+                    {
+                        if (t.NearEligibleSince < 0f)
+                        {
+                            t.NearEligibleSince = Time.time;
+                            Timing.Count(Timing.Part.NearPromotionDeferred);
+                        }
+                        if (Time.time - t.NearEligibleSince < NearPromotionStableSeconds)
+                            continue;
+                    }
                     slot = FindSlot(0, _near, t.Priority, true);
                     if (slot < 0)
                         continue;
                     if (KeepReadyVisibleSlot(t))
                     {
+                        t.NearEligibleSince = -1f;
                         BeginNearPromotion(t, slot);
                         promotions++;
                         continue;
                     }
                     // Offscreen/unready maps can use the existing direct move.
+                    t.NearEligibleSince = -1f;
                     Release(t);
                     promotions++;
                 }
@@ -2372,23 +2457,61 @@ namespace WiresShadows
                 // It renders urgent nearby maps first while Loading() is true
                 // and fades unfinished maps in once the world becomes visible.
             }
-            // Sized maps: a light that now covers more of the screen than its map is sized for
-            // re-renders bigger (its old map stays on screen till the new one is done).
+            // Sized maps: preserve cached quality and reduce churn when moving
+            // across tier boundaries. The existing map remains usable, so a
+            // downgrade is not urgent. Upgrades still begin immediately.
             if (_tiered)
             {
-                // And one that covers much less re-renders smaller: when it needs two sizes less than
-                // it has (one size of slack, so walking back and forth across where one size turns
-                // into the next doesn't re-render it every time).
                 foreach (Tracked t in _slots)
-                    if (t != null && t.Ready && !t.Dirty && t.Face < 0 && t.PromotionTo == null && t.PromotionFrom == null &&
-                        _mapTier[t.Slot] >= 0f &&
-                        (t.WantTier < (int)_mapTier[t.Slot] || t.WantTier >= (int)_mapTier[t.Slot] + 2))
+                {
+                    if (t == null || t.Light == null || t.Slot < 0 || _mapTier[t.Slot] < 0f)
+                        continue;
+                    int mapped = (int)_mapTier[t.Slot];
+                    bool upgrade = t.WantTier < mapped;
+                    bool downgrade = t.WantTier >= mapped + 2;
+
+                    // A size-only redraw was queued but the player moved back
+                    // before it started: cancel it. No geometry change has
+                    // happened (any real change clears SizeOnly).
+                    if (t.Dirty && t.SizeOnly && t.Face < 0 && !upgrade && !downgrade &&
+                        t.DoorFaces == 0 && !t.Interact)
                     {
+                        t.Dirty = false;
+                        t.SizeOnly = false;
+                        Timing.Count(Timing.Part.ResizeCanceled);
+                    }
+
+                    if (!downgrade) t.DownsizeSince = -1f;
+                    if (!t.Ready || t.Dirty || t.Face >= 0 ||
+                        t.PromotionTo != null || t.PromotionFrom != null)
+                        continue;
+                    if (upgrade)
+                    {
+                        t.DownsizeSince = -1f;
                         t.Dirty = true;
                         t.DirtyAt = Time.time;
-                        t.SizeOnly = true; // only its size changes: what's round it is as it was
+                        t.SizeOnly = true;
                         Timing.Count(Timing.Part.SizeChange);
+                        Timing.Count(Timing.Part.ResizeUpgrade);
                     }
+                    else if (downgrade)
+                    {
+                        if (t.DownsizeSince < 0f)
+                        {
+                            t.DownsizeSince = Time.time;
+                            Timing.Count(Timing.Part.ResizeDeferred);
+                        }
+                        if (Time.time - t.DownsizeSince >= DownsizeStableSeconds)
+                        {
+                            t.DownsizeSince = -1f;
+                            t.Dirty = true;
+                            t.DirtyAt = Time.time;
+                            t.SizeOnly = true;
+                            Timing.Count(Timing.Part.SizeChange);
+                            Timing.Count(Timing.Part.ResizeDowngrade);
+                        }
+                    }
+                }
                 long tp = Timing.Start();
                 SizePoolsForWaiting();
                 CompactPools();
@@ -2463,6 +2586,10 @@ namespace WiresShadows
             };
             original.PromotionTo = candidate;
             _slots[nearSlot] = candidate;
+            if (Time.time - original.LastNearPromotionAt < 15f)
+                Timing.Count(Timing.Part.NearPromotionRepeat);
+            original.LastNearPromotionAt = Time.time;
+            Timing.Count(Timing.Part.NearPromoted);
             WakeRenders();
         }
 
@@ -2525,7 +2652,13 @@ namespace WiresShadows
             {
                 if (_slots[sl] == null)
                     return sl;
-                if (evict && !KeepReadyVisibleSlot(_slots[sl]) && _slots[sl].Priority > worstPriority) { worst = sl; worstPriority = _slots[sl].Priority; }
+                // A near-slot placeholder already rendering a promoted map
+                // must finish (or be released by its owner), not be evicted
+                // by another light before its expensive faces are complete.
+                // Protect active face renders for the same reason.
+                if (evict && _slots[sl].PromotionFrom == null && _slots[sl].Face < 0 &&
+                    !KeepReadyVisibleSlot(_slots[sl]) && _slots[sl].Priority > worstPriority)
+                { worst = sl; worstPriority = _slots[sl].Priority; }
             }
             if (worst >= 0)
                 Release(_slots[worst]);
@@ -2542,6 +2675,14 @@ namespace WiresShadows
         private Vector3 _lastReassignEye;
         private const float MovedReassign = 2f;
         private const int MaxPromotions = 3;
+        // A ready far map remains visible while walking. Don't replace it
+        // with a costly new six-face near map for a transient viewpoint.
+        private const float NearPromotionStableSeconds = 1.25f;
+        // Shorter-res maps cost six cubemap captures to build. Keep an existing
+        // sharper map through brief steps/turns instead of thrashing tiers.
+        // Does not delay upgrading map resolution, genuine scene edits, or
+        // memory-pressure ShrinkOversized (which must free scarce pool space).
+        private const float DownsizeStableSeconds = 3f;
 
         // Whether the light is near enough to get shadows at all. LightLod
         // switches lights off and shrinks their range with distance; the
@@ -2650,6 +2791,7 @@ namespace WiresShadows
 
         private void Take(Tracked t, int slot)
         {
+            Timing.Count(Timing.Part.SlotTaken);
             t.Slot = slot;
             _slots[slot] = t;
             Suppress(t);
@@ -2669,16 +2811,23 @@ namespace WiresShadows
             }
             t.DoorFaces = 0;
             t.DoorPrepared = false;
+            t.DownsizeSince = -1f;
+            t.NearEligibleSince = -1f;
             t.SnapOnFirstMap = Loading() || Time.time < _fillUntil;
             t.Interact = false;
             t.Face = -1;
             if (ReuseKept(t, slot))
             {
+                Timing.Count(Timing.Part.KeptMapReused);
                 // its map from before it lost the slot: on screen at once, nothing to draw
                 t.Dirty = false;
                 t.Ready = true;
                 t.Fade = 1f;
-                UpdateGlobals();
+                // ReassignCore batches all slot uploads at its end. A dense
+                // base can reuse dozens of kept maps during one pass; doing
+                // a full upload for each reuse defeats that batching.
+                if (!_batchingReassign) UpdateGlobals();
+                else Timing.Count(Timing.Part.ReusedUploadBatched);
                 return;
             }
             t.Dirty = true;
@@ -2703,6 +2852,7 @@ namespace WiresShadows
                 t.PromotionFrom = null;
             }
             if (t.Slot < 0) return;
+            Timing.Count(Timing.Part.SlotReleased);
             if (t.Slot < _slots.Length && _slots[t.Slot] == t)
                 _slots[t.Slot] = null;
             if (t.Slot >= 0 && t.Slot < MaxSlots)
@@ -3516,6 +3666,10 @@ namespace WiresShadows
                 FaceRects.Clear();
                 RectInt rect = default, vol = default;
                 Matrix4x4 vp = cpuProj * view;
+                // These projection axes are the same for every caster on this face.
+                Vector4 projectionX = vp.GetColumn(0);
+                Vector4 projectionY = vp.GetColumn(1);
+                Vector4 projectionZ = vp.GetColumn(2);
                 for (int ci = 0; ci < LightCasters.Count; ci++)
                 {
                     if ((LightCasterFaces[ci] & (1 << f)) == 0)
@@ -3525,7 +3679,7 @@ namespace WiresShadows
                     // FacesFor is an intentionally conservative sphere test.
                     // AABB projection may prove a renderer covers NO pixels
                     // on this face: skip its otherwise wasted GPU draw.
-                    RectInt casterRect = ScreenRect(vp, c.B, size);
+                    RectInt casterRect = ScreenRect(vp, projectionX, projectionY, projectionZ, c.B, size);
                     if (casterRect.width <= 0 || casterRect.height <= 0)
                         continue;
                     FaceRenderers.Add(k);
@@ -4329,21 +4483,36 @@ namespace WiresShadows
 
         // Pixels of a face a box covers, 2 px padded; all of it if the box
         // reaches behind the light.
-        private static RectInt ScreenRect(Matrix4x4 vp, Bounds b, int size)
+        private static RectInt ScreenRect(Matrix4x4 vp, Vector4 axisX, Vector4 axisY, Vector4 axisZ, Bounds b, int size)
         {
             float x0 = 1f, y0 = 1f, x1 = -1f, y1 = -1f;
             Vector3 c = b.center, e = b.extents;
             bool anyFront = false, crossesCameraPlane = false;
+            // The projection is linear: each corner is the centre's projection plus or minus the
+            // three axis columns times the extents. One full multiply instead of eight (this runs
+            // for every moving caster, light and face, every frame); the same numbers.
+            Vector4 pc = vp * new Vector4(c.x, c.y, c.z, 1f);
+            // Only X, Y and homogeneous W affect this screen rectangle.
+            // Avoid eight Vector4 corner constructions and unused Z math;
+            // all eight AABB corners and the conservative plane test remain.
+            float exx = axisX.x * e.x, exy = axisX.y * e.x, exw = axisX.w * e.x;
+            float eyx = axisY.x * e.y, eyy = axisY.y * e.y, eyw = axisY.w * e.y;
+            float ezx = axisZ.x * e.z, ezy = axisZ.y * e.z, ezw = axisZ.w * e.z;
             for (int i = 0; i < 8; i++)
             {
-                Vector4 p = vp * new Vector4(c.x + ((i & 1) != 0 ? e.x : -e.x), c.y + ((i & 2) != 0 ? e.y : -e.y), c.z + ((i & 4) != 0 ? e.z : -e.z), 1f);
-                if (p.w <= 0.01f)
+                float sx = (i & 1) != 0 ? 1f : -1f;
+                float sy = (i & 2) != 0 ? 1f : -1f;
+                float sz = (i & 4) != 0 ? 1f : -1f;
+                float w = pc.w + sx * exw + sy * eyw + sz * ezw;
+                if (w <= 0.01f)
                 {
                     crossesCameraPlane = true;
                     continue;
                 }
                 anyFront = true;
-                float x = p.x / p.w, y = p.y / p.w;
+                float invW = 1f / w;
+                float x = (pc.x + sx * exx + sy * eyx + sz * ezx) * invW;
+                float y = (pc.y + sx * exy + sy * eyy + sz * ezy) * invW;
                 x0 = Mathf.Min(x0, x); x1 = Mathf.Max(x1, x);
                 y0 = Mathf.Min(y0, y); y1 = Mathf.Max(y1, y);
             }
@@ -4554,6 +4723,7 @@ namespace WiresShadows
         private void RenderDoorFace(Tracked t)
         {
             Timing.Count(Timing.Part.SingleFace);
+            Timing.Count(Timing.Part.DoorFaceDrawn);
             if (!t.DoorPrepared)
             {
                 t.Center = RestingPosition(t.Light);
@@ -4725,7 +4895,9 @@ namespace WiresShadows
                 bool sameCasters = t.SizeOnly && t.DoorPrepared && t.AddedRoots.Count == 0 && !t.ProxiesStale &&
                     (RestingPosition(t.Light) - t.Center).sqrMagnitude < 1e-6f &&
                     t.Light.transform.root.position == t.RootPos && t.Light.transform.root.rotation == t.RootRot;
-                t.SizeOnly = false;
+                // Preserve SizeOnly across ReadyToRender/SearchReady/AllocCube
+                // retries: otherwise a deferred resize gets downgraded to a
+                // full collider search, even though the caster lists are valid.
                 // A full refresh supersedes any partial door-face updates.
                 t.DoorFaces = 0;
                 // (its lists stay marked current while the new ones are gathered over frames: a change
@@ -4735,6 +4907,7 @@ namespace WiresShadows
                     return;
                 // its surroundings searched on the worker threads, then sorted a little each frame
                 // (ShadowCache.Jobs): the render starts once both are done
+                if (sameCasters) Timing.Count(Timing.Part.ResizeSearchReuse);
                 bool gathered = false;
                 if (!sameCasters && !_renderingNow)
                 {
@@ -4748,6 +4921,7 @@ namespace WiresShadows
                     t.DirtyAt = Time.time + 0.25f; // no room yet: tried again (oversized maps are shrinking)
                     return;
                 }
+                t.SizeOnly = false;
                 t.Dirty = false;
                 t.Face = 0;
                 t.Staged = t.Ready;
@@ -4760,6 +4934,7 @@ namespace WiresShadows
                 t.RootRot = t.Light.transform.root.rotation;
                 if (!sameCasters && !gathered) { t.DoorPrepared = false; FindCasters(t); }
             }
+            Timing.Count(Timing.Part.FullMapFaceDrawn);
             if (!DrawFace(t)) return;
             if (++t.Face >= 6)
                 FinishMap(t);
@@ -4789,6 +4964,7 @@ namespace WiresShadows
         {
             // sized maps: nothing to draw into (no render cube and none on screen)
             if (_tiered && t.RenderCube < 0 && (t.Slot < 0 || _mapTier[t.Slot] < 0f)) return false;
+            long setupAt = Timing.Start();
             _camera.transform.position = t.Center;
             // The near plane is cut as a sphere in the shaders (with the
             // colliders drawn inside it), so the camera starts at the light.
@@ -4847,14 +5023,23 @@ namespace WiresShadows
             {
                 QualitySettings.lodBias = 10000f;
                 DrawUntaggedOnePass(t);
-                if (!_camera.RenderToCubemap(_tierRG[tierNow], 1 << t.Face))
-                    return false;
+
+                Timing.Stop(Timing.Part.FaceSetup, setupAt);
+                long renderAt = Timing.Start();
+                bool rendered = _camera.RenderToCubemap(_tierRG[tierNow], 1 << t.Face);
+                Timing.Stop(Timing.Part.FaceCubemap, renderAt);
+                if (!rendered) return false;
+                long copyAt = Timing.Start();
                 Graphics.CopyTexture(_tierRG[tierNow], t.Face, 0, _tierFlatRG[tierNow], 0, 0);
+                Timing.Stop(Timing.Part.FaceCopy, copyAt);
+                long conversionAt = Timing.Start();
                 TierFaceOnePass(t, t.Face, rendering);
+                Timing.Stop(Timing.Part.FaceConvert, conversionAt);
                 return true;
             }
             finally
             {
+                long restoreAt = Timing.Start();
                 QualitySettings.lodBias = lodBias;
                 Shader.SetGlobalFloat(NearCutId, 0f);
                 _staticCb.Clear();
@@ -4863,6 +5048,7 @@ namespace WiresShadows
                 for (int i = 0; i < ChangedShadowMode.Count; i++)
                     if (ChangedShadowMode[i] != null)
                         ChangedShadowMode[i].shadowCastingMode = PriorShadowModes[i];
+                Timing.Stop(Timing.Part.FaceRestore, restoreAt);
             }
         }
 

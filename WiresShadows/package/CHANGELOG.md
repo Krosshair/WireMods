@@ -1,3 +1,14 @@
+## 0.3.5
+- Performance: moving round a large base no longer makes lights repeatedly rebuild their shadow maps just because they trade places in the shadow slots. A light that loses its slot keeps its finished map for when it comes back, and near-resolution maps wait until a light has stayed near long enough instead of being promoted back and forth while you move.
+- Performance: a light's shadow map doesn't immediately shrink when you step away from it. It waits a few seconds, while higher resolution is still given back right away when needed. A resize that no longer makes sense is cancelled before it draws, and a resize alone reuses the existing list of shadow casters instead of searching the area again.
+- Performance: moving shadows check which parts of each cubemap face a moving object actually covers with less CPU work, without changing which objects cast shadows. The lights used by the tiled pass also need fewer calculations when finding their screen bounds, and their existing slot numbers are used directly instead of rebuilding a lookup table every frame.
+- Performance: when a cached shadow map is reused during a group of light-slot changes, the mod sends the updated shadow data to the GPU once at the end instead of after every reused light.
+- Performance: rain, snow, mist and wind dust can use the existing tiled-light lists to skip point lights that cannot reach that part of the screen. This adds no extra compute pass, and keeps the full light list as a fallback when needed.
+
+## 0.3.1
+- Fixed: digging, raising or levelling the ground near lights kept the old ground's shadows. Their maps are redrawn half a second after you stop.
+- Performance: moving shadows work out which part of each map a moving thing covers with a fraction of the math (same result).
+
 ## 0.3.0
 - Performance: a base's lights stopped taking turns at the shadow slots while you stand still. They were ranked by their brightness as it flickers, so they kept swapping places, and each one that came back drew its whole shadow map again (around 2.5 ms of the processor every frame at a big base, measured). They're ranked by their steady brightness now, and a light that does lose its slot keeps its map for when it gets one back, unless something round it changed meanwhile.
 

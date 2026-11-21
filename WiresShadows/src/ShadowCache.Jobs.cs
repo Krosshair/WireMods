@@ -37,7 +37,18 @@ namespace WiresShadows
             if (s_searches.TryGetValue(t, out Search s) && s.Count != -1 &&
                 (s.Center - c).sqrMagnitude < 1e-6f && Mathf.Abs(s.Range - r) < 1e-3f) return true;
             if (s == null) s_searches[t] = s = new Search();
-            if (s.Count == -1 && s_searchAsks.Contains(t)) return false; // already asked
+            // An outstanding batch is no longer in the asks list. Don't
+            // queue it again each frame while its worker job is running.
+            // If the light moved, leave the in-flight search's original
+            // center intact; after completion SearchReady requests the new
+            // position instead of mislabelling old hits as current.
+            if (s.Count == -1)
+            {
+                if (s_searchAsks.Contains(t)) return false;
+                if (s_searchPending)
+                    for (int i = 0; i < s_searchFlightCount; i++)
+                        if (ReferenceEquals(s_searchFlight[i], t)) return false;
+            }
             s.Center = c; s.Range = r; s.Count = -1;
             if (!s_searchAsks.Contains(t)) s_searchAsks.Add(t);
             return false;
@@ -58,6 +69,16 @@ namespace WiresShadows
         private static void SearchRead()
         {
             if (!s_searchPending) return;
+            // Let the physics workers finish on their own. Completing an
+            // unfinished overlap here blocks the main thread exactly when a
+            // dense area is loading and needs responsiveness the most.
+            // The next LateUpdate consumes it once ready; SearchSchedule
+            // correctly keeps further batches queued meanwhile.
+            if (!s_searchJob.IsCompleted)
+            {
+                Timing.Count(Timing.Part.SearchDeferred);
+                return;
+            }
             s_searchJob.Complete();
             s_searchPending = false;
             for (int i = 0; i < s_searchFlightCount; i++)

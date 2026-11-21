@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System;
 using System.IO;
 using BepInEx;
@@ -18,7 +18,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.3.0";
+        public const string Version = "0.3.5";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -47,6 +47,7 @@ namespace WiresShadows
         internal static ConfigEntry<bool> LitParticles;
         internal static ConfigEntry<bool> ModAO;
         internal static ConfigEntry<bool> OcclusionCulling;
+        
         internal static ConfigEntry<bool> FlickerCulling;
         internal static ConfigEntry<float> FlickerDistance;
         internal static ConfigEntry<bool> TimingLog;

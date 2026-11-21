@@ -118,6 +118,7 @@ namespace WiresShadows
                 Center = b.center, Radius = b.extents.magnitude + 0.5f,
                 StillHash = Quantize(b.center, 100f) * 13 + 7
             };
+            Timing.Count(Timing.Part.MachineRegistered);
             Machines.Add(m);
             MachineByOwner[owner] = m;
             if (smelter != null) MachineBySmelter[smelter] = m;
@@ -366,7 +367,10 @@ namespace WiresShadows
         private static void Postfix(Container __instance, bool __state)
         {
             if (__instance.m_open != null && __instance.m_open.activeSelf != __state)
+            {
+                Timing.Count(Timing.Part.ContainerToggled);
                 ShadowCache.PieceChanged(__instance.transform.position, 0f, __instance);
+            }
         }
     }
 
