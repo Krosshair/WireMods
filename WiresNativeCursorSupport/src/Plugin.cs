@@ -12,7 +12,7 @@ namespace WiresNativeCursorSupport
     {
         public const string Guid = "wire.valheim.nativecursorsupport";
         public const string Name = "Wire's Native Cursor";
-        public const string Version = "0.4.2";
+        public const string Version = "0.4.3";
 
         internal const string PrefKey = "WireNativeCursorSupport";
 

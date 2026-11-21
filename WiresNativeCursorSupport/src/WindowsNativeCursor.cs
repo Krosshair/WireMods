@@ -9,6 +9,11 @@ namespace WiresNativeCursorSupport
     internal static class WindowsNativeCursor
     {
         private const int WM_SETCURSOR = 0x0020;
+        private const int WM_MOUSEMOVE = 0x0200;
+        private const int WM_LBUTTONUP = 0x0202;
+        private const int WM_RBUTTONUP = 0x0205;
+        private const int WM_MBUTTONUP = 0x0208;
+        private const int WM_XBUTTONUP = 0x020C;
         private const int WM_NCDESTROY = 0x0082;
         private const int HTCLIENT = 1;
         private const int GWLP_WNDPROC = -4;
@@ -138,6 +143,22 @@ namespace WiresNativeCursorSupport
             IntPtr result = s_previous != IntPtr.Zero
                 ? CallWindowProc(s_previous, hwnd, msg, wp, lp)
                 : DefWindowProc(hwnd, msg, wp, lp);
+
+            // Unity/Proton can replace the native cursor while processing mouse
+            // input without issuing WM_SETCURSOR. Restore ours after the game's
+            // window procedure, but only when the handle actually changed.
+            // This runs on mouse input events, not every rendered frame.
+            if (s_hooked && s_enabled && hwnd == s_hwnd &&
+                (msg == WM_MOUSEMOVE || msg == WM_LBUTTONUP ||
+                 msg == WM_RBUTTONUP || msg == WM_MBUTTONUP || msg == WM_XBUTTONUP) &&
+                Cursor.visible && Cursor.lockState != CursorLockMode.Locked &&
+                GetForegroundWindow() == hwnd)
+            {
+                IntPtr handle = s_handles[(int)s_kind];
+                if (handle == IntPtr.Zero) handle = s_handles[0];
+                if (GetCursor() != handle) SetCursor(handle);
+            }
+
             if (msg == WM_NCDESTROY && hwnd == s_hwnd)
             {
                 s_hwnd = IntPtr.Zero;
@@ -181,6 +202,8 @@ namespace WiresNativeCursorSupport
         [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr CopyImage(IntPtr handle, uint type, int width, int height, uint flags);
         [DllImport("user32.dll")] private static extern bool DestroyCursor(IntPtr cursor);
         [DllImport("user32.dll")] private static extern IntPtr SetCursor(IntPtr cursor);
+        [DllImport("user32.dll")] private static extern IntPtr GetCursor();
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CallWindowProc(IntPtr old, IntPtr hwnd, uint msg, IntPtr wp, IntPtr lp);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr DefWindowProc(IntPtr hwnd, uint msg, IntPtr wp, IntPtr lp);
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]

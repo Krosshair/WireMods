@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3
+- Fixed: the system cursor no longer briefly switches back to Valheim's cursor after mouse movement or button release on Windows/Proton.
+- Restores the native cursor only when mouse input changes its handle. No per-frame polling.
+
 ## 0.4.2
 - Fix: preserve the desktop XCURSOR_SIZE under Proton/Wine when native cursor handles are used; all sizing is performed once at initialization.
 - Fix: native Linux/X11 cursors load the requested theme size explicitly rather than relying on the X11 fallback.
