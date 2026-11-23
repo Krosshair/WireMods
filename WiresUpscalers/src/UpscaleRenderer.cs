@@ -162,6 +162,12 @@ namespace WiresUpscalers
 
         private void Show()
         {
+            // Already showing ours: nothing to look for (this runs every frame while scaled, and the
+            // search below goes through the whole scene).
+            bool showing = _shown.Count > 0;
+            foreach (RawImage raw in _shown)
+                if (raw == null || raw.texture != _output) { showing = false; break; }
+            if (showing) return;
             foreach (FrameBufferScaler s in FindObjectsByType<FrameBufferScaler>(FindObjectsSortMode.None))
             {
                 RawImage raw = s != null ? s.GetComponent<RawImage>() : null;
