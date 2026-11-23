@@ -20,13 +20,41 @@ namespace WiresAcoustics
         private static readonly List<Item> Items = new List<Item>(32);
         private static readonly List<AcousticFilter> Filters = new List<AcousticFilter>(4); // reused: effects are made many times a second
         internal static Transform Owner; // set around the game's idle, alert and equip sounds (no parent passed)
+        private static Container s_playingChest; // only inside that chest's open/close EffectList
 
         [HarmonyPatch(typeof(EffectList), nameof(EffectList.Create))]
         private static class Created
         {
+            // Before Valheim instantiates and plays terrain sound effects,
+            // place raised-ground impacts on the new exposed surface.
+            private static void Prefix(EffectList __instance, ref Vector3 basePos,
+                out Container __state)
+            {
+                __state = s_playingChest;
+                s_playingChest = null;
+                if (!Plugin.Enabled.Value) return;
+                TerrainAudio.Place(__instance, ref basePos);
+                Container chest = Owner != null ? Owner.GetComponent<Container>() : null;
+                if (chest == null || !(ReferenceEquals(__instance, chest.m_openEffects) ||
+                                       ReferenceEquals(__instance, chest.m_closeEffects))) return;
+                s_playingChest = chest;
+                // The sound's FIRST occlusion check must use the real lid,
+                // not the pivot later corrected by EffectList.Create.Postfix.
+                if (Area.TopOf(chest.transform, out Vector3 lid)) basePos = lid;
+            }
+
+            private static void Finalizer(Container __state)
+            {
+                s_playingChest = __state;
+            }
+
             private static void Postfix(EffectList __instance, GameObject[] __result, Vector3 basePos, Transform baseParent)
             {
                 if (!Plugin.Enabled.Value || __result == null) return;
+                // made during something you did (Interaction): heard clearly within reach
+                bool yours = Interaction.Acting; // and within your reach, below: not some other sound the action set off elsewhere
+                foreach (GameObject go in __result)
+                    if (go != null && go.GetComponent<ZSFX>() != null && go.GetComponent<AudioSource>() is AudioSource made) AcousticFilter.For(made).MadeByYou = yours && Interaction.Near(go.transform.position);
                 if (PlayerSounds.IsCue(__instance)) { PlayerSounds.MarkCue(__result); return; }
                 Transform given = baseParent != null ? baseParent : Owner;
                 // a tree coming down: its fall sound is made at the stump, then the log is spawned
@@ -49,18 +77,48 @@ namespace WiresAcoustics
                         body = rb != null ? rb.transform : go.transform;
                         break;
                     }
-                // what each sound was made for is its shape (Area), moving or not
+                // An authored event already positioned away from its
+                // owner's pivot (a hit, tool, muzzle, moving part) remains
+                // point-localized. A centrally authored, nonlocalized sound
+                // may instead emit from the owner's cached collider extent.
+                // An offset one-shot supplies additional evidence of a local
+                // event; continuous sources still require explicit event
+                // attribution to override their known physical extent.
                 if (given != null)
                     foreach (GameObject go in __result)
                         if (go != null)
                         {
+                            ZSFX effect = go.GetComponent<ZSFX>();
+                            AudioSource audio = effect != null ?
+                                go.GetComponent<AudioSource>() : null;
+                            if (audio != null && !audio.loop &&
+                                (go.transform.position - given.position).sqrMagnitude > .01f &&
+                                !(go.GetComponent<AcousticFilter>()?.WeaponSource ?? false))
+                                AcousticFilter.For(audio).LocalizedEvent = true;
                             go.GetComponentsInChildren(true, Filters);
-                            foreach (AcousticFilter a in Filters) { a.ShapeRoot = given; a.AreaKnown = false; }
+                            foreach (AcousticFilter a in Filters)
+                            {
+                                // Weapon sweeps have a more precise shown
+                                // weapon owner than the general character.
+                                if (!a.WeaponSource) a.ShapeRoot = given;
+                                a.AreaKnown = false;
+                            }
                         }
                 // a chest opens and closes at its lid, not at its base
                 if (given != null && baseParent == null && given.GetComponent<Container>() != null && Area.TopOf(given, out Vector3 lid))
                     foreach (GameObject go in __result)
-                        if (go != null && go.transform.parent == null && go.GetComponent<ZSFX>() != null) go.transform.position = lid;
+                        if (go != null && go.transform.parent == null && go.GetComponent<ZSFX>() != null)
+                        {
+                            go.transform.position = lid;
+                            AudioSource audio = go.GetComponent<AudioSource>();
+                            if (audio != null)
+                            {
+                                AcousticFilter a = AcousticFilter.For(audio);
+                                a.ShapeRoot = given;
+                                a.AreaKnown = false;
+                                a.LocalizedEvent = false;
+                            }
+                        }
                 foreach (GameObject go in __result)
                 {
                     if (go == null || go.transform.parent != null || go.GetComponent<ZSFX>() == null) continue;
@@ -120,6 +178,23 @@ namespace WiresAcoustics
         // shape and came from the point at its middle. Around that call the chest is what they're
         // made for: they get its shape (Area) and are heard from its open side. It doesn't move, so
         // nothing follows anything.
+        // Give chest open/close sounds a real emitting shell before their
+        // FIRST playback and initial occlusion check, not after they play.
+        [HarmonyPatch(typeof(ZSFX), nameof(ZSFX.Play))]
+        private static class ChestPlayback
+        {
+            private static void Prefix(ZSFX __instance)
+            {
+                if (s_playingChest == null || __instance == null) return;
+                AudioSource audio = __instance.GetComponent<AudioSource>();
+                if (audio == null || audio.spatialBlend < .5f) return;
+                AcousticFilter f = AcousticFilter.For(audio);
+                f.ShapeRoot = s_playingChest.transform;
+                f.AreaKnown = false;
+                f.LocalizedEvent = false;
+            }
+        }
+
         [HarmonyPatch(typeof(Container), nameof(Container.SetInUse))]
         private static class Chest
         {

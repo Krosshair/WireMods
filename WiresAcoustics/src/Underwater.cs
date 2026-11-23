@@ -15,9 +15,22 @@ namespace WiresAcoustics
         private const float ZAir = 420f, ZWater = 1.48e6f;
         internal static readonly float Gain = Mathf.Sqrt(4f * ZAir * ZWater / ((ZAir + ZWater) * (ZAir + ZWater)));
         internal const float Cutoff = 22000f;
-        private const float Fade = 3f; // per second
+        // Surface blending is a function of immersion depth, not elapsed time.
         private static float s_amount;
         internal static bool ListenerBelow;
+
+        // Air-water transmission applied identically to newly started
+        // sounds and sounds rechecked by the batched propagation engine.
+        internal static void Apply(ref float gain, ref float cutoff)
+        {
+            Apply(ref gain, ref cutoff, 1f);
+        }
+
+        internal static void Apply(ref float gain, ref float cutoff, float amount)
+        {
+            gain *= Mathf.Lerp(1f, Gain, Mathf.Clamp01(amount));
+            cutoff = Mathf.Min(cutoff, Cutoff);
+        }
 
         // Nothing is under water well above the sea (lakes and rivers are at sea level too): skips
         // the game's water lookup (a physics overlap) for almost every sound.
@@ -25,21 +38,41 @@ namespace WiresAcoustics
 
         internal static bool Below(Vector3 p) => !High(p) && Floating.GetLiquidLevel(p) > p.y + .05f;
 
+        internal static float SubmergedAmount(Vector3 p)
+        {
+            if (!Plugin.UnderwaterOn.Value || High(p)) return 0f;
+            float depth = Floating.GetLiquidLevel(p) - p.y;
+            float x = Mathf.Clamp01(depth / .3f);
+            return x * x * (3f - 2f * x);
+        }
+
         // A sound at p, heard from the listener: muffled only when the whole source is under water.
         // Creature sounds play at their feet or middle, so a swimming greydwarf's would count as under
         // water: for a creature (the sound's own, or the one it plays at) its top has to be under.
         // Anything else: 30 cm under, so splashes at the surface stay clear.
-        internal static bool Muffles(Vector3 p, Transform source)
+        internal static bool Muffles(Vector3 p, Transform source) => SourceAmount(p, source) > 0f;
+
+        // Continuous immersion fraction: a source just touching the surface
+        // begins to attenuate, becoming fully water-transmitted after 0.3 m.
+        // Characters use the top of the body, not the feet of their sound prefab.
+        internal static float SourceAmount(Vector3 p, Transform source)
         {
-            if (!Plugin.UnderwaterOn.Value || ListenerBelow || High(p) || Floating.GetLiquidLevel(p) <= p.y + .3f) return false;
+            if (!Plugin.UnderwaterOn.Value || High(p)) return 0f;
+            float depth = Floating.GetLiquidLevel(p) - p.y;
+            if (depth <= 0f) return 0f;
             Character c = source != null ? source.GetComponentInParent<Character>() : null;
-            if (c == null) c = CharacterAt(p);
-            if (c == null) return true;
-            // the top of its body capsule, else a metre above its feet
-            CapsuleCollider body = c.GetComponent<CapsuleCollider>();
-            Vector3 top = c.transform.position + Vector3.up;
-            if (body != null) { Bounds b = body.bounds; top = new Vector3(b.center.x, b.max.y, b.center.z); }
-            return Floating.GetLiquidLevel(top) > top.y + .05f;
+            if (c == null && depth > .3f) c = CharacterAt(p);
+            if (c != null)
+            {
+                CapsuleCollider body = c.GetComponent<CapsuleCollider>();
+                Vector3 top = c.transform.position + Vector3.up;
+                if (body != null) { Bounds b = body.bounds; top = new Vector3(b.center.x, b.max.y, b.center.z); }
+                depth = Floating.GetLiquidLevel(top) - top.y;
+            }
+            float fraction = Mathf.Clamp01(depth / .3f);
+            // Crossing loss depends on how different the two media are.
+            // Both immersed means the source and listener share the medium.
+            return fraction * fraction * (3f - 2f * fraction) * (1f - s_amount);
         }
 
         // The creature a sound plays at (effects are spawned at it, not under it). Only asked for
@@ -63,9 +96,9 @@ namespace WiresAcoustics
         // Every frame, from the game's audio update.
         internal static void Update(Vector3 listener, float dt)
         {
-            ListenerBelow = Plugin.UnderwaterOn.Value && Below(listener);
-            s_amount = Mathf.MoveTowards(s_amount, ListenerBelow ? 1f : 0f, Fade * dt);
-            AcousticFilter.SetGlobal(Mathf.Lerp(1f, Gain, s_amount), Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(Cutoff), s_amount)), s_amount > .001f);
+            s_amount = SubmergedAmount(listener);
+            ListenerBelow = s_amount > .5f;
+            AcousticFilter.SetGlobal(Mathf.Lerp(1f, Gain, s_amount), AcousticMath.LogLerp(22000f, Cutoff, s_amount), s_amount > .001f);
         }
 
         internal static void Reset()

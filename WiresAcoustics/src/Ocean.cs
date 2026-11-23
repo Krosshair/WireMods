@@ -21,18 +21,33 @@ namespace WiresAcoustics
     {
         private static readonly AccessTools.FieldRef<AudioMan, AudioSource> Source = AccessTools.FieldRefAccess<AudioMan, AudioSource>("m_oceanAmbientSource");
         private static readonly float[] Radii = { 10f, 20f, 35f, 55f, 80f, 110f };
+        // Shoreline arrivals remain distributed. These are measurements,
+        // not a fixed set of artificial audio emitters.
+        private static readonly Vector3[] ShoreDir = new Vector3[16];
+        private static readonly float[] ShoreWeight = new float[16];
         private const int Dirs = 16, Height = 300;
         private const float Interval = 1f, Wet = .3f, Surf = 1f, Follow = .05f;
         private static NativeArray<RaycastCommand> s_cmds;
         private static NativeArray<RaycastHit> s_hits;
         private static JobHandle s_job;
         private static bool s_pending, s_have;
-        private static float s_next, s_nextCheck, s_lastCast;
+        private static float s_next, s_nextCheck;
         private static Vector3 s_lastCastPosition;
         private static bool s_everCast;
         private static int s_skippedStationary;
+        // World edits and terrain changes invalidate a known shoreline
+        // location; stationary listeners do not need time-based recasts.
+        internal static void Invalidate()
+        {
+            s_everCast = false;
+            s_next = 0f;
+            SeaZones.Clear();
+        }
         private static Vector3 s_from, s_point;
         private static int s_mask;
+        // Zone coordinates can repeat in different worlds. Cached sea-zone
+        // classifications belong to the ZoneSystem that produced them.
+        private static ZoneSystem s_zoneSystem;
 
         private static void Postfix(AudioMan __instance)
         {
@@ -40,18 +55,34 @@ namespace WiresAcoustics
             if (!Plugin.Enabled.Value || src == null) { Shutdown(); return; }
             AudioListener l = __instance.GetActiveAudioListener();
             if (l == null || ZoneSystem.instance == null) return;
-            if (s_pending) { s_job.Complete(); s_pending = false; Read(); }
+            if (!ReferenceEquals(s_zoneSystem, ZoneSystem.instance))
+            {
+                if (s_pending) { s_job.Complete(); s_pending = false; }
+                s_zoneSystem = ZoneSystem.instance;
+                SeaZones.Clear();
+                s_have = false; s_everCast = false; s_next = 0f;
+                RestoreUnlocated(src);
+            }
+            if (s_pending && s_job.IsCompleted)
+            {
+                s_job.Complete(); s_pending = false;
+                bool wasLocated = s_have;
+                Read();
+                if (wasLocated && !s_have) RestoreUnlocated(src);
+            }
             float now = Time.time;
-            if (now >= s_next)
+            // The same native result arrays cannot be reused while
+            // their previous RaycastCommand job is still running.
+            if (!s_pending && now >= s_next)
             {
                 s_next = now + Interval;
                 bool audible = src.isPlaying && src.volume > .001f;
                 bool moved = !s_everCast ||
                     (l.transform.position - s_lastCastPosition).sqrMagnitude > 1.5f * 1.5f;
-                if (audible && (moved || now - s_lastCast >= 4f))
+                if (audible && moved)
                 {
                     Cast(l.transform.position);
-                    s_lastCast = now; s_lastCastPosition = l.transform.position;
+                    s_lastCastPosition = l.transform.position;
                     s_everCast = true;
                 }
                 else s_skippedStationary++;
@@ -61,7 +92,7 @@ namespace WiresAcoustics
                 // the walls and openings between you and the sea, 4 times a second: stepping on and off
                 // a wall changes them quickly
                 s_nextCheck = now + .25f;
-                AcousticFilter f = src.GetComponent<AcousticFilter>() ?? src.gameObject.AddComponent<AcousticFilter>();
+                AcousticFilter f = AcousticFilter.For(src);
                 f.Kind = AcousticFilter.Kinds.Ocean;
                 f.Placed = true;
                 f.Physical(Plugin.RealDistance.Value, true); // the shore is a line
@@ -74,6 +105,23 @@ namespace WiresAcoustics
             }
             // after vanilla's own move toward its zone average: toward the real shore instead
             if (s_have) src.transform.position = Vector3.Lerp(src.transform.position, s_point, Follow);
+        }
+
+        // No shoreline was found in the current measurement. Stop steering
+        // the HRTF toward the last known shore and return the original
+        // source rolloff while vanilla continues managing the ocean sound.
+        // Do not stop/restart playback or create a new AudioSource.
+        private static void RestoreUnlocated(AudioSource src)
+        {
+            if (src == null) return;
+            AcousticFilter f = src.GetComponent<AcousticFilter>();
+            if (f == null || f.Kind != AcousticFilter.Kinds.Ocean) return;
+            f.Routed = false;
+            f.RoutePoint = Vector3.zero;
+            f.Width = f.BaseWidth;
+            f.Set(1f, 22000f, false);
+            f.Physical(false);
+            s_exposure = 1f;
         }
 
         // What's between you and the sea. The sea is a whole shoreline, not a point: one ray to the
@@ -91,12 +139,35 @@ namespace WiresAcoustics
             Vector3 flat = new Vector3(d.x, 0f, d.z);
             if (dist < .1f || flat.sqrMagnitude < 1e-4f) { f.Set(1f, 22000f, false); f.Routed = false; return; }
             flat.Normalize();
-            float open = Room.Exposure(flat, out Vector3 way);
+            // The sea can be visible on several sides. An isolated post
+            // toward the weighted-average bearing must not muffle the
+            // entire ocean. Evaluate how sheltered EACH observed shoreline
+            // arrival is, reusing the room's already measured rays.
+            Vector3 way = Vector3.zero;
+            float open = 0f, total = 0f;
+            for (int i = 0; i < Dirs; i++)
+            {
+                float weight = ShoreWeight[i];
+                if (weight <= 0f) continue;
+                float exposure = Room.Exposure(ShoreDir[i], out Vector3 via);
+                open += exposure * weight;
+                total += weight;
+                way += (via.sqrMagnitude > 1e-6f ? via : ShoreDir[i]) *
+                    (exposure * weight);
+            }
+            if (total > 1e-8f)
+            {
+                open /= total;
+                if (way.sqrMagnitude > 1e-6f) way.Normalize();
+            }
+            else open = Room.Exposure(flat, out way);
+            // Room rays are updated asynchronously; smooth their response
+            // at the existing shade-update cadence.
             s_exposure = Mathf.Lerp(s_exposure, open, .5f);
-            float s = Plugin.Occlusion.Value ? Mathf.Clamp(Plugin.OcclusionStrength.Value, 0f, 1.5f) : 0f;
+            float s = AcousticMath.OcclusionStrength;
             float k = Mathf.Min(1f, s);
             float gain = Mathf.Lerp(1f, Mathf.Lerp(Sheltered, 1f, s_exposure), k);
-            float cut = Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(Mathf.Lerp(Occlusion.WallCut, 22000f, s_exposure)), k));
+            float cut = AcousticMath.LogLerp(22000f, Mathf.Lerp(Occlusion.WallCut, 22000f, s_exposure), k);
             f.Set(gain, cut, false);
             f.Routed = way.sqrMagnitude > 0f;
             f.RoutePoint = listener + Vector3.Slerp(d / dist, way.sqrMagnitude > 0f ? way : d / dist, .5f) * dist;
@@ -104,14 +175,10 @@ namespace WiresAcoustics
 
         private static void Cast(Vector3 from)
         {
-            if (!s_cmds.IsCreated)
-            {
-                s_cmds = new NativeArray<RaycastCommand>(Dirs * Radii.Length, Allocator.Persistent);
-                s_hits = new NativeArray<RaycastHit>(Dirs * Radii.Length, Allocator.Persistent);
-            }
+            RayJobs.EnsureFixed(ref s_cmds, ref s_hits, Dirs * Radii.Length);
             if (s_mask == 0) s_mask = LayerMask.GetMask("terrain");
             s_from = from;
-            var q = new QueryParameters(s_mask, false, QueryTriggerInteraction.Ignore, false);
+            var q = RayJobs.Query(s_mask);
             float top = ZoneSystem.instance.m_waterLevel + Height;
             for (int d = 0, i = 0; d < Dirs; d++)
             {
@@ -123,8 +190,7 @@ namespace WiresAcoustics
                     s_cmds[i++] = new RaycastCommand(new Vector3(p.x, top, p.z), Vector3.down, q, Height * 2f);
                 }
             }
-            s_job = RaycastCommand.ScheduleBatch(s_cmds, s_hits, 16, 1);
-            JobHandle.ScheduleBatchedJobs();
+            s_job = RayJobs.Submit(s_cmds, s_hits, 16, 1);
             s_pending = true;
         }
 
@@ -138,6 +204,7 @@ namespace WiresAcoustics
             float sea = ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : 30f;
             Vector3 way = Vector3.zero, nearestDir = Vector3.zero;
             float weight = 0f, dist = 0f, nearest = float.MaxValue;
+            for (int d = 0; d < Dirs; d++) ShoreWeight[d] = 0f;
             for (int d = 0; d < Dirs; d++)
                 for (int k = 0; k < Radii.Length; k++)
                 {
@@ -147,6 +214,8 @@ namespace WiresAcoustics
                     float r = flat.magnitude;
                     if (r < .01f) break;
                     float w = 1f / (Radii[k] * Radii[k]);
+                    ShoreDir[d] = flat / r;
+                    ShoreWeight[d] = w;
                     way += flat / r * w;
                     dist += r * w;
                     weight += w;
@@ -186,12 +255,17 @@ namespace WiresAcoustics
         {
             if (s_pending) { s_job.Complete(); s_pending = false; }
             s_have = false; s_everCast = false; s_next = 0f;
+            s_nextCheck = 0f;
+            s_zoneSystem = null;
+            SeaZones.Clear();
+            Around = 0f; s_exposure = 1f;
+            for (int i = 0; i < Dirs; i++) ShoreWeight[i] = 0f;
         }
 
         internal static void Dispose()
         {
             Shutdown();
-            if (s_cmds.IsCreated) { s_cmds.Dispose(); s_hits.Dispose(); }
+            RayJobs.Dispose(ref s_cmds, ref s_hits);
         }
 
         internal static string Summary()

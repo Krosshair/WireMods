@@ -32,6 +32,10 @@ namespace WiresAcoustics
         private static readonly AccessTools.FieldRef<VisEquipment, GameObject> LeftShown =
             AccessTools.FieldRefAccess<VisEquipment, GameObject>("m_leftItemInstance");
         private static readonly Collider[] Near = new Collider[16];
+        // Identity attribution in dense bases can encounter many colliders
+        // at one pivot. Use a separate, reusable larger buffer rather than
+        // silently accepting the first 16 arbitrary PhysX hit results.
+        private static readonly Collider[] RootNear = new Collider[64];
         private static int s_mask;
         private static int Mask => s_mask != 0 ? s_mask
             : (s_mask = LayerMask.GetMask("piece", "piece_nonsolid", "Default", "Default_small", "static_solid", "vehicle"));
@@ -70,11 +74,38 @@ namespace WiresAcoustics
                     Transform hand = h != null ? WeaponHand(h, list) ?? ItemSound(h, list) : null;
                     Transform limb = hand ?? h?.GetComponent<VisEquipment>()?.m_rightHand;
                     Transform head = ch.m_eye;
+                    // The swung weapon has an actual rendered blade/head
+                    // extending from the hand. Resolve its mesh bounds once
+                    // per attack event, not once per audio frame or ray.
+                    Transform weaponVisual = h != null ? WeaponVisual(h, list) : null;
+                    Vector3 weaponMid = default;
+                    bool weaponArea = weaponVisual != null &&
+                        Area.WeaponCenterOf(weaponVisual, out weaponMid);
                     foreach (GameObject go in made)
                     {
                         ZSFX z = go != null ? go.GetComponent<ZSFX>() : null;
                         if (z == null) continue;
                         Kind k = call ? Kind.Voice : KindOf(z);
+                        if (k == Kind.Limb && weaponArea &&
+                            (go.transform.parent == null || go.transform.parent == root))
+                        {
+                            // A swoosh is produced along the moving weapon,
+                            // not at a point in the palm or across the entire
+                            // character body. Keep event position on the
+                            // weapon and its locally cached visual extent.
+                            MoveOne(go, root, weaponMid, weaponVisual);
+                            AudioSource source = go.GetComponent<AudioSource>();
+                            if (source != null)
+                            {
+                                AcousticFilter af = AcousticFilter.For(source);
+                                af.WeaponSource = true;
+                                af.LocalizedEvent = false;
+                                af.ShapeRoot = weaponVisual;
+                                af.AreaKnown = false;
+                            }
+                            Note(go, "weapon sweep -> " + weaponVisual.name);
+                            continue;
+                        }
                         Transform to = k == Kind.Voice ? head
                             : k == Kind.Limb ? (limb ?? head)
                             : k == Kind.Ground ? null
@@ -91,11 +122,24 @@ namespace WiresAcoustics
                 return;
             }
             if (given != null || baseParent != null) return;
+            if (TalkerAt(basePos, out Transform talker, out Vector3 mouth))
+            {
+                given = talker;
+                Move(made, null, mouth, null);
+                Note(talker.name + " head", made);
+                return;
+            }
             Transform piece = PieceAt(basePos);
             if (piece == null) return;
             if (StationPart(list, made, basePos, piece, ref given)) return;
             given = piece;
             Vector3 at;
+            if (PartOf(list, piece, out at, out string part))
+            {
+                Move(made, null, at, null);
+                Note(piece.name + " " + part, made);
+                return;
+            }
             bool door = piece.GetComponent<Door>() != null;
             bool known = door ? Hinge(piece, out at)
                 : piece.GetComponent<Container>() != null ? Area.TopOf(piece, out at)
@@ -146,6 +190,20 @@ namespace WiresAcoustics
             return left ? vis.m_leftHand : vis.m_rightHand;
         }
 
+        // An attacking weapon's visible model, not its grip/hand joint. The
+        // real rendered mesh supplies its size; natural claws/unarmed hits
+        // have no shown model and retain the anatomical placement instead.
+        private static Transform WeaponVisual(Humanoid h, EffectList list)
+        {
+            if (!Attacking(h, list)) return null;
+            ItemDrop.ItemData weapon = CurrentAttack(h).GetWeapon();
+            VisEquipment vis = h.GetComponent<VisEquipment>();
+            if (vis == null) return null;
+            GameObject shown = weapon == h.RightItem ? RightShown(vis)
+                : weapon == h.LeftItem ? LeftShown(vis) : null;
+            return shown != null ? shown.transform : null;
+        }
+
         // The hand of the item whose drawing (a bow) or building (a hammer) sound this is, or null.
         private static Transform ItemSound(Humanoid h, EffectList list)
         {
@@ -192,6 +250,18 @@ namespace WiresAcoustics
             Transform t = go.transform;
             if (t.parent != null && t.parent != root) return;
             t.position = at;
+            // This location came from a concrete action (hand, mouth,
+            // hinge, machine switch, impact). Its owner may have a huge
+            // collider, but the sound is emitted AT this event, not across
+            // that entire surface. Keep the marker independent of loop.
+            AudioSource audio = go.GetComponent<AudioSource>();
+            if (audio != null)
+            {
+                AcousticFilter marker = AcousticFilter.For(audio);
+                marker.LocalizedEvent = true;
+                marker.WeaponSource = false;
+                marker.AreaKnown = false;
+            }
             if (bone == null) return;
             if (Follow.Networked(go)) Follow.Track(t, bone); // never attach a networked object
             else t.SetParent(bone, true);
@@ -218,6 +288,49 @@ namespace WiresAcoustics
             Vector3 hinge = leaf.position - flat.normalized * Mathf.Min(.15f, flat.magnitude);
             at = new Vector3(hinge.x, y, hinge.z);
             return true;
+        }
+
+        // Pieces whose sound happens at one part of them, not their middle: a ward's glowing head, the
+        // top of a map table or a feast, a turret's head (where it aims and shoots), a ship's sail
+        // being set, an incinerator's lever.
+        private static bool PartOf(EffectList list, Transform piece, out Vector3 at, out string part)
+        {
+            at = default; part = null;
+            if (piece.GetComponent<PrivateArea>() != null || piece.GetComponent<MapTable>() != null || piece.GetComponent<Feast>() != null)
+            { part = "top"; return Area.TopOf(piece, out at); }
+            Turret turret = piece.GetComponent<Turret>();
+            if (turret != null && turret.m_eye != null) { part = "head"; at = turret.m_eye.transform.position; return true; }
+            Ship ship = piece.GetComponent<Ship>();
+            if (ship != null && list == ship.m_changeSailPosEffect && ship.m_sailObject != null &&
+                ship.m_sailObject.GetComponentInChildren<Renderer>() is Renderer sail)
+            { part = "sail"; at = sail.bounds.center; return true; }
+            Incinerator inc = piece.GetComponent<Incinerator>();
+            if (inc != null && list == inc.m_leverEffects && inc.m_leverAnim != null)
+            { part = "lever"; at = inc.m_leverAnim.transform.position; return true; }
+            return false;
+        }
+
+        // Traders and other talking figures (Haldor, Hildir, the Bog Witch, Odin) play their voices
+        // at their feet: moved to the head (their rig's head bone; none on a rig without one).
+        private static bool TalkerAt(Vector3 p, out Transform who, out Vector3 head)
+        {
+            who = null; head = default;
+            int n = Physics.OverlapSphereNonAlloc(p, .5f, RootNear, ~0, QueryTriggerInteraction.Collide);
+            for (int i = 0; i < n; i++)
+            {
+                Collider c = RootNear[i];
+                if (c == null) continue;
+                Transform root = c.transform.root;
+                if ((root.position - p).sqrMagnitude >= 1e-4f) continue;
+                if (root.GetComponentInChildren<Trader>() == null && root.GetComponentInChildren<NpcTalk>() == null &&
+                    root.GetComponentInChildren<RandomSpeak>() == null && root.GetComponentInChildren<Odin>() == null) continue;
+                Animator a = root.GetComponentInChildren<Animator>();
+                Transform bone = a != null && a.isHuman ? a.GetBoneTransform(HumanBodyBones.Head) : null;
+                if (bone == null) return false;
+                who = root; head = bone.position;
+                return true;
+            }
+            return false;
         }
 
         // Stations play the sound of what you put in or take out at their own pivot (Smelter,
@@ -249,19 +362,38 @@ namespace WiresAcoustics
             return true;
         }
 
-        // The piece (or other networked object) whose pivot is exactly here.
+        // A sound spawned at an unowned pivot can only be attributed to
+        // a building piece when exactly ONE matching object owns that pivot.
+        // Physics.OverlapSphereNonAlloc returns colliders in unspecified
+        // order: accepting the first match made sound origins jump between
+        // overlapping walls, doors and machines in dense Valheim bases.
         private static Transform PieceAt(Vector3 p)
         {
-            int n = Physics.OverlapSphereNonAlloc(p, .5f, Near, Mask, QueryTriggerInteraction.Ignore);
+            int n = Physics.OverlapSphereNonAlloc(p, .5f, RootNear, Mask,
+                                                 QueryTriggerInteraction.Ignore);
+            // If the result buffer filled, another same-pivot owner may have
+            // been omitted. Leave the source at its authored position.
+            if (n == RootNear.Length) return null;
+            Transform found = null;
             for (int i = 0; i < n; i++)
             {
-                Collider c = Near[i];
+                Collider c = RootNear[i];
                 if (c == null) continue;
                 ZNetView nv = c.GetComponentInParent<ZNetView>();
-                Transform r = nv != null ? nv.transform : c.transform.root;
-                if ((r.position - p).sqrMagnitude < 1e-4f && r.GetComponent<Character>() == null) return r;
+                Transform root = nv != null ? nv.transform : c.transform.root;
+                if ((root.position - p).sqrMagnitude >= 1e-4f ||
+                    root.GetComponent<Character>() != null) continue;
+                // Do not silently attach world ambience, creatures or
+                // arbitrary effects to a nearby unrelated networked prop.
+                if (root.GetComponent<Piece>() == null &&
+                    root.GetComponent<Container>() == null &&
+                    root.GetComponent<Fireplace>() == null &&
+                    root.GetComponent<Door>() == null &&
+                    root.GetComponent<CraftingStation>() == null) continue;
+                if (found != null && found != root) return null;
+                found = root;
             }
-            return null;
+            return found;
         }
 
         // The back slot an item goes to when put away (VisEquipment.AttachBackItem), or null.

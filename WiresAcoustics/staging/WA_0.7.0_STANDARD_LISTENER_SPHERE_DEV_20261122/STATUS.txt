@@ -1,0 +1,9 @@
+WIRE'S ACOUSTICS 0.7.0 — INDUSTRY-REFERENCE LOCAL DEVELOPMENT BUILD
+SHA256: C4FF795AAE05FC0490AF992836CAA46FCC477E7484C8EC60B736E0FA1BCE163C
+Listener POSITION = Valheim's AudioListener/player head; orientation = camera.
+Source volume = documented Steam Audio sphere sampling with actual source
+position and authored/fitted sphere radius; source sampling adaptive 4..32.
+0.30m default for unshaped sounds is CONFIGURABLE, not an acoustic constant.
+Full regression PASS. NOT game profiled/listened. NOT a public release.
+Rollback after closing game:
+C:\Users\kajet\WireMods\WiresAcoustics\backup\STANDARD_LISTENER_SPHERE_20261122\Restore.ps1

@@ -18,18 +18,32 @@ namespace WiresAcoustics
         internal const float SourceClearance = .05f; // a ray stops just short of the sound (what makes it is left out by Counts)
         internal const float Twin = .08f; // the two rays beside each line: a seam between pieces is a centimetre or two
         private static int s_checked, s_muffled, s_added, s_loopChecks;
+        private static int s_openProxyHits, s_saturatedRayBuffers;
         private static float s_worstOcc;
         private static string s_worst;
 
         // A new sound's wall check came back (Starts): the rest of its start, with that answer.
         private static bool s_resume;
-        private static float s_resumeOcc;
+        private static float s_resumeOcc, s_resumeGain, s_resumeCutoff, s_resumeCoverage;
+        private static bool s_resumeHasSpectrum;
         private static Block s_resumeBlock;
         internal static void Resume(ZSFX z, AudioSource src, float occ, Block block)
         {
-            s_resume = true; s_resumeOcc = occ; s_resumeBlock = block;
+            s_resume = true; s_resumeHasSpectrum = false;
+            s_resumeOcc = occ; s_resumeBlock = block;
             try { Run(z, src); }
-            finally { s_resume = false; }
+            finally { s_resume = false; s_resumeHasSpectrum = false; }
+        }
+
+        internal static void Resume(ZSFX z, AudioSource src, float occ, Block block,
+                                    float gain, float cutoff, float coverage)
+        {
+            s_resume = true; s_resumeHasSpectrum = true;
+            s_resumeOcc = occ; s_resumeBlock = block;
+            s_resumeGain = gain; s_resumeCutoff = cutoff;
+            s_resumeCoverage = coverage;
+            try { Run(z, src); }
+            finally { s_resume = false; s_resumeHasSpectrum = false; }
         }
 
         private static void Postfix(ZSFX __instance, AudioSource ___m_audioSource)
@@ -73,7 +87,7 @@ namespace WiresAcoustics
             AudioListener listener = AudioMan.instance != null ? AudioMan.instance.GetActiveAudioListener() : null;
             if (listener == null) return;
 
-            Vector3 from = listener.transform.position, to = __instance.transform.position; // how far: from your head (the game's listener); what's in the way: from the camera (Hearing.Eye)
+            Vector3 from = listener.transform.position, to = __instance.transform.position; // how far: from your head (the game's listener); occlusion and distance use the acoustic listener
             Vector3 d = to - from;
             float dist = d.magnitude;
             Mist.Undo(__instance, src, dist); // no pitch drop in the mist
@@ -86,8 +100,22 @@ namespace WiresAcoustics
 
             bool hrtf = Plugin.Hrtf.Value;
             bool under = Underwater.Muffles(to, __instance.transform);
-            bool inWater = Underwater.ListenerBelow && Underwater.Below(to);
+            float inWater = Underwater.SubmergedAmount(to);
             bool starting = !src.isPlaying;
+            // ZSFX/AudioSource instances may be reused. Never carry a cached
+            // wall from an earlier sound incarnation into a new playback.
+            if (starting && f != null)
+            {
+                f.Interacted = f.MadeByYou || Interaction.From(to, __instance.transform);
+                // A pooled/restarted source needs current owner geometry
+                // before its very first occlusion rays and HRTF width.
+                f.AreaKnown = false;
+                f.AnalyticActive = false;
+                f.AnalyticPoseValid = false;
+                f.AnalyticHasPortal = false;
+                f.AnalyticWall = null;
+                f.AnalyticIndirectGain = 0f;
+            }
             // A sound starting now gets its direct ray at once and jumps to it (a frame late would let
             // its start through the wall). If walls are in the way, the paths round them (openings,
             // corners) go to the worker threads (Batch) and it glides open if one is better. A playing
@@ -103,14 +131,13 @@ namespace WiresAcoustics
             // your own body, so no check (three rays each, at every step)
             float occ = 0f;
             if (s_resume) { occ = s_resumeOcc; block = s_resumeBlock; } // its check is in (Starts)
-            else if (starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f))
+            else if (starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f) && !(f != null && f.Interacted && Interaction.InReach(to)))
             {
                 // what's in the way, from the camera (Hearing), on the worker threads; it starts next
-                // frame with the answer. You can see the thing it comes from: no muffle. The sound's
-                // spot can be hidden while the thing isn't (a chest's lid under the chest stacked on
-                // it, its side right in front of you), so the side of its box facing you goes too.
+                // frame with the answer. From the sound's own spot only: its own object never counts
+                // (Counts), and what you're using is clear (Interaction).
                 Own = null;
-                Starts.Hold(__instance, src, to, f != null && f.ShapeRoot != null && f.AreaRadius > 0f ? FacingPoint(f, Hearing.Eye) : (Vector3?)null);
+                Starts.Hold(__instance, src, to);
                 return;
             }
             Own = null;
@@ -120,7 +147,7 @@ namespace WiresAcoustics
             if (f == null) { f = __instance.gameObject.AddComponent<AcousticFilter>(); s_added++; }
             f.Kind = AcousticFilter.Kinds.Sfx;
             f.Placed = true;
-            f.InWater = inWater;
+            f.InWaterAmount = inWater;
             // The game's random ambience (a bird, a gust, an insect somewhere round you) is placed at a
             // made-up spot 5 to 20 m off with its own gentle fall-off: it stands for the world around
             // you, not one creature, so it keeps that (on a real distance curve it was 15 to 20 dB
@@ -135,15 +162,26 @@ namespace WiresAcoustics
             {
                 f.StartedAt = Time.time;
                 f.LastOcc = occ;
+                f.LastCoverage = s_resumeHasSpectrum ? s_resumeCoverage :
+                                 (block.Walls > 0 || block.Terrain || block.Soft > 0f ? 1f : 0f);
+                f.AcousticPath = f.LastCoverage <= 0f ? "start/clear" :
+                                 f.LastCoverage < 1f ? "start/partial" : "start/through";
+                f.AcousticRouteCount = 0;
+                f.AcousticResolvedAt = Time.time;
+                f.AcousticGeneration = WorldGen;
                 f.Walls = Corners.From(block);
-                Wall(block, out gain, out cutoff);
+                if (s_resumeHasSpectrum) { gain = s_resumeGain; cutoff = s_resumeCutoff; }
+                else Wall(block, out gain, out cutoff);
                 f.Routed = false;
+                f.RouteSpread = 0f;
                 f.RoutePoint = to;
-                if (under) { gain *= Underwater.Gain; cutoff = Mathf.Min(cutoff, Underwater.Cutoff); } // the sound is under water
+                f.UnderAmount = Underwater.SourceAmount(to, __instance.transform);
+                Underwater.Apply(ref gain, ref cutoff, f.UnderAmount);
                 f.DistanceGain = f.PastRange(dist);
                 f.AirCutoff = AcousticFilter.AirAt(dist);
                 f.Set(gain, cutoff, true);
-                if (occ >= .3f && f.Active) Batch.Enqueue(f, to, under, reverb);
+                if (f.Active && f.Walls.Near)
+                    Batch.Enqueue(f, to, under, reverb);
             }
             // the game's once-a-second call for a playing loop: a watched loop is checked on its own (WatchLoop)
             else if (f.Active && !f.WatchLoop) Batch.Enqueue(f, to, under, reverb);
@@ -199,18 +237,6 @@ namespace WiresAcoustics
         // hairline gap between their colliders, and one ray that happened to run along it got through
         // a closed wall as if it were open; three rays 8 cm apart can't all find it. A real gap a
         // sound gets through (a door left ajar) is wider than that.
-        // The point of the source's box nearest the eye: the side of it you'd see, 2 cm inside.
-        private static Vector3 FacingPoint(AcousticFilter f, Vector3 eye)
-        {
-            // the box: its middle kept in the object's space, its size along the world's axes (Area)
-            Vector3 c = f.ShapeRoot.TransformPoint(f.ShapeCenter);
-            Vector3 h = f.ShapeHalf - new Vector3(.02f, .02f, .02f);
-            Vector3 p = eye - c;
-            return c + new Vector3(Mathf.Clamp(p.x, -Mathf.Max(0f, h.x), Mathf.Max(0f, h.x)),
-                                   Mathf.Clamp(p.y, -Mathf.Max(0f, h.y), Mathf.Max(0f, h.y)),
-                                   Mathf.Clamp(p.z, -Mathf.Max(0f, h.z), Mathf.Max(0f, h.z)));
-        }
-
         // The offsets of the two lines beside one from a to b: sideways and up, square to it.
         internal static void Lines(Vector3 a, Vector3 b, out Vector3 side, out Vector3 up)
         {
@@ -220,15 +246,6 @@ namespace WiresAcoustics
             side = side.normalized;
             up = Vector3.Cross(d, side).normalized;
             side *= Twin; up *= Twin;
-        }
-
-        // Which of three lines lets the middle amount through (what two of them agree on).
-        internal static int Median(in Block b0, in Block b1, in Block b2)
-        {
-            Wall(b0, out float g0, out _); Wall(b1, out float g1, out _); Wall(b2, out float g2, out _);
-            if ((g0 >= g1 && g0 <= g2) || (g0 <= g1 && g0 >= g2)) return 0;
-            if ((g1 >= g0 && g1 <= g2) || (g1 <= g0 && g1 >= g2)) return 1;
-            return 2;
         }
 
         // The hits on one line, nearest first, as layers. A wall in Valheim is several colliders (the
@@ -266,6 +283,8 @@ namespace WiresAcoustics
                 if (!s.Wall && !s.Ground) { Group(s, w); continue; } // an obstacle: once per object, below
                 if (!Layer(s, w, from, to, hits[i].distance, ref b)) continue;
                 if (s.Wall)
+                    b.FirstBox = b.Walls == 1 && s.C is BoxCollider ? s : null;
+                if (s.Wall && !s.AcousticProxy)
                 {
                     // the wall nearest each end, for the edges round them (Corners)
                     if (!b.HasWall) { b.HasWall = true; b.NearAt = hits[i].point; b.NearN = hits[i].normal; b.NearGain = s.First; }
@@ -281,18 +300,17 @@ namespace WiresAcoustics
                 if (Diffraction.RoundObstacle(GroupBox[g], from, to, out float gain, out float cut))
                 {
                     b.BendGain *= gain;
-                    b.BendCut = Mathf.Min(b.BendCut, cut);
+                    b.BendHigh *= SpectralPaths.Response(cut);
                 }
                 else b.Soft += GroupW[g]; // you or the sound inside its box: the old weight
                 occ += GroupW[g];
             }
-            if (full && b.Walls == 0)
-            {
-                b.Walls = 1;
-                b.Through *= Mathf.Pow(10f, -15f / 20f);
-                b.ThroughCut = Mathf.Min(b.ThroughCut, WallCut);
-                occ = Mathf.Max(occ, 1f);
-            }
+            if (full && Plugin.DebugLog.Value) s_saturatedRayBuffers++;
+            // A saturated physics hit buffer does not prove that an
+            // additional acoustic wall exists. Do not fabricate a 15 dB
+            // wall when the recorded hits are open-frame collider proxies.
+            // The capacity limit is observable as a diagnostic, not a
+            // material/transmission coefficient.
             return occ;
         }
 
@@ -303,6 +321,10 @@ namespace WiresAcoustics
         internal static Transform Own;
         internal static float Counts(Solids.Info s, Vector3 to)
         {
+            if (s.AcousticProxy && Plugin.DebugLog.Value) s_openProxyHits++;
+            // Open panel is a physical composite surface, never entirely
+            // absent; its open area and solid transmission are combined
+            // by energy, rather than an all-clear/all-blocked switch.
             if (Own != null && s.Root == Own) return 0f;
             Bounds b = Solids.BoxOf(s);
             b.Expand(.3f);
@@ -343,86 +365,81 @@ namespace WiresAcoustics
             if (f != null) Area.Measure(f, z.transform);
             string how = src.spatialBlend < .5f ? (Ambience.IsAmbient(src) ? "ambience (muffled by how enclosed you are)" : "unplaced, left as the game plays it") : "placed";
             string shape = f != null && f.AreaRadius > 0f ? ", shape " + (2f * f.AreaRadius).ToString("F1") + " m wide" : "";
-            Plugin.Log.LogInfo("[acoustics] sound " + n + ": " + how + "; blend " + src.spatialBlend.ToString("F2") + ", " +
+            string domain = f == null ? "untracked point" : f.LocalizedEvent ? "localized point" :
+                f.WeaponSource ? "visual weapon" : f.FireLoop ? "fire/flame" :
+                f.AreaRadius > 0f ? "volume" : "point";
+            string owner = f != null && f.ShapeRoot != null ? f.ShapeRoot.name : "none";
+            Plugin.Log.LogInfo("[acoustics] sound " + n + ": " + how +
+                "; emission " + domain + ", owner " + owner +
+                "; blend " + src.spatialBlend.ToString("F2") + ", " +
                 (src.outputAudioMixerGroup != null ? src.outputAudioMixerGroup.name : "no mixer group") + ", " + src.rolloffMode + " " +
                 src.minDistance.ToString("F0") + "-" + src.maxDistance.ToString("F0") + " m, spread " +
                 src.spread.ToString("F0") + ", volume " + src.volume.ToString("F2") + shape);
         }
 
-        // Walls, floors, roofs and doors as real ones measure. A wall's mass alone (the mass law) would
-        // block far more than any real wall does: real ones leak through joints, gaps and the
-        // structure, and the leaks carry the detail. So each is the closest construction that has been
-        // measured, by its sound transmission class (STC), spread over frequency with the measured
-        // average shape (Engineering ToolBox: -9 dB at 125 Hz, -5 at 250, -1 at 500, +3 at 1k, +7 at
-        // 2k, +11 at 4k against the rating):
-        //  - wood: bare cross-laminated timber walls, STC 33 at 78 mm and 38 at 175 mm thick
-        //    (WoodWorks, Mass Timber Acoustics), by the piece's thickness between those, never past them;
-        //  - doors: a solid-core wood door, STC 30 to 35 (Commercial Acoustics), the lower end;
-        //  - stone and marble: 230 mm brickwork plastered both sides, STC 55 (Engineering ToolBox), the
-        //    heaviest measured;
-        //  - iron and ice: nothing measured found, so the mass law: TL = 20 lg(m f) - 48 (random
-        //    incidence; Warnock, NRC Canadian Building Digest 239, 1985).
-        // Those measured losses are for real walls between real rooms: through two or three of them a
-        // sound was simply gone (a hearth in the next house at -120 dB). Here the first wall a sound
-        // comes through takes 12 to 22 dB, by how heavy it is (15 for a plank wall, 22 for stone), and
-        // each wall after it 6 dB more and duller, so the next room is muffled, not silent. A choice
-        // for the game, not from a source; the measurements above only set which walls are heavier.
-        // Each wall's low-pass takes the measured shape's extra loss from 125 Hz to 2 kHz.
-        // The measured shape's extra 16 dB from 125 Hz to 2 kHz, through the filter that runs: two
-        // one-pole stages, each at WallCut x 1.5538 (AcousticFilter), so the loss is
-        // 20 lg(1 + (f / fs)^2). (1 + (2000/fs)^2) / (1 + (125/fs)^2) = 10^0.8 gives fs = 857.2 Hz,
-        // WallCut = 857.2 / 1.5538. It was 318.3 Hz, worked out for one stage: through the two that
-        // run, a wall took 25 dB extra at 2 kHz and 36 at 4 kHz instead of the measured 16 and 20.
+        // Ambient-shelter low-pass remains separate from material transmission.
         internal const float WallCut = 551.7f;
-        private const float MassCut = 50f;
-        internal static float MassLaw(float m) => m <= 0f ? 1f : Mathf.Min(1f, Mathf.Pow(10f, 48f / 20f) / MassCut / m);
 
-        private const float NextWall = .5f; // each wall after the first: 6 dB
-        // A wall's loss as the first one a sound comes through (amplitude) and its low-pass; anything
-        // that isn't a wall lets everything through (Solids, once per collider).
-        private static void Loss(Solids.Info s, WearNTear part)
+        // Steam Audio C API IPLMaterial preset transmission ENERGY fractions.
+        // WA's existing two-band filter uses low-frequency and mid-band
+        // (~2 kHz) values; it cannot represent Steam Audio's third band.
+        // Valheim material types map to the published Steam Audio presets.
+        internal static void TransmissionEnergy(WearNTear.MaterialType material,
+            out float low, out float mid)
         {
-            Collider c = s.C;
-            if (part == null || !s.Structural || part.name.IndexOf("grate", System.StringComparison.OrdinalIgnoreCase) >= 0) return;
-            float stc = -1f;
-            switch (part.m_materialType)
+            switch (material)
             {
                 case WearNTear.MaterialType.Stone:
                 case WearNTear.MaterialType.Ashstone:
-                case WearNTear.MaterialType.Marble: stc = 55f; break;
+                case WearNTear.MaterialType.Marble:
+                    low = .015f; mid = .002f; return; // rock
                 case WearNTear.MaterialType.Iron:
-                case WearNTear.MaterialType.Ice: break;
+                    low = .200f; mid = .025f; return; // metal
+                case WearNTear.MaterialType.Ice:
+                    low = .060f; mid = .044f; return; // glass proxy
+                case WearNTear.MaterialType.Wood:
+                case WearNTear.MaterialType.HardWood:
+                case WearNTear.MaterialType.Timberwood:
+                case WearNTear.MaterialType.Ancient:
+                    low = .070f; mid = .014f; return; // wood
                 default:
-                    if (c.GetComponentInParent<Door>() != null) stc = 30f;
-                    else
-                    {
-                        float t = Thickness(c);
-                        stc = t <= .078f ? 33f : t >= .175f ? 38f : Mathf.Lerp(33f, 38f, Mathf.Log(t / .078f) / Mathf.Log(.175f / .078f));
-                    }
-                    break;
+                    low = .100f; mid = .050f; return; // Steam Audio generic
             }
-            // how heavy, as the measured loss at 125 Hz, into the game's 12 to 22 dB
-            float lowDb = stc > 0f ? stc - 9f : -20f * Mathf.Log10(Mathf.Max(1e-6f, MassLaw(Mass(c, part))));
-            float firstDb = Mathf.Clamp(15f + .5f * (lowDb - 24f), 12f, 22f);
-            s.First = Mathf.Pow(10f, -firstDb / 20f);
-            s.Cut = WallCut;
-            s.Wall = true;
         }
 
+        // Material transmission per independent wall. Input fractions are
+        // ENERGY, not amplitude. SpectralPaths.Decode fits their low/mid
+        // ratio to the existing two-pole digital filter.
+        private static void Loss(Solids.Info s, WearNTear part)
+        {
+            if (part == null || !s.Structural) return;
+            TransmissionEnergy(part.m_materialType, out float low, out float mid);
+            if (s.AcousticProxy)
+            {
+                // ASHRAE area-weighted composite transmission by ENERGY.
+                // Free aperture fraction phi has unit transmission.
+                float phi = Mathf.Clamp01(s.OpenFraction);
+                low = phi + (1f - phi) * low;
+                mid = phi + (1f - phi) * mid;
+            }
+            SpectralPaths.Decode(low, mid, out s.First, out s.Cut);
+            s.Wall = true;
+        }
         // What one line from the listener to a sound runs through.
         internal struct Block
         {
             internal float Soft;      // rocks, furniture, trees: the old weights (sound bends round them)
-            internal float Through;   // walls (amplitude, Loss: the first one, then 6 dB each)
+            internal float Through;   // product of Steam Audio material transmission amplitudes
             internal int Walls;       // how many walls counted
             internal float LastWall;  // how far along the line the last one was (SameWall)
-            internal float ThroughCut; // and the lowest of their low-passes
+            internal float ThroughHigh; // product of per-layer 2-kHz intensity transfers
             internal bool Terrain;    // the ground is in the way: a hill, worked out over its ridge
-            internal float BendGain, BendCut; // the ridge's loss (Ridge)
+            internal float BendGain, BendHigh; // bend gain and 2-kHz intensity response
             internal bool HasWall;    // where the first and last walls were hit, and how much each takes
             internal Vector3 NearAt, NearN, FarAt, FarN;
+            internal Solids.Info FirstBox; // measured single planar wall collider for analytic source coverage
             internal float NearGain, FarGain;
-            internal static Block Clear => new Block { Through = 1f, ThroughCut = 22000f, BendGain = 1f, BendCut = 22000f, LastWall = -10f };
+            internal static Block Clear => new Block { Through = 1f, ThroughHigh = 1f, BendGain = 1f, BendHigh = 1f, LastWall = -10f };
         }
 
         // One hit: a wall by what it measures, the ground marked for the ridge. False: part of the
@@ -434,8 +451,11 @@ namespace WiresAcoustics
                 if (at - b.LastWall < SameWall) return false;
                 b.LastWall = at;
                 b.Walls++;
-                b.Through *= b.Walls == 1 ? s.First : NextWall;
-                b.ThroughCut = b.Walls == 1 ? Mathf.Min(b.ThroughCut, s.Cut) : Mathf.Max(200f, b.ThroughCut * .7f);
+                b.Through *= s.First;
+                // Serial wall transfers multiply at 2 kHz. Keep the
+                // high-band energy, NOT an approximate cutoff per layer.
+                float layerCut = s.Cut;
+                b.ThroughHigh *= SpectralPaths.Response(layerCut);
                 return true;
             }
             if (s.Ground && !b.Terrain) { b.Terrain = true; b.Soft += w; } // undone by Ridge
@@ -477,7 +497,19 @@ namespace WiresAcoustics
             {
                 float t = i / 16f;
                 Vector3 p = Vector3.Lerp(from, to, t);
-                if (!Heightmap.GetHeight(p, out float h) || h <= p.y) continue;
+                // Heightmap chunks can be transiently invalid while terrain
+                // loads/unloads. Never let one missing height sample abort
+                // the whole audio update. Retain the original soft-ground
+                // transmission if the ridge cannot be measured completely.
+                float h;
+                try
+                {
+                    if (!Heightmap.GetHeight(p, out h) || h <= p.y) continue;
+                }
+                catch (System.ArgumentOutOfRangeException)
+                {
+                    return;
+                }
                 var e = new Vector3(p.x, h, p.z);
                 float delta = (e - from).magnitude + (to - e).magnitude;
                 if (delta > best) { best = delta; edge = e; }
@@ -486,7 +518,7 @@ namespace WiresAcoustics
             b.Soft = Mathf.Max(0f, b.Soft - 1f); // the ground's weight, replaced by the ridge
             Diffraction.Round(from, edge, to, out float g, out float c);
             b.BendGain *= g;
-            b.BendCut = Mathf.Min(b.BendCut, c);
+            b.BendHigh *= SpectralPaths.Response(c);
         }
 
 
@@ -495,56 +527,34 @@ namespace WiresAcoustics
         internal static void Wall(in Block b, out float gain, out float cutoff)
         {
             Muffle(b.Soft, out gain, out cutoff);
-            float s = Plugin.Occlusion.Value ? Mathf.Clamp(Plugin.OcclusionStrength.Value, 0f, 1.5f) : 0f;
-            if (s <= 0f) return;
-            float k = Mathf.Min(1f, s);
+            float s = AcousticMath.OcclusionStrength;
+            if (s <= 0f || (b.Through >= 1f && b.BendGain >= 1f)) return;
+            // Geometry sampling accumulates the low-frequency amplitude
+            // and 2-kHz energy independently. Applying strength as a
+            // logarithmic attenuation exponent scales BOTH bands
+            // consistently. Fit to the actual DSP ONCE per sound route.
+            float dc = gain * gain;
+            float high = SpectralPaths.HighEnergy(gain, cutoff);
             if (b.Through < 1f)
             {
-                gain *= Mathf.Pow(b.Through, s);
-                cutoff = Mathf.Min(cutoff, Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(b.ThroughCut), k)));
+                float g = Mathf.Pow(b.Through, s);
+                float energy = g * g;
+                dc *= energy;
+                high *= energy * Mathf.Pow(b.ThroughHigh, s);
             }
             if (b.BendGain < 1f)
             {
-                gain *= Mathf.Pow(b.BendGain, s);
-                cutoff = Mathf.Min(cutoff, Mathf.Exp(Mathf.Lerp(Mathf.Log(22000f), Mathf.Log(b.BendCut), k)));
+                float g = Mathf.Pow(b.BendGain, s);
+                float energy = g * g;
+                dc *= energy;
+                high *= energy * Mathf.Pow(b.BendHigh, s);
             }
-        }
-
-        // kg per square metre of a building piece (iron and ice walls, the mass law): its material's
-        // density times its thickness (the thinnest side of its collider).
-        private static float Mass(Collider c, WearNTear part)
-        {
-            float density;
-            switch (part.m_materialType)
-            {
-                case WearNTear.MaterialType.Stone:
-                case WearNTear.MaterialType.Ashstone: density = 2400f; break; // stone masonry
-                case WearNTear.MaterialType.Marble: density = 2700f; break;
-                case WearNTear.MaterialType.Iron: density = 7870f; break;
-                case WearNTear.MaterialType.Ice: density = 917f; break;
-                case WearNTear.MaterialType.HardWood:
-                case WearNTear.MaterialType.Timberwood:
-                case WearNTear.MaterialType.Ancient: density = 700f; break; // hardwood
-                default: density = 500f; break; // softwood (pine, spruce)
-            }
-            return density * Thickness(c);
-        }
-
-        private static float Thickness(Collider c)
-        {
-            Vector3 scale = c.transform.lossyScale;
-            scale = new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
-            Vector3 size;
-            if (c is BoxCollider box) size = Vector3.Scale(box.size, scale);
-            else if (c is MeshCollider mc && mc.sharedMesh != null) size = Vector3.Scale(mc.sharedMesh.bounds.size, scale);
-            else size = c.bounds.size;
-            float t = Mathf.Min(size.x, Mathf.Min(size.y, size.z));
-            return Mathf.Clamp(t, .02f, 2f);
+            SpectralPaths.Decode(dc, high, out gain, out cutoff);
         }
 
         internal static void Muffle(float occ, out float gain, out float cutoff)
         {
-            float s = Plugin.Occlusion.Value ? Mathf.Clamp(Plugin.OcclusionStrength.Value, 0f, 1.5f) : 0f;
+            float s = AcousticMath.OcclusionStrength;
             float x = Mathf.Clamp(occ, 0f, Gain.Length - 1);
             int i = Mathf.Min((int)x, Gain.Length - 2);
             float t = x - i;
@@ -574,7 +584,7 @@ namespace WiresAcoustics
                 f.Placed = placed;
                 Budget.Note(f, (f.transform.position - listener).magnitude);
                 if (!placed) { f.Set(1f, 22000f, false); f.AirCutoff = 22000f; continue; }
-                f.InWater = Underwater.ListenerBelow && Underwater.Below(f.transform.position);
+                f.InWaterAmount = Underwater.SubmergedAmount(f.transform.position);
                 Batch.Enqueue(f, f.transform.position, Underwater.Muffles(f.transform.position, f.transform), false);
             }
         }
@@ -616,15 +626,15 @@ namespace WiresAcoustics
                 if (f.Kind == AcousticFilter.Kinds.Sfx && now - f.StartedAt < .4f) continue;
                 Vector3 at = f.transform.position;
                 // a longer one-off (a roar): checked again only when it could sound different, as loops
-                if (Unchanged(f, at, Hearing.Eye, now)) continue;
-                f.InWater = Underwater.ListenerBelow && Underwater.Below(at);
+                if (Unchanged(f, at, Hearing.At)) continue;
+                f.InWaterAmount = Underwater.SubmergedAmount(at);
                 Batch.Enqueue(f, at, Underwater.Muffles(at, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
             }
         }
 
-        // A playing loop is checked again when it could sound different: you or it moved half a metre,
-        // a piece or door changed, or 2 s went by (anything the hooks miss: terrain, other mods). At
-        // most every 0.1 s, so loading a base (thousands of pieces waking) doesn't check every frame.
+        // A playing loop is checked when the listener/source moves or geometry changes.
+        // No elapsed-time fallback: remaining idle must not schedule raycast jobs.
+        // Minimum intervals only limit bursts of actual movement/events.
         // The distances and times are judgement values, no source.
         // Every frame from Directions, which already has where you and it are: no work when nothing changed.
         // A building change only counts for a loop if it's within Corners.Reach of the line from you to
@@ -643,9 +653,23 @@ namespace WiresAcoustics
             ChangeAt[WorldGen % Kept] = at;
             ChangeAll[WorldGen % Kept] = everywhere;
             if (door || everywhere) DoorGen++;
+            AcousticTrace.RecordGeometry(at, everywhere, door, WorldGen);
+            // Existing audible loops should not wait for their half-metre
+            // movement threshold or the periodic safety recheck after a
+            // piece is created, removed, or a door changes.
+            Batch.GeometryChanged(at, everywhere);
         }
 
         // Anything changed since "since" within "margin" of the line from a to b.
+        internal static bool NearLine(Vector3 p, Vector3 a, Vector3 b, float margin)
+        {
+            Vector3 ab = b - a;
+            float len2 = ab.sqrMagnitude;
+            float t = len2 > 1e-6f ?
+                Mathf.Clamp01(Vector3.Dot(p - a, ab) / len2) : 0f;
+            return (a + ab * t - p).sqrMagnitude <= margin * margin;
+        }
+
         internal static bool ChangedNear(int since, Vector3 a, Vector3 b, float margin)
         {
             if (since == WorldGen) return false;
@@ -663,14 +687,32 @@ namespace WiresAcoustics
             return false;
         }
 
-        private const float LoopMoved = .5f, LoopMinGap = .1f, LoopFallback = 2f;
+        private const float LoopMoved = .12f, EdgeMoved = .08f, ModelMoved = .25f;
+        private const float LoopMinGap = .06f, EdgeMinGap = .04f;
 
-        // Nothing it's heard through changed since its last check: you and it within half a metre of
-        // where you were, nothing built near the line between you, under 2 s ago.
-        private static bool Unchanged(AcousticFilter f, Vector3 at, Vector3 ear, float now) =>
-            now - f.CheckedTime < LoopFallback && !ChangedNear(f.CheckedGen, ear, at, Corners.Reach) &&
-            (ear - f.CheckedFrom).sqrMagnitude < LoopMoved * LoopMoved &&
-            (at - f.CheckedAt).sqrMagnitude < LoopMoved * LoopMoved;
+        // Near a real blocking surface, small motion can change the
+        // diffraction detour significantly. Sample that continuous
+        // geometry more finely; in clear areas retain the existing cheap
+        // 0.12 m threshold for uncached geometry.
+        private static bool Unchanged(AcousticFilter f, Vector3 at, Vector3 ear)
+        {
+            float moved = f.EdgeModelValid && f.EdgeCanOverride && f.EdgePositionKnown
+                ? ModelMoved : HasNearbyWall(f, ear) ? EdgeMoved : LoopMoved;
+            return !ChangedNear(f.CheckedGen, ear, at, Corners.Reach) &&
+                (ear - f.CheckedFrom).sqrMagnitude < moved * moved &&
+                (at - f.CheckedAt).sqrMagnitude < moved * moved;
+        }
+
+        private static bool HasNearbyWall(AcousticFilter f, Vector3 ear)
+        {
+            if (f.Walls.Near && (ear - f.Walls.NearAt).sqrMagnitude < Corners.Reach * Corners.Reach) return true;
+            if (f.Records != null)
+                foreach (Corners.Record rec in f.Records)
+                    if (rec != null && rec.Valid &&
+                        (ear - rec.At).sqrMagnitude < Corners.Reach * Corners.Reach &&
+                        !ChangedNear(rec.Gen, rec.At, rec.At, rec.Span + SameWall)) return true;
+            return false;
+        }
 
         // A sound of your own character's (its own, or one of its own made placed, PlayerSounds).
         internal static bool Mine(Transform sound, AcousticFilter f)
@@ -698,12 +740,16 @@ namespace WiresAcoustics
         internal static void WatchLoop(AcousticFilter f, Vector3 at, Vector3 ear, float now)
         {
             float since = now - f.CheckedTime;
-            if (since < LoopMinGap || !f.Active) return; // past the count: left to Unity, as in Recheck
-            if (Unchanged(f, at, ear, now)) return;
+            if (since < (HasNearbyWall(f, ear) ? EdgeMinGap : LoopMinGap) || !f.Active) return; // past the count: left to Unity, as in Recheck
+            if (Unchanged(f, at, ear)) return;
             AudioSource src = f.Source;
             if (src == null || !src.isPlaying) { f.WatchLoop = false; return; }
             Vector3 p = f.transform.position;
-            f.InWater = Underwater.ListenerBelow && Underwater.Below(p);
+            f.InWaterAmount = Underwater.SubmergedAmount(p);
+            // Listener/source motion is NOT a change to world geometry.
+            // Keep the ordinary audio-time glide for position updates;
+            // Batch.GeometryChanged sets FastGeometryResponse for an actual
+            // piece placement, removal, terrain edit or door change.
             Batch.Enqueue(f, p, Underwater.Muffles(p, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
             s_loopChecks++;
         }
@@ -713,8 +759,11 @@ namespace WiresAcoustics
             string s = "sounds checked " + s_checked + ", muffled " + s_muffled + (s_worst != null ? " (most: " + s_worst + ")" : "") +
                 ", filters added late " + s_added +
                 ", loop checks " + s_loopChecks +
+                ", composite open-panel hits " + s_openProxyHits +
+                ", saturated ray buffers " + s_saturatedRayBuffers +
                 "; " + AudioProvenance.Summary() + "; " + AcousticFilter.Format();
             s_checked = s_muffled = s_added = s_loopChecks = 0;
+            s_openProxyHits = s_saturatedRayBuffers = 0;
             s_worstOcc = 0f; s_worst = null;
             return s;
         }

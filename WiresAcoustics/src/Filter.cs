@@ -35,6 +35,19 @@ namespace WiresAcoustics
     public sealed class AcousticFilter : MonoBehaviour
     {
         internal static readonly List<AcousticFilter> Live = new List<AcousticFilter>(256);
+        // A cached measured Valheim box panel supports continuous analytic
+        // source-disk coverage between geometry jobs, without new raycasts.
+        internal BoxCollider AnalyticWall;
+        internal Vector3 AnalyticSource;
+        internal int AnalyticWorldGen;
+        internal float AnalyticLow, AnalyticMid;
+        internal float AnalyticIndirectGain, AnalyticIndirectCutoff = 22000f;
+        internal float AnalyticBendShare;
+        internal Vector3 AnalyticEdgePoint;
+        internal bool AnalyticHasPortal, AnalyticActive;
+        internal bool AnalyticPoseValid;
+        internal Vector3 AnalyticLastEar, AnalyticLastSource;
+        internal float AnalyticLastStrength, AnalyticLastWater, AnalyticLastIndirect;
         private static volatile int s_rate = 48000;
         private static volatile float s_globalGain = 1f, s_globalCutoff = 22000f;
         internal static volatile bool GlobalActive;
@@ -45,9 +58,9 @@ namespace WiresAcoustics
         // Applied to every filtered sound on top of its own values: your head under water hears
         // the air above through the surface (Underwater). A sound in the water with it doesn't cross
         // the surface, so it skips that (InWater, set with each wall check).
-        internal volatile bool InWater;
-        private float GlobalGain => InWater ? 1f : s_globalGain;
-        private float GlobalCutoff => InWater ? 22000f : s_globalCutoff;
+        internal volatile float InWaterAmount;
+        private float GlobalGain => Mathf.Lerp(s_globalGain, 1f, InWaterAmount);
+        private float GlobalCutoff => AcousticMath.LogLerp(s_globalCutoff, 22000f, InWaterAmount);
 
         // The HRTF makes two ears' worth of sound: on stereo output only. On surround speakers (5.1,
         // 7.1) Unity's own panning places sounds across them instead (writing two channels there
@@ -59,11 +72,18 @@ namespace WiresAcoustics
         {
             int rate = AudioSettings.outputSampleRate;
             if (rate > 0 && rate != s_rate) s_rate = rate;
+            SpectralPaths.SetSampleRate(s_rate);
             bool stereo = AudioSettings.speakerMode == AudioSpeakerMode.Stereo;
             if (stereo == s_stereoOut) return;
             s_stereoOut = stereo;
             foreach (AcousticFilter f in Live) if (f != null) f.Pan();
         }
+
+        // Shared source binding: the same existing-or-create component
+        // lookup for menus, weather, ocean, and proximity voice chat.
+        internal static AcousticFilter For(AudioSource source) =>
+            source.GetComponent<AcousticFilter>() ??
+            source.gameObject.AddComponent<AcousticFilter>();
 
         internal static void SetGlobal(float gain, float cutoff, bool active)
         {
@@ -133,10 +153,22 @@ namespace WiresAcoustics
         // Vanilla ZSFX only refreshes looping reverb when this authored flag
         // is set. Unflagged loops need our existing batched geometry tick.
         internal bool NativeReverbLoop;
-        internal float StartedAt, LastOcc;
+        internal float StartedAt, LastOcc, LastCoverage;
+        internal int LastVolumeSamples;
+        // Main-thread-only propagation diagnostics: not read on the audio callback.
+        internal string AcousticPath = "unmeasured";
+        internal int AcousticRouteCount, AcousticGeneration;
+        internal float AcousticResolvedAt;
         // The walls between you and it at the last check, and the probe passes kept for them (Corners).
         internal Corners.Walls Walls;
         internal Corners.Record[] Records;
+        // Measured barrier data for position-dependent edge propagation.
+        internal bool EdgeModelValid, EdgePositionKnown, EdgeCanOverride;
+        internal float UnderAmount;
+        internal int EdgeModelGen;
+        internal float EdgeWallGain, EdgeWallCutoff;
+        internal Vector3 EdgeWallAt, EdgeWallNormal, EdgeModelSource;
+        internal Vector3 EdgeLastListener, EdgeLastSource;
         // A playing loop's wall check runs when something changed, not on a clock (Occlusion.WatchLoop):
         // where you and it were at its last check, when, and which world change it had seen.
         internal bool WatchLoop;
@@ -147,15 +179,26 @@ namespace WiresAcoustics
         internal float Doppler = 1f;               // pitch factor from coming and going (Doppler), worked out on the workers
         internal float OtherBase, OtherWritten;    // Doppler.ApplyOther: the pitch before the shift, the one written
         internal bool OtherPitchKnown;
-        internal bool StartHeld;                   // a new sound waiting for its wall check (Starts)
         internal bool InBudget;                    // in Budget's list of playing sounds
         // How wide the game made the source (its own spread, before ours): 0 a point, 1 all around.
         // Wide sources (a waterfall, a shield dome) get less of the HRTF's direction.
         internal volatile float Width;
+        internal volatile float RouteSpread; // arrival-direction dispersion from multiple paths
+        internal bool FastGeometryResponse; // next computed obstruction reflects a world edit promptly
+        private volatile bool m_quickOcclusion;
         internal Transform ShapeRoot;              // what the sound comes from (Area): never hides it
         internal Vector3 ShapeCenter, ShapeHalf;   // its box: centre in its own space, half-size
         internal float AreaRadius;                 // 0: a point; otherwise how wide (Area)
         internal bool AreaKnown;
+        // True only for a specifically located event (hinge/lid/hand/impact),
+        // regardless of whether the AudioSource loops. Do not expand its
+        // acoustical emitter to the owning object's complete collider.
+        internal bool LocalizedEvent;
+        // The visual held weapon itself is the emitter for a weapon sweep.
+        // The point hand/impact sounds use LocalizedEvent instead.
+        internal bool WeaponSource;
+        internal bool Interacted;                  // it comes from what you're using (Interaction): clear within reach
+        internal bool MadeByYou;                   // made during one of your actions (Interaction.Acting, set by Follow when made)
         internal float BaseWidth;                  // from the source's own spread; Width adds the area's size
         internal volatile bool Stereo = true;      // the clip has two channels (a mono one has no side to keep)
         internal Transform Player;                 // a player's own 2D sound, made placed (PlayerSounds)
@@ -175,7 +218,7 @@ namespace WiresAcoustics
         // Anything for the callback to do; if not, Budget leaves it switched off (no cost at all).
         internal bool NeedsWork =>
             m_hrtf || m_gain < .999f || m_cutoff < 20000f || m_targetGain < .999f || m_targetCutoff < 20000f || AirCutoff < 20000f ||
-            DistanceGain < .999f || DistanceGain > 1.001f || SourceLevel < .999f || GlobalActive;
+            DistanceGain < .999f || DistanceGain > 1.001f || SourceLevel < .999f || SourceLevel > 1.001f || GlobalActive;
 
         internal static float AirAt(float dist)
         {
@@ -263,13 +306,8 @@ namespace WiresAcoustics
             Pan();
         }
 
-        // Who pans the source: our HRTF while this filter runs (spread 180), Unity (its own spread)
-        // while it doesn't.
-        // Set by Budget, 4 times a second, by how loud the sound reaches you: too quiet to hear (under
-        // -60 dB), nothing done, silence out.
-        internal volatile bool Mute;
-        internal float Heard = 1f;
-        internal int OwnPriority = -1; // the source's priority while Budget has it at the bottom
+        // Who pans the source: our HRTF while this filter runs (spread 180),
+        // Unity at the original spread while inactive.
         internal float OwnReverbMix = -1f; // the source's own reverb send, before the mod set it (put back when it's off)
 
         private void Pan()
@@ -284,7 +322,7 @@ namespace WiresAcoustics
         // too much of the highs through a wall, it sounded quieter, not muffled. 8 channels each.
         private const int MaxChannels = 8;
         // each stage set higher so the pair is still 3 dB down at the cutoff: 1 / sqrt(sqrt(2) - 1)
-        private const float Stage = 1.5538f;
+        private const float Stage = AcousticMath.FilterStage;
         private readonly float[] m_state = new float[2 * MaxChannels];
 
         private const int Ring = 256;
@@ -307,6 +345,7 @@ namespace WiresAcoustics
         private void Awake()
         {
             s_rate = AudioSettings.outputSampleRate;
+            SpectralPaths.SetSampleRate(s_rate);
             Source = GetComponent<AudioSource>();
             // Added from a prefab (not serialized): a plain source without the game's sound-effect
             // component is one of the other placed sounds.
@@ -367,12 +406,28 @@ namespace WiresAcoustics
 
         internal void Set(float gain, float cutoff, bool snap)
         {
+            if (Plugin.DebugLog != null && Plugin.DebugLog.Value)
+                AcousticTrace.Record(this, m_targetGain, m_targetCutoff, gain, cutoff);
             m_targetGain = gain;
             m_targetCutoff = cutoff;
             if (snap) m_snap = true;
+            if (FastGeometryResponse)
+            {
+                FastGeometryResponse = false;
+                // Crossfade over the next audio buffer, not the normal
+                // 150 ms motion smoothing. Avoid resetting filter/HRTF
+                // state, which can click on an already-playing source.
+                m_quickOcclusion = true;
+            }
         }
 
         internal float TargetGain => m_targetGain;
+        internal float TargetCutoff => m_targetCutoff;
+        // Observed DSP state, sampled on the main thread for debug only.
+        internal float DspGain => m_gain;
+        internal float DspCutoff => m_cutoff;
+        internal float EstimatedCompositeGain => m_targetGain * GlobalGain * DistanceGain * SourceLevel;
+        internal float EstimatedCompositeCutoff => Mathf.Min(m_targetCutoff, Mathf.Min(GlobalCutoff, AirCutoff));
 
         internal void SetDirection(Vector3 d) { m_dx = d.x; m_dy = d.y; m_dz = d.z; }
 
@@ -399,10 +454,16 @@ namespace WiresAcoustics
                 f.DistanceGain = 1f;
                 f.AirCutoff = 22000f;
                 f.Placed = false;
+                f.RouteSpread = 0f;
+                f.AnalyticActive = false;
+                f.AnalyticPoseValid = false;
+                f.AnalyticHasPortal = false;
+                f.AnalyticWall = null;
+                f.AnalyticIndirectGain = 0f;
                 f.Physical(false);
                 if (f.OwnReverbMix >= 0f && f.Source != null) { f.Source.reverbZoneMix = f.OwnReverbMix; f.OwnReverbMix = -1f; }
                 f.SourceLevel = 1f;
-                f.InWater = false;
+                f.InWaterAmount = 0f;
                 if (f.enabled) f.enabled = false; // the mod off: no callbacks at all
             }
             Budget.Clear();
@@ -424,6 +485,11 @@ namespace WiresAcoustics
         private AudioRolloffMode m_origMode;
         private AnimationCurve m_origCurve;
         private float m_origMin, m_origMax, m_origDoppler;
+        // Actual sound range authored in Valheim's AudioSource, even after
+        // Realistic distance temporarily expands Unity's maxDistance.
+        internal float AuthoredMaxDistance => m_physical ? m_origMax :
+            Source != null ? Source.maxDistance : 0f;
+        internal bool FireLoop;
         // A line source (the sea along its shore): spreads over a cylinder, not a sphere, so it drops
         // 3 dB per doubling of distance instead of 6 (Hong Kong EPD, noise basics). As Unity's custom
         // fall-off: sqrt(min / r) past the game's full-volume distance.
@@ -488,7 +554,21 @@ namespace WiresAcoustics
         // Debug (Budget, with Debug log on): this sound's level going in and coming out, to see
         // what the processing does to loudness. Sums of squares since the last report.
         internal static volatile bool Meter;
-        internal double MeterIn, MeterOut;
+        private volatile AudioMeterHistory m_meterHistory;
+        internal void EnsureMeterHistory()
+        {
+            if (m_meterHistory == null) m_meterHistory = new AudioMeterHistory();
+        }
+        internal void ReadMeterHistory(out double input, out double output,
+                                       out long samples, out long dropped)
+        {
+            AudioMeterHistory history = m_meterHistory;
+            if (history == null) { input = output = 0d; samples = dropped = 0; return; }
+            history.Read(out input, out output, out samples, out dropped);
+        }
+        internal float LastInputRms, LastOutputRms, LastProcessingDb;
+        internal long LastDroppedMeterPackets;
+        internal long LastMeterSamples;
 
 
         private static double Energy(float[] d)
@@ -500,12 +580,16 @@ namespace WiresAcoustics
 
         private void OnAudioFilterRead(float[] data, int channels)
         {
-            bool meter = Meter, diagnostic = Diagnostics;
+            // Disabling processing must actually leave the original source
+            // untouched, rather than applying stale DSP gain/occlusion.
+            if (!m_active) return;
+            AudioMeterHistory meterHistory = m_meterHistory;
+            bool meter = Meter && meterHistory != null, diagnostic = Diagnostics;
             // Timing and counting are only for the debug log: without it, just the processing.
             if (!diagnostic && !meter)
             {
                 float tq = m_targetGain * GlobalGain * DistanceGain * SourceLevel;
-                if (Mute || (m_gain < 1e-4f && tq < 1e-4f))
+                if (m_gain < 1e-4f && tq < 1e-4f)
                 {
                     System.Array.Clear(data, 0, data.Length);
                     m_gain = tq;
@@ -516,12 +600,12 @@ namespace WiresAcoustics
                 return;
             }
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (meter) MeterIn += Energy(data);
+            double beforeEnergy = meter ? Energy(data) : 0d;
             // A source already below -80 dB and still targeting silence
             // cannot be heard; zero its existing buffer, rather than running
             // ~2,000 samples of HRTF/low-pass code.
             float target = m_targetGain * GlobalGain * DistanceGain * SourceLevel;
-            bool silent = Mute || (m_gain < 1e-4f && target < 1e-4f);
+            bool silent = m_gain < 1e-4f && target < 1e-4f;
             long t1;
             if (silent)
             {
@@ -537,7 +621,7 @@ namespace WiresAcoustics
                 Process(data, channels);
                 t1 = System.Diagnostics.Stopwatch.GetTimestamp();
             }
-            if (meter) MeterOut += Energy(data);
+            if (meter) meterHistory.Publish(beforeEnergy, Energy(data), data.Length);
             long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
             if (diagnostic)
             {
@@ -575,6 +659,10 @@ namespace WiresAcoustics
         {
             s_channels = channels;
             s_length = data.Length;
+            // Audio callbacks normally contain full frames, but an empty
+            // or malformed buffer must never reach 1/frames processing.
+            if (channels <= 0 || channels > MaxChannels || data.Length < channels ||
+                data.Length % channels != 0) return;
             float tg = m_targetGain * GlobalGain * DistanceGain * SourceLevel;
             float tc = m_targetCutoff;
             float gc = GlobalCutoff;
@@ -601,11 +689,7 @@ namespace WiresAcoustics
                 return;
             }
             int frames = data.Length / channels;
-            float glide = Glide(frames);
-            float g0 = m_gain, g1 = Mathf.Abs(tg - m_gain) < 1e-4f ? tg : m_gain + (tg - m_gain) * glide;
-            m_cutoff = Mathf.Exp(Mathf.Lerp(Mathf.Log(m_cutoff), Mathf.Log(tc), glide));
-            m_gain = g1;
-            float a = m_cutoff >= 20000f ? 1f : 1f - Mathf.Exp(-2f * Mathf.PI * m_cutoff * Stage / s_rate);
+            SmoothOcclusion(frames, tg, tc, out float g0, out float g1, out float a);
             float inv = 1f / frames, dg = g1 - g0;
             // Through pointers: Mono checks the bounds of every array access, twice per sample per
             // channel here, and the audio thread runs this for every processed sound.
@@ -627,17 +711,33 @@ namespace WiresAcoustics
             }
         }
 
+        // One identical state transition for plain DSP and binaural DSP.
+        // Deliberately preserve the published arithmetic and evaluation order:
+        // no retuning or alternate smoothing formula is introduced here.
+        private void SmoothOcclusion(int frames, float tg, float tc,
+            out float g0, out float g1, out float coefficient)
+        {
+            float glide = m_quickOcclusion ? 1f : Glide(frames);
+            m_quickOcclusion = false;
+            g0 = m_gain;
+            g1 = Mathf.Abs(tg - m_gain) < 1e-4f
+                ? tg : m_gain + (tg - m_gain) * glide;
+            m_cutoff = Mathf.Exp(Mathf.Lerp(Mathf.Log(m_cutoff),
+                Mathf.Log(tc), glide));
+            m_gain = g1;
+            coefficient = m_cutoff >= 20000f ? 1f
+                : 1f - Mathf.Exp(-2f * Mathf.PI * m_cutoff * Stage / s_rate);
+        }
+
         private void Spatialize(float[] dataArr, int ch, float tg, float tc)
         {
             int frames = dataArr.Length / ch;
             if (frames == 0) return;
 
-            // occlusion
-            float glide = Glide(frames);
-            float g0 = m_gain, g1 = Mathf.Abs(tg - m_gain) < 1e-4f ? tg : m_gain + (tg - m_gain) * glide;
-            m_cutoff = Mathf.Exp(Mathf.Lerp(Mathf.Log(m_cutoff), Mathf.Log(tc), glide));
-            m_gain = g1;
-            float aOcc = m_cutoff >= 20000f ? 1f : 1f - Mathf.Exp(-2f * Mathf.PI * m_cutoff * Stage / s_rate);
+            // Same gain, cutoff and filter-coefficient transition as
+            // non-HRTF signals; only the spatial processing afterward differs.
+            SmoothOcclusion(frames, tg, tc, out float g0, out float g1,
+                out float aOcc);
 
             // direction
             float x = Mathf.Clamp(m_dx, -1f, 1f), y = Mathf.Clamp(m_dy, -1f, 1f), z = Mathf.Clamp(m_dz, -1f, 1f);

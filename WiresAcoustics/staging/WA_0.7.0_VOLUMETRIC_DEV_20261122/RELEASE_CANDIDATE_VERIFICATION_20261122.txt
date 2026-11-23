@@ -1,0 +1,30 @@
+WIRE'S ACOUSTICS 0.7.0 -- FINITE RELEASE CANDIDATE GATES
+Generated: 2026-11-22 13:49:48 +01:00
+Production .cs files reviewed for source identity: 46
+Changed relative to immutable baseline: AcousticTrace.cs, Batch.cs, ContinuousEdges.cs, Filter.cs, Occlusion.cs, Plugin.cs, SourceVolume.cs, Starts.cs, ThreeRayTransmission.cs, VolumeFresnel.cs
+New per-frame/coroutine/task patterns: NONE
+Production file checks: direct serial occlusion, empty audio buffer and log contract OK
+Main source compilation: PASS (from full VerifyEveryImplementation script)
+Numerical/unit regression: PASS (see dev\release-candidate-tests-20261122.log)
+DLL SHA256: 84000FB78EDE550D5E34F4B85F888094ACF685E505F0264832570E8EA97B09AF
+Source SHA256 manifest: backup\RELEASE_ENGINEERING_20261122\CURRENT_SOURCE_SHA256.txt
+
+RELEASE GATES
+PASS - 43 production source files checked against baseline
+PASS - 0 new per-frame/coroutine/task hook patterns
+PASS - 6060 direct occlusion spectral cases and other existing production tests
+PASS - DSP coefficient/spectral model mathematical consistency (two-point fit)
+PASS - deterministic geometry/portal/cache tests
+PASS - concurrent audio meter test under synthetic load
+PASS - zero-warning/zero-error compilation
+OPEN - actual Unity/Valheim runtime playback and localization
+OPEN - actual multi-mod game compatibility
+OPEN - audio and game CPU budget (p50, p95, p99)
+OPEN - subjective sound continuity and game-specific reflections
+
+NOT CLAIMED
+ - Full Steam Audio/Wwise parity, full-band impulse responses, SOFA HRTF,
+   arbitrary multi-edge wave simulation, or zero regressions without gameplay.
+
+AUTOMATED STATIC/NON-GAME STATUS: PASS
+RELEASE/PERFECT BUILD STATUS: NOT CERTIFIED

@@ -1,0 +1,184 @@
+using UnityEngine;
+
+namespace WiresAcoustics
+{
+    // Volumetric sampled occlusion using actual cached owner geometry.
+    // Known emitted areas use their rotated/scaled local box, regardless of
+    // playback duration; positioned events stay points, not whole objects.
+    // Unknown sounds are points by default, with an explicit optional sphere.
+    // This reuses Area's cached collider bounds and the existing ray count;
+    // no new game-frame work, scans, or physics casts.
+    internal static class SourceVolume
+    {
+        internal const int MaxSamples = 32;
+
+        internal struct Projection
+        {
+            internal Vector3 Center, Right, Up, Forward;
+            internal float X, Y, Depth;
+            internal float Radius;
+            internal bool Box;
+            internal Vector3 AxisX, AxisY, AxisZ; // world-space box half-axes
+            internal bool Surface; // container opening: front-facing shell
+            internal float SurfaceX, SurfaceY; // cumulative projected face shares
+            internal float SignX, SignY, SignZ;
+        }
+
+        private static float Halton(int index, int basis)
+        {
+            float result = 0f, fraction = 1f;
+            while (index > 0)
+            {
+                fraction /= basis;
+                result += fraction * (index % basis);
+                index /= basis;
+            }
+            return result;
+        }
+
+        internal static Projection Project(AcousticFilter f,
+            Vector3 listener, Vector3 source)
+        {
+            Vector3 forward = source - listener;
+            Vector3 right = Vector3.Cross(Vector3.up, forward);
+            if (right.sqrMagnitude < 1e-8f)
+                right = Vector3.Cross(Vector3.right, forward);
+            right.Normalize();
+            Vector3 up = Vector3.Cross(forward, right).normalized;
+            forward.Normalize();
+
+            // No owner: a point, not an invented 30cm sphere. A user
+            // can explicitly opt into a finite volume for otherwise unknown
+            // sources via the optional radius tuning setting. Known localized
+            // events remain true points regardless of that global preference.
+            float radius = f != null && f.LocalizedEvent ? 0f :
+                Plugin.SourceSphereRadius != null
+                    ? Plugin.SourceSphereRadius.Value : 0f;
+            Vector3 center = source;
+            Vector3 boxX = Vector3.zero, boxY = Vector3.zero, boxZ = Vector3.zero;
+            bool knownBox = false;
+
+            // Whether a sound loops says nothing about its physical extent.
+            // A known distributed source uses its real owner box for loops
+            // AND one-shots; a known localized event uses its event origin.
+            if (f != null && !f.LocalizedEvent && f.AreaKnown &&
+                f.ShapeRoot != null && f.ShapeHalf.sqrMagnitude > 1e-4f)
+            {
+                Vector3 h = f.ShapeHalf;
+                Transform root = f.ShapeRoot;
+                boxX = root.TransformVector(new Vector3(h.x, 0f, 0f));
+                boxY = root.TransformVector(new Vector3(0f, h.y, 0f));
+                boxZ = root.TransformVector(new Vector3(0f, 0f, h.z));
+                radius = Mathf.Sqrt(boxX.sqrMagnitude +
+                                    boxY.sqrMagnitude + boxZ.sqrMagnitude);
+                center = root.TransformPoint(f.ShapeCenter);
+                knownBox = true;
+            }
+
+            Projection p;
+            p.Center = center;
+            p.Right = right; p.Up = up; p.Forward = forward;
+            p.Radius = Mathf.Max(.01f, radius);
+            p.X = p.Y = p.Depth = p.Radius;
+            p.Box = knownBox;
+            p.AxisX = boxX; p.AxisY = boxY; p.AxisZ = boxZ;
+            p.Surface = knownBox && f.SurfaceEmitter;
+            p.SurfaceX = p.SurfaceY = 0f;
+            p.SignX = p.SignY = p.SignZ = 1f;
+            if (p.Surface)
+            {
+                // Project the three listener-facing faces by their physical
+                // areas and orientation. Sampling only the lid makes a chest
+                // buried in a compact stack sound completely occluded, even
+                // when its broad side is right in front of the listener.
+                // All samples remain on the real oriented shell, within the
+                // existing source-volume ray budget.
+                Vector3 toward = listener - center;
+                float lx = boxX.magnitude, ly = boxY.magnitude,
+                      lz = boxZ.magnitude;
+                float wx = lx > 1e-5f ? Mathf.Abs(Vector3.Dot(toward, boxX)) / lx * ly * lz : 0f;
+                float wy = ly > 1e-5f ? Mathf.Abs(Vector3.Dot(toward, boxY)) / ly * lx * lz : 0f;
+                float wz = lz > 1e-5f ? Mathf.Abs(Vector3.Dot(toward, boxZ)) / lz * lx * ly : 0f;
+                float total = wx + wy + wz;
+                p.SurfaceX = total > 1e-5f ? wx / total : 0f;
+                p.SurfaceY = total > 1e-5f ? (wx + wy) / total : 0f;
+                p.SignX = Vector3.Dot(toward, boxX) < 0f ? -1f : 1f;
+                p.SignY = Vector3.Dot(toward, boxY) < 0f ? -1f : 1f;
+                p.SignZ = Vector3.Dot(toward, boxZ) < 0f ? -1f : 1f;
+            }
+            return p;
+        }
+
+        internal static int Count(AcousticFilter f, Vector3 listener,
+            Vector3 source, int maxSamples = 16)
+        {
+            if (maxSamples <= 0) return 0;
+            Projection p = Project(f, listener, source);
+            // A sound authored at an object's pivot need not be near the
+            // actual emitting shape. Budget rays by the measured geometry,
+            // not the (possibly hidden or offset) arbitrary spawn point.
+            float dist = (p.Center - listener).magnitude;
+            if (dist < .15f) return 0;
+            // No emitter volume means the existing three direct rays are
+            // sufficient; never spend 4-32 more rays on a fabricated sphere.
+            // The 1cm numerical radius in Project protects the analytic
+            // screen-coverage solver, but is not treated as source extent.
+            if (!p.Box && p.Radius <= .010001f) return 0;
+            float angularRadius = p.Radius / dist;
+            // Preserve the same angular-size ray-budget heuristic as the
+            // previous version; shape-aware samples do not cost more rays.
+            int n = angularRadius > .35f ? 32 :
+                    angularRadius > .16f ? 16 :
+                    angularRadius > .045f ? 8 : 4;
+            return Mathf.Min(n, Mathf.Min(MaxSamples, maxSamples));
+        }
+
+        internal static Vector3 Point(in Projection p, Vector3 source,
+            int index, int count)
+        {
+            int i = index + 1;
+            if (p.Box)
+            {
+                if (p.Surface)
+                {
+                    // Reuse exactly the existing samples. Each lies 2 cm
+                    // inside a real listener-facing panel, never behind the
+                    // chest or at an artificial point outside its collider.
+                    float u = 2f * Halton(i, 2) - 1f;
+                    float v = 2f * Halton(i, 3) - 1f;
+                    float face = Halton(i, 7);
+                    if (face < p.SurfaceX)
+                    {
+                        float inset = Mathf.Max(0f, 1f - .02f /
+                            Mathf.Max(.02f, p.AxisX.magnitude));
+                        return p.Center + p.AxisX * (p.SignX * inset)
+                            + p.AxisY * u + p.AxisZ * v;
+                    }
+                    if (face < p.SurfaceY)
+                    {
+                        float inset = Mathf.Max(0f, 1f - .02f /
+                            Mathf.Max(.02f, p.AxisY.magnitude));
+                        return p.Center + p.AxisX * u
+                            + p.AxisY * (p.SignY * inset) + p.AxisZ * v;
+                    }
+                    float zInset = Mathf.Max(0f, 1f - .02f /
+                        Mathf.Max(.02f, p.AxisZ.magnitude));
+                    return p.Center + p.AxisX * u + p.AxisY * v
+                        + p.AxisZ * (p.SignZ * zInset);
+                }
+                // Halton lattice inside the cached oriented volume.
+                // The three transformed half-axes already include scale.
+                return p.Center + p.AxisX * (2f * Halton(i, 2) - 1f) +
+                       p.AxisY * (2f * Halton(i, 3) - 1f) +
+                       p.AxisZ * (2f * Halton(i, 5) - 1f);
+            }
+            float phi = 2f * Mathf.PI * Halton(i, 2);
+            float z = 2f * Halton(i, 3) - 1f;
+            float r = p.Radius * Mathf.Pow(Halton(i, 5), 1f / 3f);
+            float radial = r * Mathf.Sqrt(Mathf.Max(0f, 1f - z * z));
+            return p.Center + p.Right * (radial * Mathf.Cos(phi)) +
+                   p.Up * (radial * Mathf.Sin(phi)) +
+                   p.Forward * (r * z);
+        }
+    }
+}

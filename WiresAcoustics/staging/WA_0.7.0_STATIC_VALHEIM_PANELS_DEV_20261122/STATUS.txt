@@ -1,0 +1,6 @@
+﻿Private WA 0.7.0 dev build, not public.
+Hardcoded per-prefab open-area acoustic properties in OpenPanelArea.cs.
+NO runtime mesh traversal, projection, rasterization or material estimation.
+ASHRAE composite-energy transmission retained.
+Properties are visual tuning estimates; NOT measured exact acoustic porosity.
+Compiler and automated regression gates passed. Gameplay unverified.

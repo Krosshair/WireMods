@@ -1,0 +1,8 @@
+PRIVATE DEV BUILD (not a public release)
+Source SHA256: 582325E4315C8EC4FC187887ADF9CE250592F553C62F10DA8A02F8235BC9D04D
+Steam Audio material coefficient model for Valheim solid structures.
+ValheimSOURCE open-panel collider exceptions with details in audit.
+Perf + in-game acoustic verification remain open.
+[Debug] Debug log=true in Enngard config, to capture detailed acoustic traces.
+Rollback with Valheim closed:
+C:\Users\kajet\WireMods\WiresAcoustics\backup\VALHEIM_MATERIAL_GEOMETRY_20261122\Restore.ps1

@@ -1,0 +1,12 @@
+Wire's Acoustics v0.7.0 - Partial Occlusion Development
+SHA256 0010BA44A0AB74126A9BAF473FB1A5156F2B1C176644EC758AAA2927913368EE
+Previously binary median-based direct and routed ray obstruction
+replaced with frequency-dependent averaging of three measured ray paths.
+Initial source face is combined as a second emitting region, not a
+clear/unblocked switch.
+Debug log: coverage=0.00/0.25/0.50/0.75/1.00 and direct-partial paths.
+Validated single-wall Fresnel now allowed to continuously refine
+fully blocked measurements if no competing validated multipath exists.
+No increase in raycast count and no new per-frame loops.
+3-ray approximation cannot equal full source-volume sampling.
+Not game-profiled or final-audio tested. Development only, not public release.

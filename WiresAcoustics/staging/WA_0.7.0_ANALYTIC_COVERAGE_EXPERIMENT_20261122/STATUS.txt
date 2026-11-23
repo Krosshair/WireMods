@@ -1,0 +1,9 @@
+PRIVATE 0.7.0 EXPERIMENT - in-game QA required, NOT PUBLIC RELEASE
+SHA256: 5DD11E6EC08B8371FAA49840CC722804D27D2CBA94F7087643D90B7B5A1834DD
+Analytic disk/rectangle source obstruction for detected single box walls.
+All other geometry and path topology can still have finite-ray steps.
+This is NOT a universal no-steps fix.
+Zero-error/warning production build and full automated regression pass.
+No Unity live playtest, p95/p99 profiler, or audio A/B measured.
+Rollback while Valheim is CLOSED:
+C:\Users\kajet\WireMods\WiresAcoustics\backup\ANALYTIC_VISIBILITY_20261122\Restore.ps1

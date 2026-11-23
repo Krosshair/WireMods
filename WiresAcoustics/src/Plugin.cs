@@ -16,11 +16,13 @@ namespace WiresAcoustics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.acoustics";
-        public const string Version = "0.6.0";
+        public const string Version = "0.7.0";
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled, RoomReverb, Occlusion, Hrtf, RealDistance, DebugLog;
-        internal static ConfigEntry<bool> TravelTime, DopplerOn, UnderwaterOn, Air, Wind, Placement, VoiceChatOn;
+        internal static ConfigEntry<bool> TravelTime, DopplerOn, UnderwaterOn, Air, Wind, Placement, VoiceChatOn, RandomLoopPhase;
         internal static ConfigEntry<float> ReverbStrength, OcclusionStrength, HrtfStrength;
+        internal static ConfigEntry<int> VolumetricRays;
+        internal static ConfigEntry<float> SourceSphereRadius;
         private Harmony m_harmony;
 
         // ConfigurationManager reads these by name (no dependency on its DLL).
@@ -52,14 +54,22 @@ namespace WiresAcoustics
                 "Sounds coming toward you are higher, going away lower. Needs Realistic distance (off: the game's own).");
             UnderwaterOn = Setting("General", "Under water", true, "With your head under water everything is muffled, and sounds under water are muffled when you're above it.");
             Air = Setting("General", "Air", true, "The further a sound travels, the more of its highs the air takes away (by the weather).");
-            Wind = Setting("General", "Wind", true, "Wind carries sound: downwind of a sound it reaches further, upwind less.");
+            Wind = Setting("General", "Wind", true, "Wind carries positional world sounds downwind and weakens them upwind over distance. The contribution fades with the listener's measured shelter behind walls, buildings and terrain; fully sheltered sounds use ordinary distance and wall attenuation.");
             Placement = Setting("General", "Sound placement", true,
                 "Sounds come from where they're made: a weapon's hand, a door's hinge, a chest's lid, the part of a station you used, a bird up in the open air, your own unplaced sounds at you. Off: where the game plays them.");
             VoiceChatOn = Setting("General", "Voice chat", true, "Proximity voice chat (if installed) is placed, muffled by walls and dulled by distance like any sound.");
+            RandomLoopPhase = Setting("General", "Random loop start", true,
+                "Independent continuous world sounds (fires, sconces, machines) start at random positions within their loops instead of all playing in sync. Music, ambience and UI are unaffected.");
             ReverbStrength = Setting("Tuning", "Reverb strength", 1f, "How loud the room's reverb is (1 = as designed, 0 = none).", new AcceptableValueRange<float>(0f, 2f));
             HrtfStrength = Setting("Tuning", "HRTF strength", 1f, "How strong the direction cues are: the far ear's dulling and level drop, the shading from behind, the delay between the ears (1 = as modelled, 2 = exaggerated).", new AcceptableValueRange<float>(0f, 2f));
             OcclusionStrength = Setting("Tuning", "Muffling strength", 1f, "How much walls muffle and quieten sounds (1 = as designed, 0 = none).", new AcceptableValueRange<float>(0f, 1.5f));
-            DebugLog = Setting("Debug", "Debug log", false, "Logs the measured space every few seconds and each muffled sound.", null, true);
+            VolumetricRays = Setting("Tuning", "Source-volume rays", 16,
+                "Maximum additional sampled rays per emitting source: 0 (legacy three-ray approximation), 4, 8, 16, or 32. The actual number adapts to projected collider/source size and distance. Increasing this improves partial occlusion near edges but increases physics-job cost.",
+                new AcceptableValueList<int>(0, 4, 8, 16, 32), true);
+            SourceSphereRadius = Setting("Tuning", "Unshaped source sphere radius", 0f,
+                "Optional area radius in metres for otherwise unshaped world sounds. 0 (default) means an exact event point with no fabricated volume rays. One-shot/loop status is irrelevant; explicit localized events always stay points, and known emitting areas use their true cached collider bounds.",
+                new AcceptableValueRange<float>(0f, 3f), true);
+            DebugLog = Setting("Debug", "Debug log", false, "Every three seconds, logs room geometry, DSP cost, and the 24 most potentially audible sources with their geometric coverage and source-volume ray count, path, target and actual gain/filter, localization, reverb, water and path age. These measurements do not capture the final mixed sound.", null, true);
             MoreVoices();
             m_harmony = new Harmony(Guid);
             m_harmony.PatchAll(typeof(Plugin).Assembly);

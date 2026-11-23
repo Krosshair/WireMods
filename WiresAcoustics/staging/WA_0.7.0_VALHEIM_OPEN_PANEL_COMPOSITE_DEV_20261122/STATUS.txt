@@ -1,0 +1,9 @@
+﻿Private development build — NOT RELEASED.
+Installed SHA256: 8CBEFF364FC0B05BCB2D1CE05435773D87A574771101237BF75498FFC639B96C
+Valheim prefab mesh open-area projected once/cached per type.
+ASHRAE energy-weighted composite aperture + Valve Steam Audio material
+transmission (two-band approximation), no artificial volume floor.
+Full regression + static gates passed.
+In-game audio and CPU profiling NOT verified.
+Debug logging enabled for next Valheim session.
+Rollback: C:\Users\kajet\WireMods\WiresAcoustics\backup\OPEN_PANEL_COMPOSITE_20261122\Restore.ps1

@@ -20,6 +20,7 @@ namespace WiresAcoustics
         internal static void Note(AcousticFilter f, float dist)
         {
             f.LastDist = dist;
+            if (Plugin.DebugLog.Value) f.EnsureMeterHistory();
             if (!f.InBudget)
             {
                 f.InBudget = true;
@@ -58,7 +59,13 @@ namespace WiresAcoustics
             s_next = now + Every;
             AcousticFilter.RefreshOutputFormat(); // device changes: sample-accurate delays
 
-            AcousticFilter.Diagnostics = Plugin.DebugLog.Value;
+            bool debug = Plugin.DebugLog.Value;
+            if (debug)
+                foreach (AcousticFilter f in Playing)
+                    if (f != null) f.EnsureMeterHistory();
+            // Disable metering promptly when Debug log is switched off.
+            AcousticFilter.Meter = debug;
+            AcousticFilter.Diagnostics = debug;
             long stamp = System.Diagnostics.Stopwatch.GetTimestamp();
             long ticks = AcousticFilter.TakeTicks(out s_calls, out s_hrtfCalls);
             if (s_stamp != 0L && stamp > s_stamp) s_load = (float)ticks / (stamp - s_stamp);
@@ -73,14 +80,13 @@ namespace WiresAcoustics
                 if (!ReferenceEquals(f, null))
                 {
                     f.InBudget = false;
-                    if (f != null) { Silence(f, false); if (f.Kind != AcousticFilter.Kinds.Ambient) f.Active = false; }
+                    if (f != null && f.Kind != AcousticFilter.Kinds.Ambient) f.Active = false;
                 }
                 Playing[i] = Playing[Playing.Count - 1];
                 Playing.RemoveAt(Playing.Count - 1);
             }
 
             s_on = 0;
-            s_muted = 0;
             foreach (AcousticFilter f in Playing)
             {
                 // processed if there's anything to do (nothing in the way, no HRTF, near: off, free)
@@ -88,37 +94,8 @@ namespace WiresAcoustics
                 f.Active = want;
                 if (!want) continue;
                 s_on++;
-                if (f.Kind == AcousticFilter.Kinds.Ambient || f.Kind == AcousticFilter.Kinds.Outside || f.Voice)
-                {
-                    Silence(f, false); // the room's own sound and voices: never muted
-                    continue;
-                }
-                f.Heard = Heard(f);
-                // too quiet to hear (under -60 dB), back on from -54 dB so it doesn't flicker
-                bool mute = f.Mute ? f.Heard < .002f : f.Heard < .001f;
-                if (mute != f.Mute) Silence(f, mute);
-                if (f.Mute) s_muted++;
             }
         }
-
-        // A sound too quiet to hear also gives way first when Unity has more sounds than voices to
-        // mix (its lowest priority), so the voices go to sounds you can hear.
-        internal static void Silence(AcousticFilter f, bool mute)
-        {
-            if (f.Mute == mute) return;
-            f.Mute = mute;
-            if (f.Source == null) return;
-            if (mute) { f.OwnPriority = f.Source.priority; f.Source.priority = 256; }
-            else if (f.OwnPriority >= 0) { f.Source.priority = f.OwnPriority; f.OwnPriority = -1; }
-        }
-
-        private static int s_muted;
-
-        // How loud a sound reaches you (amplitude, roughly): Unity's fall-off at its distance and
-        // everything the mod does to it. Not its own volume: the game fades many sounds in from 0, and
-        // a sound muted at its start would miss its first moments. Custom fall-off curves count as
-        // full (reading them would cost more than this saves).
-        private static float Heard(AcousticFilter f) => Open(f) * f.TargetGain;
 
         // How loud it would reach you with nothing in the way (its fall-off, range and own level, not
         // its muffling): what decides which sound's wall check is read first (Batch).
@@ -137,7 +114,7 @@ namespace WiresAcoustics
 
         internal static void Clear()
         {
-            foreach (AcousticFilter f in Playing) if (f != null) { f.InBudget = false; Silence(f, false); }
+            foreach (AcousticFilter f in Playing) if (f != null) f.InBudget = false;
             Playing.Clear();
             s_on = 0;
         }
@@ -146,16 +123,26 @@ namespace WiresAcoustics
         private static readonly List<KeyValuePair<float, string>> Levels = new List<KeyValuePair<float, string>>();
         internal static string Loudness()
         {
-            AcousticFilter.Meter = Plugin.DebugLog.Value;
             double inSum = 0d, outSum = 0d;
             Levels.Clear();
             foreach (AcousticFilter f in Playing)
             {
-                if (f == null || f.MeterIn <= 1e-9) { if (f != null) { f.MeterIn = 0d; f.MeterOut = 0d; } continue; }
-                inSum += f.MeterIn; outSum += f.MeterOut;
-                float db = (float)(10d * System.Math.Log10(System.Math.Max(1e-12, f.MeterOut) / f.MeterIn));
+                if (f == null) continue;
+                f.ReadMeterHistory(out double inValue, out double outValue,
+                                   out long samples, out long dropped);
+                f.LastMeterSamples = samples;
+                f.LastDroppedMeterPackets = dropped;
+                if (samples > 0)
+                {
+                    f.LastInputRms = (float)System.Math.Sqrt(System.Math.Max(0d, inValue) / samples);
+                    f.LastOutputRms = (float)System.Math.Sqrt(System.Math.Max(0d, outValue) / samples);
+                }
+                else f.LastInputRms = f.LastOutputRms = 0f;
+                if (inValue <= 1e-9) { f.LastProcessingDb = 0f; continue; }
+                inSum += inValue; outSum += outValue;
+                float db = (float)(10d * System.Math.Log10(System.Math.Max(1e-12, outValue) / inValue));
+                f.LastProcessingDb = db;
                 Levels.Add(new KeyValuePair<float, string>(db, f.name + " " + db.ToString("+0.0;-0.0") + " dB at " + f.LastDist.ToString("F0") + " m" + " [" + f.Explain() + "]"));
-                f.MeterIn = 0d; f.MeterOut = 0d;
             }
             if (inSum <= 1e-9) return "level: nothing measured";
             Levels.Sort((a, b) => a.Key.CompareTo(b.Key));
@@ -178,6 +165,6 @@ namespace WiresAcoustics
         }
 
         internal static string Summary() =>
-            Virtual() + "; processing " + s_on + " of " + Playing.Count +  " playing (" + s_muted + " too quiet to hear), audio thread " + (s_load * 100f).ToString("F1") + "% in " + s_calls + " callbacks (" + s_hrtfCalls + " with the HRTF), " + s_perCall.ToString("F1") + " us each";
+            Virtual() + "; processing " + s_on + " of " + Playing.Count +  " playing, audio thread " + (s_load * 100f).ToString("F1") + "% in " + s_calls + " callbacks (" + s_hrtfCalls + " with the HRTF), " + s_perCall.ToString("F1") + " us each";
     }
 }

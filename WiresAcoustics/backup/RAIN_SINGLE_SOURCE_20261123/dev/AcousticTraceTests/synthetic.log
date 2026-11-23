@@ -1,0 +1,7 @@
+﻿[acoustics.trace] geometryChanges=1 overwritten=0
+[acoustics.trace.geometry] t=10.00 generation=3 kind=door at=1.00,2.00,3.00
+[acoustics.trace] significant transitions=1, overwritten=0 (threshold: >=1.5 dB gain or >=0.30 log-cutoff)
+[acoustics.trace.transition] t=10.00 source=chest pathAtUpdate=portal world=2 gain=1.0000->0.5000 cut=22000->1200Hz
+[acoustics.trace] snapshot=1 time=10.00 playing=1 active=1 routed=0 pathAgeOver2s=0 maxPathAge=1.00s selected=24 (estimated, not final rendered output)
+[acoustics.trace] #1 name=chest kind=Sfx clip=open volume=1.000 dist=4.00m active=True spatial=1.00 virtual=False muted=False priority=128 pitch=1.000 path=portal paths=1 routed=False spread=0.00 age=1.00s world=2/2 occ=0.40 wallGain=0.5000 wallLowpass=1200Hz airLowpass=18000Hz distGain=0.800 sourceGain=1.000 targetDSP=0.4000 (-8.0dB) targetDSPcut=1200Hz actualDSP=0.3500 actualDSPcut=1100Hz meterSamples=1024 inputRMS=0.20000 outputRMS=0.10000 processingChange=-6.0dB hrtf=False doppler=1.000 water=0.00 reverbSend=0.000 sourcePos=0.00,0.00,0.00 listenerPos=0.00,0.00,0.00
+ACOUSTIC TRACE PASS: source snapshot, waveform-level meter metadata, geometry, transition history, retention

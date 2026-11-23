@@ -11,8 +11,9 @@ namespace WiresAcoustics
     // its rays. Its share of the rays is how big it looks from where you are.
     //
     // Paths through them (as in Vercidium's ray traced audio): a sound with walls in the way is also
-    // tried through the biggest openings: listener -> opening (clear, that's how the opening was
-    // found) -> sound. The path's loss is the walls between the opening and the sound, the bend
+    // tried through the biggest openings: listener -> opening -> sound. A room-ray
+    // escape is only a portal candidate; Batch now verifies BOTH legs independently
+    // and accounts for any obstruction on the listener-to-opening leg. The bend
     // round the opening's nearest edge (Diffraction.Opening) and the extra distance (inverse
     // distance law: direct / path length). The direct sound and the best way round add by energy,
     // and where it's heard from follows the precedence effect (Batch).
@@ -20,9 +21,8 @@ namespace WiresAcoustics
     {
         internal struct Portal { internal Vector3 Point, Dir; internal float Share, Dist, Radius; }
         internal static readonly List<Portal> List = new List<Portal>(4);
-        internal const int Routes = 2;            // openings tried per blocked sound
+        internal const int Routes = 4;            // maximum candidates already measured by room rays
         private const int Neighbours = 6;
-        private const float MinEnclosure = .35f;  // more open than this: everything is open anyway
         private static int[][] s_nb;
         private static readonly bool[] Escaped = new bool[64];
         private const float RaySolidAngle = 4f * Mathf.PI / 64f; // each room ray's share of all round
@@ -35,7 +35,9 @@ namespace WiresAcoustics
         internal static void Find(Vector3 from, Vector3[] dirs, float enclosure, float meanPath)
         {
             List.Clear();
-            if (enclosure < MinEnclosure) return;
+            // Partial buildings can still have walls and real openings.
+            // Geometry evidence, not overall enclosure, decides whether a
+            // ray is an aperture candidate.
             int n = dirs.Length;
             if (s_nb == null) s_nb = BuildNeighbours(dirs);
             int level = 0;
@@ -43,7 +45,7 @@ namespace WiresAcoustics
             {
                 bool up = dirs[i].y > -.05f;
                 if (up) level++;
-                Escaped[i] = up && Room.Out(i);
+                Escaped[i] = up && Room.Out(i) && Room.PortalEvidence(i);
                 Label[i] = -1;
             }
             Found.Clear();
@@ -70,7 +72,12 @@ namespace WiresAcoustics
                 float dist = walls > 0 ? wallDist / walls : meanPath;
                 // as wide as it looks: its rays' solid angle as a cone, its edge that far off at its distance
                 float cosHalf = Mathf.Clamp(1f - count * RaySolidAngle / (2f * Mathf.PI), -1f, 1f);
-                float radius = dist * Mathf.Min(4f, Mathf.Tan(Mathf.Acos(cosHalf)));
+                // A cone wider than a hemisphere has no finite
+                // positive tangent radius. Clamp its geometric extent to
+                // the same 4*distance safety bound as narrower openings.
+                float radius = cosHalf <= 0f ? dist * 4f
+                    : dist * Mathf.Min(4f, Mathf.Sqrt(1f - cosHalf * cosHalf) /
+                        Mathf.Max(1e-6f, cosHalf));
                 Found.Add(new Portal { Dir = dir, Dist = dist, Point = from + dir * dist, Share = (float)count / Mathf.Max(1, level), Radius = radius });
             }
             Found.Sort((a, b) => b.Share.CompareTo(a.Share));
@@ -85,15 +92,41 @@ namespace WiresAcoustics
 
         private static int[][] BuildNeighbours(Vector3[] dirs)
         {
-            var nb = new int[dirs.Length][];
-            var order = new List<int>(dirs.Length);
-            for (int i = 0; i < dirs.Length; i++)
+            // Connected ray regions must be independent of which escaped ray
+            // is first in the scan. Directed k-nearest-neighbour links are
+            // not a valid undirected aperture topology: A can reach B while
+            // B cannot reach A, splitting the same opening based on labels.
+            // Build once, then symmetrize the adjacency relation. A shared
+            // precomputed graph adds no work to the periodic room scan.
+            int n = dirs.Length;
+            var linked = new bool[n, n];
+            var order = new List<int>(n);
+            for (int i = 0; i < n; i++)
             {
                 order.Clear();
-                for (int k = 0; k < dirs.Length; k++) if (k != i) order.Add(k);
+                for (int k = 0; k < n; k++)
+                    if (k != i) order.Add(k);
                 Vector3 d = dirs[i];
-                order.Sort((a, b) => Vector3.Dot(dirs[b], d).CompareTo(Vector3.Dot(dirs[a], d)));
-                nb[i] = order.GetRange(0, Neighbours).ToArray();
+                order.Sort((a, b) =>
+                {
+                    int c = Vector3.Dot(dirs[b], d).CompareTo(Vector3.Dot(dirs[a], d));
+                    return c != 0 ? c : a.CompareTo(b);
+                });
+                int count = Mathf.Min(Neighbours, order.Count);
+                for (int j = 0; j < count; j++)
+                {
+                    int k = order[j];
+                    linked[i, k] = linked[k, i] = true;
+                }
+            }
+
+            var nb = new int[n][];
+            for (int i = 0; i < n; i++)
+            {
+                order.Clear();
+                for (int k = 0; k < n; k++)
+                    if (linked[i, k]) order.Add(k);
+                nb[i] = order.ToArray();
             }
             return nb;
         }

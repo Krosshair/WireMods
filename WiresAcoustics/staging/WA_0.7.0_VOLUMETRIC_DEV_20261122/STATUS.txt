@@ -1,0 +1,12 @@
+WIRE'S ACOUSTICS v0.7.0 — VOLUMETRIC DEVELOPMENT BUILD
+DLL SHA256 84000FB78EDE550D5E34F4B85F888094ACF685E505F0264832570E8EA97B09AF
+Default: 16 adaptive source-volume rays; optional 4/8/32, 0 disables
+source volume. Measured loop source-box sampling + point-source spheres.
+Frequency-dependent transmission and single-edge wave integration.
+Static regression: 46 production C# sources, 0 warnings/errors, source
+geometry tests, 1805 Fresnel transfer tests, 510 ray layout scenarios,
+and previous acoustics/source geometry regression suite passing.
+NOT a published release and NOT yet validated in the real game.
+No claim of final CPU frame times or perfect Steam Audio/Wwise parity.
+To restore pre-volumetric development state (close game first):
+C:\Users\kajet\WireMods\WiresAcoustics\backup\SOURCE_VOLUME_20261122\RestorePreviousDev.ps1

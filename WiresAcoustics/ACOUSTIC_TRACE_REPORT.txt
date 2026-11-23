@@ -1,0 +1,96 @@
+WIRE'S ACOUSTICS - OFFLINE TRACE SUMMARY
+Source log: C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Enngard\BepInEx\LogOutput.log
+Counts: 49 snapshots; 1114 source entries; 5760 significant gain/filter transitions; 362 geometry events; 13270 overwritten history entries
+Last game time in trace: 203.08
+Strongest per-source post-DSP RMS among logged snapshots: 0,13494 (sfx_build_hammer_wood(Clone))
+
+PATH DISTRIBUTION (logged samples, not unique sounds):
+  analytic-box-coverage       394
+  corner                      265
+  unmeasured                  116
+  direct-through              106
+  start/clear                  74
+  portal                       64
+  direct-clear                 34
+  direct-partial               21
+  start/partial                10
+  analytic-box+indirect        10
+  start/analytic-box           10
+  start/through                10
+
+LARGEST RECORDED GAIN TRANSITIONS (>=6 dB):
+  sfx_greydwarf_idle(Clone): -120,0 dB, path start/through
+  SFX: -120,0 dB, path start/through
+  sfx_neck_idle(Clone): -120,0 dB, path start/through
+  sfx_greydwarf_idle(Clone): -120,0 dB, path start/through
+  sfx_greydwarf_idle(Clone): -120,0 dB, path start/through
+  sfx_greydwarf_idle(Clone): -120,0 dB, path start/through
+  sfx_neck_idle(Clone): -120,0 dB, path start/through
+  sfx_greydwarf_idle(Clone): -120,0 dB, path start/through
+  sfx_boar_idle(Clone): -120,0 dB, path start/through
+  sfx_greydwarf_elite_idle(Clone): -120,0 dB, path start/through
+  sfx_boar_idle(Clone): -120,0 dB, path start/through
+  sfx_neck_idle(Clone): -120,0 dB, path start/through
+  sfx_greydwarf_idle(Clone): -120,0 dB, path start/through
+  sfx_greydwarf_elite_idle(Clone): -120,0 dB, path start/through
+  sfx_greydwarf_idle(Clone): -120,0 dB, path start/through
+  sfx_seagull_idle(Clone): -120,0 dB, path start/through
+  sfx_neck_idle(Clone): -120,0 dB, path start/through
+  sfx_greyling_idle(Clone): -120,0 dB, path start/through
+  sfx_deer_idle(Clone): -120,0 dB, path start/through
+  sfx_greyling_idle(Clone): -120,0 dB, path start/through
+
+POSSIBLE ANOMALIES (heuristics, not proof of an audible defect):
+  meter diagnostic packets dropped: 920, source SFX; audio unaffected
+  ambient_loop: acoustic path measurement age 39.18ss (may be intentionally cached)
+  ambient_loop: path result from older world generation 0/26 (check if geometry changed near source)
+  wind_loop: acoustic path measurement age 39.18ss (may be intentionally cached)
+  wind_loop: path result from older world generation 0/26 (check if geometry changed near source)
+  ambient_loop: acoustic path measurement age 42.38ss (may be intentionally cached)
+  ambient_loop: path result from older world generation 0/27 (check if geometry changed near source)
+  slot1: path result from older world generation 26/27 (check if geometry changed near source)
+  slot1: path result from older world generation 26/27 (check if geometry changed near source)
+  SFX: path result from older world generation 26/27 (check if geometry changed near source)
+  ocean_ambient_loop: actual DSP gain 0,295 differs >35% from target 0,127; may be smoothing
+  slot2: path result from older world generation 26/27 (check if geometry changed near source)
+  slot1: path result from older world generation 26/27 (check if geometry changed near source)
+  wind_loop: actual DSP gain 0,664 differs >35% from target 0,402; may be smoothing
+  wind_loop: acoustic path measurement age 42.38ss (may be intentionally cached)
+  wind_loop: path result from older world generation 0/27 (check if geometry changed near source)
+  sfx_fire_loop: path result from older world generation 26/27 (check if geometry changed near source)
+  SFX: path result from older world generation 26/27 (check if geometry changed near source)
+  sfx_fire_loop: path result from older world generation 26/27 (check if geometry changed near source)
+  slot1: path result from older world generation 26/27 (check if geometry changed near source)
+  slot0: path result from older world generation 26/27 (check if geometry changed near source)
+  slot2: path result from older world generation 26/27 (check if geometry changed near source)
+  slot1: path result from older world generation 26/27 (check if geometry changed near source)
+  slot2: path result from older world generation 26/27 (check if geometry changed near source)
+  slot1: path result from older world generation 26/27 (check if geometry changed near source)
+  SFX_propeller: path result from older world generation 26/27 (check if geometry changed near source)
+  slot2: path result from older world generation 26/27 (check if geometry changed near source)
+  slot2: path result from older world generation 26/27 (check if geometry changed near source)
+  sfx_fire_loop: path result from older world generation 26/27 (check if geometry changed near source)
+  slot1: path result from older world generation 26/27 (check if geometry changed near source)
+  ambient_loop: acoustic path measurement age 45.51ss (may be intentionally cached)
+  ambient_loop: path result from older world generation 0/28 (check if geometry changed near source)
+  outside_ambience_0: acoustic path measurement age 45.51ss (may be intentionally cached)
+  outside_ambience_0: path result from older world generation 0/28 (check if geometry changed near source)
+  outside_ambience_1: acoustic path measurement age 45.51ss (may be intentionally cached)
+  outside_ambience_1: path result from older world generation 0/28 (check if geometry changed near source)
+  slot1: actual DSP gain 0,136 differs >35% from target 0,099; may be smoothing
+  outside_wind_0: acoustic path measurement age 45.51ss (may be intentionally cached)
+  outside_wind_0: path result from older world generation 0/28 (check if geometry changed near source)
+  outside_wind_1: acoustic path measurement age 45.51ss (may be intentionally cached)
+  outside_wind_1: path result from older world generation 0/28 (check if geometry changed near source)
+  slot1: actual DSP gain 0,150 differs >35% from target 0,066; may be smoothing
+  ambient_loop: acoustic path measurement age 48.67ss (may be intentionally cached)
+  ambient_loop: path result from older world generation 0/28 (check if geometry changed near source)
+  ambient_loop: acoustic path measurement age 51.72ss (may be intentionally cached)
+  ambient_loop: path result from older world generation 0/28 (check if geometry changed near source)
+  wind_loop: acoustic path measurement age 51.72ss (may be intentionally cached)
+  wind_loop: path result from older world generation 0/28 (check if geometry changed near source)
+  ambient_loop: acoustic path measurement age 54.91ss (may be intentionally cached)
+  ambient_loop: path result from older world generation 0/28 (check if geometry changed near source)
+  ... +366 more
+
+LIMITATION: RMS measures per-source audio before final Unity mixing/output. Paths, attenuation, reverb and source fields are telemetry, NOT a waveform recording. This report cannot reproduce sound, spatial hearing, audio-device processing or audible crackles. Compare with a captured output audio signal if exact playback diagnosis is required.

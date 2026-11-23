@@ -1,0 +1,179 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace WiresAcoustics
+{
+    // Which playing sounds have their filter's processing on: every one with something to do
+    // (muffling, air, distance, direction), switched off when it stops. The audio thread's time in
+    // the filters is measured for the debug log.
+    internal static class Budget
+    {
+        private const float Every = .25f;
+        private static readonly List<AcousticFilter> Playing = new List<AcousticFilter>(128);
+        private static float s_next, s_load;
+        private static int s_on, s_calls, s_hrtfCalls;
+        private static long s_stamp;
+        private static float s_perCall;
+
+        // A sound playing (Occlusion, Recheck, Voices, Ocean): processed at once, so a new sound
+        // behind a wall starts muffled.
+        internal static void Note(AcousticFilter f, float dist)
+        {
+            f.LastDist = dist;
+            if (Plugin.DebugLog.Value) f.EnsureMeterHistory();
+            if (!f.InBudget)
+            {
+                f.InBudget = true;
+                Playing.Add(f);
+            }
+            if (f.Cue) { f.Active = false; return; }
+            if (!f.enabled) Toggle(f, true); // only after the mod was switched off and on
+            if (!f.Active) { f.Active = true; s_on++; }
+        }
+
+        // Switching a filter component on (Debug log: timed, it can wait for Unity's audio mixer; now rare).
+        private static int s_toggles;
+        private static long s_toggleTicks, s_toggleWorst;
+        private static void Toggle(AcousticFilter f, bool on)
+        {
+            if (!Plugin.DebugLog.Value) { f.enabled = on; return; }
+            long t = System.Diagnostics.Stopwatch.GetTimestamp();
+            f.enabled = on;
+            t = System.Diagnostics.Stopwatch.GetTimestamp() - t;
+            s_toggles++; s_toggleTicks += t;
+            if (t > s_toggleWorst) s_toggleWorst = t;
+        }
+
+        internal static string Toggles()
+        {
+            double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            string r = "filters switched " + s_toggles + " times (" + (s_toggleTicks * f).ToString("F3") + " ms total, worst " + (s_toggleWorst * f).ToString("F3") + " ms)";
+            s_toggles = 0; s_toggleTicks = 0L; s_toggleWorst = 0L;
+            return r;
+        }
+
+        // A few times a second, from Room's tick.
+        internal static void Step(float now)
+        {
+            if (now < s_next) return;
+            s_next = now + Every;
+            AcousticFilter.RefreshOutputFormat(); // device changes: sample-accurate delays
+
+            bool debug = Plugin.DebugLog.Value;
+            if (debug)
+                foreach (AcousticFilter f in Playing)
+                    if (f != null) f.EnsureMeterHistory();
+            // Disable metering promptly when Debug log is switched off.
+            AcousticFilter.Meter = debug;
+            AcousticFilter.Diagnostics = debug;
+            long stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            long ticks = AcousticFilter.TakeTicks(out s_calls, out s_hrtfCalls);
+            if (s_stamp != 0L && stamp > s_stamp) s_load = (float)ticks / (stamp - s_stamp);
+            s_perCall = s_calls > 0 ? (float)(ticks * 1e6 / System.Diagnostics.Stopwatch.Frequency / s_calls) : 0f;
+            s_stamp = stamp;
+
+            for (int i = Playing.Count - 1; i >= 0; i--)
+            {
+                AcousticFilter f = Playing[i];
+                bool gone = f == null || f.Source == null || !f.Source.isPlaying;
+                if (!gone) continue;
+                if (!ReferenceEquals(f, null))
+                {
+                    f.InBudget = false;
+                    if (f != null && f.Kind != AcousticFilter.Kinds.Ambient) f.Active = false;
+                }
+                Playing[i] = Playing[Playing.Count - 1];
+                Playing.RemoveAt(Playing.Count - 1);
+            }
+
+            s_on = 0;
+            foreach (AcousticFilter f in Playing)
+            {
+                // processed if there's anything to do (nothing in the way, no HRTF, near: off, free)
+                bool want = !f.Cue && f.NeedsWork;
+                f.Active = want;
+                if (!want) continue;
+                s_on++;
+                if (f.Kind == AcousticFilter.Kinds.Ambient || f.Kind == AcousticFilter.Kinds.Outside || f.Voice)
+                    continue;
+                f.Heard = Heard(f); // diagnostic only: not the real mixed RMS
+            }
+        }
+
+         // How loud a sound reaches you (amplitude, roughly): Unity's fall-off at its distance and
+        // everything the mod does to it. Not its own volume: the game fades many sounds in from 0, and
+        // a sound muted at its start would miss its first moments. Custom fall-off curves count as
+        // full (reading them would cost more than this saves).
+        private static float Heard(AcousticFilter f) => Open(f) * f.TargetGain;
+
+        // How loud it would reach you with nothing in the way (its fall-off, range and own level, not
+        // its muffling): what decides which sound's wall check is read first (Batch).
+        internal static float Open(AcousticFilter f)
+        {
+            AudioSource src = f.Source;
+            if (src == null) return 0f;
+            float d = f.LastDist, fall = 1f;
+            if (src.spatialBlend >= .5f)
+            {
+                if (src.rolloffMode == AudioRolloffMode.Logarithmic) fall = d <= src.minDistance ? 1f : src.minDistance / d;
+                else if (src.rolloffMode == AudioRolloffMode.Linear) fall = Mathf.Clamp01((src.maxDistance - d) / Mathf.Max(.01f, src.maxDistance - src.minDistance));
+            }
+            return fall * f.DistanceGain * f.SourceLevel;
+        }
+
+        internal static void Clear()
+        {
+            foreach (AcousticFilter f in Playing) if (f != null) f.InBudget = false;
+            Playing.Clear();
+            s_on = 0;
+        }
+
+        // Debug: how much the processing changes loudness, overall and for the sounds it changes most.
+        private static readonly List<KeyValuePair<float, string>> Levels = new List<KeyValuePair<float, string>>();
+        internal static string Loudness()
+        {
+            double inSum = 0d, outSum = 0d;
+            Levels.Clear();
+            foreach (AcousticFilter f in Playing)
+            {
+                if (f == null) continue;
+                f.ReadMeterHistory(out double inValue, out double outValue,
+                                   out long samples, out long dropped);
+                f.LastMeterSamples = samples;
+                f.LastDroppedMeterPackets = dropped;
+                if (samples > 0)
+                {
+                    f.LastInputRms = (float)System.Math.Sqrt(System.Math.Max(0d, inValue) / samples);
+                    f.LastOutputRms = (float)System.Math.Sqrt(System.Math.Max(0d, outValue) / samples);
+                }
+                else f.LastInputRms = f.LastOutputRms = 0f;
+                if (inValue <= 1e-9) { f.LastProcessingDb = 0f; continue; }
+                inSum += inValue; outSum += outValue;
+                float db = (float)(10d * System.Math.Log10(System.Math.Max(1e-12, outValue) / inValue));
+                f.LastProcessingDb = db;
+                Levels.Add(new KeyValuePair<float, string>(db, f.name + " " + db.ToString("+0.0;-0.0") + " dB at " + f.LastDist.ToString("F0") + " m" + " [" + f.Explain() + "]"));
+            }
+            if (inSum <= 1e-9) return "level: nothing measured";
+            Levels.Sort((a, b) => a.Key.CompareTo(b.Key));
+            var sb = new System.Text.StringBuilder("level after processing " + (10d * System.Math.Log10(outSum / inSum)).ToString("+0.0;-0.0") + " dB overall; most changed:");
+            for (int i = 0; i < Levels.Count && i < 6; i++) sb.Append(" " + Levels[i].Value + ";");
+            return sb.ToString();
+        }
+
+        // Debug: sounds Unity is playing silently (past its real voices), and the nearest of them.
+        private static string Virtual()
+        {
+            int n = 0; float near = float.MaxValue; string name = "";
+            foreach (AcousticFilter f in Playing)
+            {
+                if (f == null || f.Source == null || !f.Source.isVirtual || f.Source.volume < .01f) continue; // silent anyway
+                n++;
+                if (f.LastDist < near) { near = f.LastDist; name = f.name; }
+            }
+            return n == 0 ? "none silenced for voices" : n + " silenced for voices (nearest " + name + " at " + near.ToString("F0") + " m)";
+        }
+
+        internal static string Summary() =>
+            Virtual() + "; processing " + s_on + " of " + Playing.Count +  " playing, audio thread " + (s_load * 100f).ToString("F1") + "% in " + s_calls + " callbacks (" + s_hrtfCalls + " with the HRTF), " + s_perCall.ToString("F1") + " us each";
+    }
+}

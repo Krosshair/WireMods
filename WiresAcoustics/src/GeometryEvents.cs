@@ -21,10 +21,10 @@ namespace WiresAcoustics
         private static bool s_held;
         private static float s_heldSince, s_nextCheck;
 
-        private static void Changed(Vector3 at, bool door)
+        private static void Changed(Vector3 at, bool door, bool everywhere = false)
         {
             if (!Plugin.Enabled.Value) return;
-            if (!s_held && AreaLoaded()) { Apply(at, false, door); return; }
+            if (!s_held && AreaLoaded()) { Apply(at, everywhere, door); return; }
             if (!s_held) { s_held = true; s_heldSince = Time.time; }
         }
 
@@ -32,8 +32,12 @@ namespace WiresAcoustics
         // off than that can't change it. Sounds are checked against where it was (Occlusion).
         private static void Apply(Vector3 at, bool everywhere, bool door)
         {
+            if (everywhere) Area.InvalidateAll();
             if (everywhere || (at - Hearing.At).sqrMagnitude <= Room.MaxDistance * Room.MaxDistance) Room.Invalidate();
             Occlusion.WorldChanged(at, everywhere, door);
+            // Shore geometry changes for terrain edits and global zone
+            // reloads, not for door motion or ordinary piece placement.
+            if (everywhere) Ocean.Invalidate();
         }
 
         // At most every 0.25 s: pieces appear up to 10 a frame while walking into new zones.
@@ -85,19 +89,65 @@ namespace WiresAcoustics
         [HarmonyPatch(typeof(Piece), "Awake")]
         private static class Built
         {
-            private static void Postfix(Piece __instance) => Changed(__instance.transform.position, false);
+            private static void Postfix(Piece __instance)
+            {
+                Area.Invalidate(__instance.transform);
+                Changed(__instance.transform.position, false);
+            }
         }
 
         [HarmonyPatch(typeof(Piece), "OnDestroy")]
         private static class Removed
         {
-            private static void Prefix(Piece __instance) => Changed(__instance.transform.position, false);
+            private static void Prefix(Piece __instance)
+            {
+                Area.Invalidate(__instance.transform);
+                Changed(__instance.transform.position, false);
+            }
+        }
+
+        // Geometry beyond build pieces/doors can change without listener
+        // movement. Use the same invalidation path to keep the room and
+        // nearby active sounds synchronized with destructible scenery.
+        [HarmonyPatch(typeof(TerrainComp), "ApplyOperation")]
+        private static class TerrainEdited
+        {
+            private static void Postfix(TerrainComp __instance)
+            {
+                if (__instance != null) Changed(__instance.transform.position, false, true);
+            }
+        }
+
+        // MineRock5 changes individual collider regions without destroying
+        // its GameObject. A destroy-only hook cannot catch partial mining.
+        [HarmonyPatch(typeof(MineRock5), "RPC_SetAreaHealth")]
+        private static class MineRockAreaChanged
+        {
+            private static void Postfix(MineRock5 __instance)
+            {
+                if (__instance != null) Changed(__instance.transform.position, false, true);
+            }
+        }
+
+        [HarmonyPatch(typeof(Destructible), "DestroyNow")]
+        private static class SceneryDestroyed
+        {
+            private static void Prefix(Destructible __instance)
+            {
+                if (__instance == null) return;
+                Area.Invalidate(__instance.transform);
+                Changed(__instance.transform.position, false);
+            }
         }
 
         [HarmonyPatch(typeof(Door), "SetState")]
         private static class DoorChanged
         {
-            private static void Postfix(Door __instance) => Changed(__instance.transform.position, true);
+            private static void Postfix(Door __instance)
+            {
+                Area.Invalidate(__instance.transform);
+                Changed(__instance.transform.position, true);
+            }
         }
     }
 }

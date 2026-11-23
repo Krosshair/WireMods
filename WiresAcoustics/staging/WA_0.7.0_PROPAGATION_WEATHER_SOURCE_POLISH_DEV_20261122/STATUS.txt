@@ -1,0 +1,20 @@
+Wire's Acoustics 0.7.0 — PRIVATE developer build.
+Verified compiled DLL SHA256: 2564C8C94EC56886D63AA9B7631CD4E663E60F62159821B7A5B4F4A974622191
+49 production C# source files, zero compilation errors and warnings.
+Existing + new regression tests passed. In-game audio and performance
+QA not yet carried out: do not publish as a certified release.
+
+Major work:
+- real knife-edge Fresnel edge response on analytically verified box walls,
+  source-size partial energy and continuous near-edge signal/direction;
+- duplicate analytic corner paths eliminated; cached geometry avoids
+  idle calculations and recurring 4–32 redundant volume rays;
+- keep original Valheim rain recording audible beneath measured built roofs,
+  identified using actual wet weather and active EnvSetup/AudioSource clips;
+- do not attach unowned audio to arbitrary overlapping base colliders;
+- retain geometry-change fast updates, normal movement glide and existing
+  per-frame job only (no new Update/coroutines/raycasts).
+
+See WA_070_PROPAGATION_WEATHER_SOURCE_POLISH_20261122.md for limitations.
+Windows-side rollback (with Valheim CLOSED):
+C:\Users\kajet\WireMods\WiresAcoustics\backup\V070_PROPAGATION_RAIN_SOURCE_20261122\Restore.ps1

@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net9.0</TargetFramework><OutputType>Exe</OutputType><LangVersion>latest</LangVersion><ImplicitUsings>enable</ImplicitUsings></PropertyGroup><ItemGroup><Compile Include="..\..\src\Portals.cs" Link="Portals.cs" /></ItemGroup></Project>

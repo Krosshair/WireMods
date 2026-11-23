@@ -1,0 +1,12 @@
+PRIVATE WA 0.7.0 development build (not for public release)
+Installed and verified Enngard DLL: 06592A37A668CD4FD0A7ABB2A0E812B8AE664EEDBC26B6349BECF88B5C59C8C8
+Wind gain no longer compounds vanilla AudioSource.volume per render frame.
+No estimated -60dB source muting.
+When the ray pipeline is free, the time budget cannot block all queued requests.
+Remove 2s idle loop recheck and frequent stationary room/ocean raycasts.
+Known world changes invalidate caches. Existing direction job remains.
+All static/source-linked regression and compiler checks passed.
+In-game listening, pause/menu, actual profiler data and mod interactions
+NOT tested and must be validated before publication.
+Restore while Valheim CLOSED:
+C:\Users\kajet\WireMods\WiresAcoustics\backup\AUDIT_FIXES_20261122\Restore.ps1

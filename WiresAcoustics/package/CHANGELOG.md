@@ -1,3 +1,19 @@
+## 0.7.0
+
+- Sounds change more naturally as you move behind a wall or past its edge. As more of the sound is hidden, what reaches you gradually changes from clear sound to sound passing through the wall or round its edge.
+- Building or removing a wall, or opening and closing a door, updates nearby sounds promptly. Walking round the same wall still changes what you hear smoothly.
+- Sounds find their way through more windows, doorways and other openings. When several paths are open, their loudness and direction blend instead of a sound jumping from one window to another. Small gaps between building pieces are less likely to sound like open windows.
+- Rain stays audible indoors instead of disappearing behind the walls. An open doorway lets in more of the outside than a narrow window, and being under an actual roof changes the rain's sound without making an ordinary floor count as a roof. The original Valheim rain recording is used throughout.
+- Wind affects distant sounds differently depending on whether they're upwind or downwind, how far away they are and the ground between you. Buildings, rocks and hills shelter you from it. Clear-weather wind recordings also follow the wind's direction.
+- The sea is heard from the shoreline around you, not from one arbitrary point. Buildings can block part of the shore without silencing all of it, and the sound no longer stays behind at an old shoreline when you move away.
+- Weapon swings come from the moving weapon itself. What you're acting on (using a chest, door or station, putting an item on or in it, placing, removing or repairing a piece) is heard clearly while you're within reach of it, even in a tightly stacked wall of chests. Nothing a sound comes from muffles its own sound. A ward's, map table's and feast's sounds come from their top, a turret's from its head, a ship's sail from the sail, an incinerator's from its lever, and traders and other talking figures speak from their heads. A smelter's, charcoal kiln's and blast furnace's fire is heard from its firebox instead of the ground under it. Doors, creatures and crafting stations keep their own sound positions; rotated objects are placed more accurately.
+- Raising terrain now plays its placement sound above the new ground surface instead of leaving it buried inside the terrain.
+- Several fires or machines playing the same looping sound can now all be heard. Each starts at a different point in its recording instead of sounding perfectly synchronized. Small fires are quieter than large ones, based on their original sound settings.
+- Sound direction is steadier when you turn the camera, hear several paths at once or move past a corner. Doppler pitch changes also behave more consistently at different frame rates.
+- Birds and insects placed randomly in the world are less likely to end up in the wrong spot when the first sampled patch of ground is empty.
+- Reduced unnecessary sound and room checks (a new sound's wall check is 3 rays instead of 6), improved audio-job scheduling and fixed several cases where sound processing could keep stale geometry or try to play a disabled source.
+- Main-menu sound processing now stays with the menu's own positional sounds instead of affecting audio sources left over from the world.
+
 ## 0.6.0
 - Added back: sound takes time to travel, now at 350 m/s from your character's head. A sound far away starts as late as its distance makes it (up to half a second).
 - Added back: Doppler. Sounds coming toward you are higher, going away lower, measured from your character's head (camera movement doesn't affect it).

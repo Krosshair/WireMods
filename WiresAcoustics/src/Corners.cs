@@ -98,6 +98,50 @@ namespace WiresAcoustics
             return -1;
         }
 
+        // The clear (illuminated) side of a previously measured real
+        // wall edge still diffracts. Without this, crossing the last
+        // unblocked ray abruptly changes from fully clear direct sound
+        // to an already-attenuated path round the edge.
+        //
+        // Find where the current direct segment crosses the wall plane;
+        // determine whether it lies past an actually probed open edge,
+        // and evaluate the signed, clear-side Fresnel behavior via the
+        // geometrical detour. Zero extra raycasts or extra update loops.
+        internal static bool Illuminated(Record[] recs, Vector3 listener,
+            Vector3 source, out float gain, out float cutoff)
+        {
+            gain = 1f;
+            cutoff = 22000f;
+            if (recs == null) return false;
+            Vector3 line = source - listener;
+            float direct = line.magnitude;
+            if (direct < .1f) return false;
+            float detour = float.MaxValue;
+            foreach (Record rec in recs)
+            {
+                if (!rec.Valid || Occlusion.ChangedNear(rec.Gen, rec.At,
+                    rec.At, rec.Span + Occlusion.SameWall)) continue;
+                float dot = Vector3.Dot(line, rec.N);
+                if (Mathf.Abs(dot) < 1e-4f) continue;
+                float t = Vector3.Dot(rec.At - listener, rec.N) / dot;
+                if (t <= 0f || t >= 1f) continue;
+                Vector3 crossing = listener + line * t;
+                for (int d = 0; d < Dirs; d++)
+                {
+                    if (!rec.Has[d]) continue;
+                    Vector3 edge = rec.Edges[d];
+                    Vector3 openSide = Dir(rec.N, d);
+                    if (Vector3.Dot(crossing - edge, openSide) < 0f) continue;
+                    float delta = (edge - listener).magnitude +
+                        (source - edge).magnitude - direct;
+                    detour = Mathf.Min(detour, Mathf.Max(0f, delta));
+                }
+            }
+            if (detour == float.MaxValue) return false;
+            Diffraction.LitEdge(detour, out gain, out cutoff);
+            return true;
+        }
+
         internal static float LengthGain(Vector3 listener, Vector3 p, Vector3 sound)
         {
             float direct = (sound - listener).magnitude;

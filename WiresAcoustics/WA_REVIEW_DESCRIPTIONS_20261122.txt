@@ -1,0 +1,417 @@
+File|Type|Method|Mechanism|Assessment
+AcousticMath.cs|*|OcclusionStrength(property)|Reads config: disabled gives 0, enabled clamps strength to 0–1.5.|Sound
+AcousticMath.cs|*|LogLerp|Interpolates low-pass frequencies in log space.|Sound
+AcousticTrace.cs|*|Record|Records source target gain and cutoff changes in bounded history when debug is enabled.|Debug only
+AcousticTrace.cs|*|EmitTransitions|Formats recent gain/cutoff changes as source-tagged log lines.|Debug overhead
+AcousticTrace.cs|*|RecordGeometry|Records generation and position of world geometry changes for diagnostics.|Debug only
+AcousticTrace.cs|*|EmitGeometryChanges|Writes cached geometry-change events to log.|Debug overhead
+AcousticTrace.cs|*|Emit|Ranks tracked/playing sounds and logs detailed gain, DSP, coverage, path and meter snapshots.|Debug can be heavy
+Ambience.cs|*|RememberPan|Saves the original stereo-pan setting to restore when switching off.|Sound
+Ambience.cs|*|RestorePlaced|Returns ambient loop sources and their panning to vanilla state.|Sound
+Ambience.cs|*|IsAmbient|Recognizes the game's own unplaced ambience AudioSource objects.|Sound
+Ambience.cs|*|Pan|Every rendered audio update: glides environment and multiplies vanilla wind volume for gust/lean; vanilla restores wind only on FixedUpdate, so gain can compound and drift during pause.|P0 gain accumulation
+Ambience.cs|*|Lean|Creates/updates wind filter and steers its binaural direction/width.|Authored
+Ambience.cs|*|Update|Measures enclosure and exterior portals; assigns real ambient/wind loop copies to persistent slots.|Complex; authored
+Ambience.cs|*|Sounding|Checks whether an ambient copy is playing or still fading.|Sound
+Ambience.cs|*|Bed|Applies current indoor ambience gain/cutoff to the game's original loop.|Authored
+Ambience.cs|*|Glide|Smooths indoor state, shelter and weather; updates wind/rain filtering and sends.|Hot; authored
+Ambience.cs|*|WindFrom|Gets the current environment wind direction.|Sound
+Ambience.cs|*|Play|Starts or updates one copy of vanilla wind/ambient sound at a window slot.|Lifecycle risk
+Ambience.cs|*|Fade|Moves copy volume toward target and stops it when inaudible.|Sound
+Ambience.cs|*|Make|Constructs a persistent spatial AudioSource and AcousticFilter for portal ambience.|Lifecycle cost
+Ambience.cs|*|Apply|Assigns ambient semantics and low-pass to unplaced random or loop sounds.|Sound
+Ambience.cs|*|Forget|Removes one sound from the random ambience registry.|Sound
+Ambience.cs|*|Need|Marks an ambient filter for processing/budget tracking.|Sound
+Ambience.cs|*|Reset|Stops ambient copies and restores vanilla state.|Lifecycle
+Ambience.cs|*|Now|Formats detailed current portal/ambient state for diagnostics.|Debug
+Ambience.cs|*|Db|Converts amplitude to a dB string for log.|Debug
+Ambience.cs|*|Summary|Formats current ambient shelter gain, cutoff and enclosure.|Debug
+Animated.cs|*|Prefix|Intercepts effect creation and attaches animated sound emitters to moving effects/bones.|Valheim-specific
+Area.cs|*|Invalidate|Drops cached source shape for pieces/descendants affected by geometry changes.|Sound
+Area.cs|*|InvalidateAll|Clears all cached source shapes.|Lifecycle
+Area.cs|*|Measure|Caches object/collider extents, centers sound emitters and adjusts fire source level.|Source geometry risk
+Area.cs|*|Voice|Moves a piece's sound toward its shape center, or flame light if a fireplace.|Valheim-specific
+Area.cs|*|TopOf|Returns cached top position of a collider-defined piece shape.|Sound
+Area.cs|*|CenterOf|Returns cached world-space source-center position.|Sound
+Area.cs|*|FlameOf|Returns light-based fire location, falling back to shape center.|Valheim-specific
+Area.cs|*|Cached|Retrieves or creates owner shape snapshot by instance ID.|Caching
+Area.cs|*|Of|Inspects child colliders to build local bounding shape of source owner.|Approximates geometry
+Area.cs|*|AddCollider|Updates combined bounds for supported collider shape.|Approximates geometry
+Area.cs|*|AddCorners|Transforms collider bounds corners into owner local space.|Geometry
+Area.cs|*|FireLevel|Assigns larger fireplaces higher authored volume by size.|Authored
+Area.cs|*|WidthAt|Computes apparent angular width from physical size/distance.|Geometry
+AudioMeterHistory.cs|*|Publish|Publishes audio callback energy to a lock-free bounded ring with version markers.|Audio-thread safe intent
+AudioMeterHistory.cs|*|Read|Reads consistent recent ring packets and tallies missing data without blocking callback.|Debug
+AudioProvenance.cs|*|Summary|Reports instrumented random ambient/lava sound calls.|Debug
+AudioProvenance.cs|*|ReplacePlay|Harmony-transpiles selected audio Play calls into wrappers that preserve source identity.|Patch fragility
+AudioProvenance.cs|*|MarkAndPlay|Tags spawned sound as world-random/lava before playing it.|Valheim-specific
+AudioProvenance.cs|*|PlayRandom|Delegates to MarkAndPlay with random-ambience provenance.|Valheim-specific
+AudioProvenance.cs|*|PlayLava|Delegates to MarkAndPlay with lava provenance.|Valheim-specific
+AudioProvenance.cs|Random|Transpiler|Patches random-ambient generator sound calls.|Patch fragility
+AudioProvenance.cs|Lava|Transpiler|Patches lava effect generator sound calls.|Patch fragility
+Batch.cs|*|Summary|Summarizes completed direct, volume, portal and corner rays and stale-job counters.|Debug
+Batch.cs|*|GeometryChanged|On nearby world edits, queues impacted active sources and invalidates shared edge cache.|Potential burst
+Batch.cs|*|Enqueue|Captures source pose/generation; skips inaudible or own sources; queues acoustic request.|Critical skip heuristic
+Batch.cs|*|Tidy|Deduplicates requests and sorts urgent/loud sources first.|Good prioritization
+Batch.cs|*|Step|Schedules bounded direct/volume/portal/corner raycast jobs and processes previous results.|Critical hot path
+Batch.cs|*|EnsureFlight|Resizes reusable request and geometry arrays geometrically.|Amortized allocation
+Batch.cs|*|Fly|Appends a request to the current in-flight batch.|Sound
+Batch.cs|*|StartProbes|Queues wall-edge probe requests for a missing cached edge.|Potential burst
+Batch.cs|*|Cast3|Enqueues central plus two offset acoustic rays.|Finite sampling
+Batch.cs|*|Probe|Queues directed raycasts around an obstruction to locate usable edges.|Geometry
+Batch.cs|*|ReadProbe|Converts completed probe hits into cached edge candidate records.|Geometry
+Batch.cs|*|Open|Tests whether candidate ray leg is unobstructed.|Geometry
+Batch.cs|*|Cast|Constructs one RaycastCommand from two endpoints.|Geometry
+Batch.cs|*|DirectWalls|Runs three ray hit analyses and spectral-energy quadrature of direct path.|Finite sampling
+Batch.cs|*|VolumeRay|Evaluates independent source-volume sample with material transfer.|Finite sampling
+Batch.cs|*|Ray|Reads physics hits, sorts/combines geometry layers and terrain ridge.|Geometry
+Batch.cs|*|HeardFrom|Computes direction influence of late paths using hand-tuned precedence curves.|Authored psychoacoustics
+Batch.cs|*|Toward|Interpolates virtual perceived source toward a path waypoint.|Authored direction
+Batch.cs|*|ChangedDuringFlight|Rejects stale ray results if nearby geometry changed during job.|Correctness
+Batch.cs|*|Apply|Resolves direct, openings, edges, source volume, paths and DSP for each completed request.|363-line critical complexity
+Batch.cs|*|Flush|Completes outstanding ray jobs and clears requests.|Lifecycle
+Batch.cs|*|Shutdown|Flushes and frees persistent ray buffers.|Lifecycle
+Batch.cs|Frame|Begin|Starts a 0.5-ms wall-clock budget per audio update.|Starvation risk
+Batch.cs|Frame|Over(property)|Compares current timestamp to the 0.5-ms deadline.|Starvation risk
+Budget.cs|*|Note|Registers/activates sound, turns on metering when debugging.|Sound
+Budget.cs|*|Toggle|Enables filter component with optional timing diagnostics.|Debug
+Budget.cs|*|Toggles|Reports how often filters were toggled.|Debug
+Budget.cs|*|Step|Every 0.25 s sweeps playing sources; mutes those estimated below -60 dB.|High; hard mute
+Budget.cs|*|Silence|Sets mute flag and makes muted sounds lowest Unity priority.|High; hard mute
+Budget.cs|*|Heard|Multiplies estimated unobstructed audibility by current wall gain.|High; proxy estimate
+Budget.cs|*|Open|Estimates gain from simple Unity attenuation shape, distance/source factors.|Risk: not actual mix
+Budget.cs|*|Clear|Clears tracked sources and unmutes them.|Lifecycle
+Budget.cs|*|Loudness|Aggregates per-source audio RMS meters and processing dB for log.|Debug cost
+Budget.cs|*|Virtual|Lists sources Unity virtualized because of voice limit.|Debug
+Budget.cs|*|Summary|Reports activation, muted sounds and mixer callback timing.|Debug
+ContinuousEdges.cs|*|Measured|Checks whether a cached edge is still geometrically valid around listener/source.|Stale geometry risk
+ContinuousEdges.cs|*|EvaluateVolume|Integrates Fresnel response across sampled source sphere for a validated edge.|Approximation
+ContinuousEdges.cs|*|Evaluate|Applies continuous single-edge diffraction using cached geometry without new ray jobs.|Geometry heuristic
+Corners.cs|*|From|Maps first/last obstruction hit into two wall-edge geometries.|Geometry
+Corners.cs|*|Dir|Constructs radial probe direction from obstacle face normal.|Geometry
+Corners.cs|*|Probes|Determines how many perimeter probes needed based on geometry/distance.|Heuristic
+Corners.cs|*|Probe|Returns specific perimeter probe ray direction.|Geometry
+Corners.cs|*|Covers|Tests if cached edge covers current listener/source position.|Geometry
+Corners.cs|*|Match|Finds matching wall edge record by position and normal.|Caching
+Corners.cs|*|Illuminated|Estimates diffraction even on clear side of cached wall edge.|Approximation
+Corners.cs|*|LengthGain|Applies geometric detour/distance loss for corner paths.|Acoustic approx
+Cost.cs|*|Start|Returns timestamp only with Debug log enabled.|Debug
+Cost.cs|*|Add|Adds elapsed time to per-system diagnostic statistic.|Debug
+Cost.cs|*|AddTicks|Adds already measured duration to statistic.|Debug
+Cost.cs|*|AddTick|Records whole audio update time and GC occurrence.|Debug
+Cost.cs|*|Ms|Converts ticks into formatted milliseconds.|Debug
+Cost.cs|*|Report|Formats/reset per-system cost counters.|Debug
+Diagnostics.cs|*|Summary|Counts instance pools and reports resource usage when diagnostics enabled.|Debug
+Diffraction.cs|*|Diffraction|Constructs diffraction calculation's lookup table/constants at initialization.|Precompute
+Diffraction.cs|*|Loss|Converts detour distance and wavelength to predicted diffraction attenuation.|Acoustic approximation
+Diffraction.cs|*|RoundObstacle|Calculates bounded diffraction detour around an obstacle's box.|Approximation
+Diffraction.cs|*|Opening|Computes transfer through a discovered opening using width and path geometry.|Approximation
+Diffraction.cs|*|Lit|Calculates clear-side diffraction response for known obstacle edge.|Approximation
+Diffraction.cs|*|LitEdge|Converts edge geometry to additional colored response on illuminated side.|Approximation
+Diffraction.cs|*|DetourFor|Finds alternate path-length around object at a particular edge.|Geometry
+Diffraction.cs|*|RoundDetour|Applies diffraction loss to a known detour's path geometry.|Acoustic approximation
+Diffraction.cs|*|Round|Evaluates propagated sound bending around a single geometric edge.|Acoustic approximation
+Directions.cs|Job|Execute|Unity transform job reads source positions/distance and updates smoothed radial velocity.|Per-frame job
+Directions.cs|*|Want|Queues change to which filters need position tracking.|Efficient event registration
+Directions.cs|*|Step|Every audio frame completes previous job, updates panning/distance/Doppler and launches next transform job.|Per-frame overhead
+Directions.cs|*|Apply|Swap-add/removes tracked transforms and reuses arrays, synchronizing with job.|Efficient list management
+Directions.cs|*|Grow|Expands persistent NativeArrays to power-of-two capacity.|Amortized allocation
+Directions.cs|*|Idle|Flushes pending job and applies tracked-list changes while WA disabled.|Lifecycle
+Directions.cs|*|Flush|Completes any outstanding position-transform job.|Potential stall
+Directions.cs|*|Shutdown|Completes work, unregisters filters and disposes persistent arrays.|Lifecycle
+Doppler.cs|*|ApplyOther|Writes pitch shift to non-ZSFX sources, preserving their original pitch.|Compatibility risk
+Doppler.cs|*|Postfix|Updates ZSFX Doppler pitch from measured source/listener motion.|Compatibility risk
+Equip.cs|*|Take|Temporarily tags a character and equipment slot while creating related sounds.|Placement context
+Equip.cs|*|Release|Restores prior player/equipment tracking context.|Lifecycle
+Equip.cs|*|Vis|Fetches humanoid visual-equipment object for slot location.|Valheim-specific
+Equip.cs|Equipping|Prefix|Captures equip action before its effects spawn.|Hook
+Equip.cs|Equipping|Finalizer|Restores equip-scoped sound placement context even on exception.|Hook
+Equip.cs|Unequipping|Prefix|Captures unequip action and back-slot anchor.|Hook
+Equip.cs|Unequipping|Finalizer|Clears temporary unequip context.|Hook
+Equip.cs|Using|Prefix|Captures use-item sound context.|Hook
+Equip.cs|Using|Finalizer|Clears use context.|Hook
+Equip.cs|PickingUp|Prefix|Captures pickup item context.|Hook
+Equip.cs|PickingUp|Finalizer|Clears pickup context.|Hook
+Equip.cs|Dropping|Prefix|Captures dropped-item context.|Hook
+Equip.cs|Dropping|Finalizer|Clears drop context.|Hook
+Filter.cs|*|GlobalGain(property)|Computes shared underwater level multiplier for this source.|Audio thread
+Filter.cs|*|GlobalCutoff(property)|Reads underwater-global low-pass cutoff.|Audio thread
+Filter.cs|*|RefreshOutputFormat|Checks Unity output device rate and invalidates spectral lookup when it changes.|Periodic
+Filter.cs|*|For|Gets or lazily adds an AcousticFilter component to source.|Lifecycle
+Filter.cs|*|SetGlobal|Writes global gain/cutoff state shared with active audio callbacks.|Audio thread coordination
+Filter.cs|*|DiagnosticsSummary|Formats worst audio callback timing and types.|Debug
+Filter.cs|*|TakeTicks|Atomically retrieves/reset audio callback timing totals.|Debug
+Filter.cs|*|Hrtf.get|Returns whether custom binaural processing is enabled.|State
+Filter.cs|*|Hrtf.set|Switches binaural processing; changes original panning and tracking.|State transition
+Filter.cs|*|Placed.get|Returns whether source has physical 3D placement.|State
+Filter.cs|*|Placed.set|Records placement and queues transform tracker update on change.|State
+Filter.cs|*|NeedsWork(property)|Checks gain/cutoff/distance/HRTF to determine whether DSP work needed.|CPU gating
+Filter.cs|*|AirAt|Interpolates precomputed ISO air absorption cutoff by distance/weather.|Physical approximation
+Filter.cs|*|AirTable|Computes frequency attenuation cutoff table for one weather case.|One-time CPU cost
+Filter.cs|*|AirAbsorption|Evaluates frequency-dependent ISO 9613-1 attenuation model.|Reference formula
+Filter.cs|*|PastRange|Adds custom extra attenuation outside vanilla sound's range.|Gameplay-tuned
+Filter.cs|*|TakePanning|Captures original spatial spread and replaces with custom binaural width.|HRTF approximation
+Filter.cs|*|Pan|Changes Unity stereo panning to avoid doubling custom spatial cues.|Integration
+Filter.cs|*|Tracked(property)|Determines whether source belongs in per-frame position job.|Per-frame scope
+Filter.cs|*|Awake|Registers AudioSource and Filter in live array and initializes sample format.|Lifecycle
+Filter.cs|*|OnDestroy|Swap-removes filter from live registry and queues tracker update.|Lifecycle
+Filter.cs|*|Active.get|Reads fast active-processing flag.|State
+Filter.cs|*|Active.set|Changes active-processing state without Unity component toggle.|Performance improvement
+Filter.cs|*|OnEnable|Resets filter history and reapplies binaural panning state.|Lifecycle
+Filter.cs|*|OnDisable|Restores proper panning when filter disabled.|Lifecycle
+Filter.cs|*|Set|Writes target gain/cutoff; optional instant snap or next-buffer fast crossfade.|DSP transition
+Filter.cs|*|TargetGain(property)|Returns target acoustic gain before shared distance/mix factors.|State
+Filter.cs|*|TargetCutoff(property)|Returns target acoustic low-pass cutoff.|State
+Filter.cs|*|DspGain(property)|Returns currently smoothed DSP gain.|State
+Filter.cs|*|DspCutoff(property)|Returns currently smoothed DSP cutoff.|State
+Filter.cs|*|EstimatedCompositeGain(property)|Estimates total DSP gain from target, water, distance and source level.|Debug/estimate
+Filter.cs|*|EstimatedCompositeCutoff(property)|Estimates smallest active cutoff among acoustic/water/air.|Debug/estimate
+Filter.cs|*|SetDirection|Stores local source direction vector for audio callback.|State
+Filter.cs|*|ReleaseHrtf|Disables binaural processing for every live filter.|Lifecycle
+Filter.cs|*|ReleaseAll|Restores every tracked source's original audio settings.|Lifecycle
+Filter.cs|*|Explain|Builds concise diagnostic string describing applied acoustic gain.|Debug
+Filter.cs|*|Line|Builds custom attenuation curve for line-like ocean source.|Gameplay-authored
+Filter.cs|*|Physical|Replaces Unity distance curve/doppler and restores previous settings when disabled.|Integration risk
+Filter.cs|*|Format|Summarizes aggregate tracked sound states for log.|Debug
+Filter.cs|*|EnsureMeterHistory|Creates bounded audio energy meter history on demand.|Debug allocation
+Filter.cs|*|ReadMeterHistory|Returns measured input/output audio energy from history.|Debug
+Filter.cs|*|Energy|Integrates sample-square energies in buffer.|Audio metering
+Filter.cs|*|OnAudioFilterRead|Main audio-thread callback: gates silence, processes/filter/meters PCM samples.|High; hard silence
+Filter.cs|*|Process|Applies per-channel two-stage low-pass and smooth volume when not binaural.|Audio-thread hot
+Filter.cs|*|SmoothOcclusion|Interpolates gain/cutoff per buffer over fast or 150ms transition.|DSP smoothing
+Filter.cs|*|Spatialize|Processes stereo through approximate ITD/head shading/back/notch delays and EQ.|118-line authored HRTF
+Filter.cs|*|Glide|Returns buffer-time smoothing factor for 150ms glide.|DSP
+Follow.cs|Created|Postfix|On GameObject effect creation, attaches sounds to proper owner/emitting bone.|Valheim-specific
+Follow.cs|Felled|Postfix|Tracks tree-fall effects and places falling tree sound correctly.|Valheim-specific
+Follow.cs|Idle|Prefix|Temporarily records active owner of idle status sound.|Hook
+Follow.cs|Idle|Finalizer|Clears owner context after idle status.|Hook
+Follow.cs|Alerted|Prefix|Temporarily records creature issuing alerted sound.|Hook
+Follow.cs|Alerted|Finalizer|Clears alerted context.|Hook
+Follow.cs|Chest|Prefix|Marks owner/placement context when chests open or close.|Hook
+Follow.cs|Chest|Finalizer|Clears temporary chest owner context.|Hook
+Follow.cs|*|Moves|Checks/cache whether prefab's effect contains animated/transformed sound.|Caching
+Follow.cs|*|Step|Every audio update moves emitters with owners and cleans stale references.|Per-frame overhead
+Follow.cs|*|Track|Registers sound/owner transform pair for continuous following.|Lifecycle
+Follow.cs|*|Networked|Checks whether sound owner is network-synchronized.|Valheim-specific
+Follow.cs|*|Clear|Clears all tracked mobile emitters.|Lifecycle
+Follow.cs|*|Count(property)|Returns count of tracked sound followers.|Debug
+Follow.cs|*|Tracked|Checks whether a given sound transform is registered as a follower.|Lookup
+FresnelEdge.cs|*|FresnelEdge|Precalculates normalized Fresnel integrals via Simpson quadrature.|One-time precompute
+FresnelEdge.cs|*|Sample|Interpolates odd-symmetric Fresnel lookup curve.|Math
+FresnelEdge.cs|*|Field|Constructs complex knife-edge field from C and S integrals.|Documented theory
+FresnelEdge.cs|*|PathDistances|Splits direct source/listener distance at wall crossing fraction.|Geometry
+FresnelEdge.cs|*|Parameter|Computes dimensionless Fresnel clearance parameter.|Documented theory
+FresnelEdge.cs|*|Intensity|Computes squared field including partially transmitting half-plane.|Approximation
+FresnelEdge.cs|*|Transfer|Fits two Fresnel frequency intensities into existing gain/two-pole cutoff.|Two-band limit
+GeometryEvents.cs|*|Changed|Routes geometry event now or holds it until world area load stable.|Event
+GeometryEvents.cs|*|Apply|Invalidates area/room/propagation caches around changed piece.|Event response
+GeometryEvents.cs|*|AreaLoaded|Memoizes whether current chunk/area completed world loading.|Poll fallback
+GeometryEvents.cs|*|AreaReady|Checks ZNetScene/ZoneSystem/ZDO counts for area load completion.|Valheim-specific
+GeometryEvents.cs|*|Step|Periodically retries held world-load events and then flushes them.|Poll while pending
+GeometryEvents.cs|Built|Postfix|Invalidates local cache after placement.|Hook
+GeometryEvents.cs|Removed|Prefix|Invalidates local cache before removal.|Hook
+GeometryEvents.cs|TerrainEdited|Postfix|Signals geometry change after terrain edits.|Hook
+GeometryEvents.cs|MineRockAreaChanged|Postfix|Signals geometry change after mining rock terrain.|Hook
+GeometryEvents.cs|SceneryDestroyed|Prefix|Signals structural change before environment object destruction.|Hook
+GeometryEvents.cs|DoorChanged|Postfix|Signals door open/close state changes.|Hook
+Hearing.cs|*|Update|Stores physical AudioListener position and parent camera for binaural orientation.|Listener model
+Indoor.cs|Indoor|Prefix|Suppresses/adjusts vanilla indoor reverb state when WA manages room reverb.|Compatibility
+Indoor.cs|Paused|Prefix|Handles vanilla pause-state reverb/interior behavior.|Pause integration
+Menu.cs|*|Postfix|Finds existing AudioSources in newly opened menu and labels world/unplaced semantics.|Full source scan
+Mist.cs|*|Undo|Removes vanilla mist pitch-drop effect for audibility/spatial consistency.|Vanilla override
+Occlusion.cs|*|Resume|Uses completed first-sound raycast result and re-enters sound initialization with a known obstruction spectrum.|Start lifecycle
+Occlusion.cs|*|Postfix|Runs the acoustics after Valheim ZSFX reverb refresh and records debug timing.|Harmony hook
+Occlusion.cs|*|Run|Identifies ambience/cues, places sources, starts ray checks or updates filter gain, HRTF and reverb.|Main sound path
+Occlusion.cs|*|Send|Sends filtered sound to Unity room reverb, preserving original send level.|Integration
+Occlusion.cs|*|ReverbSend|Calculates direct/reverberant mix from distance and room critical distance.|Simplification
+Occlusion.cs|*|FacingPoint|Chooses listener-facing side of source's collider bounds for first sound ray.|Geometry approximation
+Occlusion.cs|*|Lines|Returns two small perpendicular ray offsets for aperture sampling.|Finite quadrature
+Occlusion.cs|*|Along|Sorts up to 16 ray hits, classifies walls/terrain/obstacles and combines spectral obstruction.|Hot; saturation
+Occlusion.cs|*|Counts|Excludes source-owned colliders and some enclosing colliders from acoustic obstruction.|Geometry heuristic
+Occlusion.cs|*|Inside|Tests whether source point lies inside collider via closest-point operation.|Physics check
+Occlusion.cs|*|Classify|Assigns object type/soft weight and material model once per collider cache.|Valheim-specific
+Occlusion.cs|*|Describe|Logs one-time sound identifier, source mode/shape and Unity rolloff.|Debug
+Occlusion.cs|*|MassLaw|Calculates physical wall mass-law factor; retained but not called by current material Loss.|Dead code candidate
+Occlusion.cs|*|TransmissionEnergy|Returns documented Steam Audio low/mid-band energy transfer for mapped wear types.|Two-band physical
+Occlusion.cs|*|Loss|Combines static open fraction with solid transmission energy; fits result to two-pole cutoff.|Authored porosity
+Occlusion.cs|Block|Clear(property)|Constructs identity transmission block with no walls/terrain/bending.|State
+Occlusion.cs|*|Layer|Merges nearby colliders into same wall; cascades spectral transfer for distinct walls.|Potential misgroup
+Occlusion.cs|*|Group|Unifies obstacles from same owner to avoid multiple attenuation.|Correctness
+Occlusion.cs|*|Ridge|Samples terrain heights along ray to approximate over-hill diffraction.|Terrain approximation
+Occlusion.cs|*|Wall|Combines soft obstacles, wall and diffraction energy into gain plus low-pass.|Two-band model
+Occlusion.cs|*|Mass|Estimates collider surface mass from material density and thickness; not used after model change.|Dead code candidate
+Occlusion.cs|*|Thickness|Extracts thinnest axis in world scale for mass-law estimate; now unused by active wall model.|Dead code candidate
+Occlusion.cs|*|Muffle|Interpolates an arbitrary soft-obstacle gain/cutoff table.|Not established standard
+Occlusion.cs|*|Voices|Applies the same spatial propagation pipeline to voice chat when enabled.|Compatibility
+Occlusion.cs|*|BaseSpreadOf|Reads Valheim ZSFX private base-spread field with fallback.|Version risk
+Occlusion.cs|*|Recheck|Sweeps all active sound filters every 0.5 s; updates loops and checks long SFX.|Polling
+Occlusion.cs|*|WorldChanged|Increments generation and invalidates affected acoustic routes on geometry events.|Event response
+Occlusion.cs|*|NearLine|Tests point-to-segment distance to decide change relevance.|Geometry
+Occlusion.cs|*|ChangedNear|Checks ring of last 64 world edits for changes near acoustic path.|Caching
+Occlusion.cs|*|Unchanged|Returns unchanged only if geometry and poses are stable AND last check is under 2 s.|Forced polling
+Occlusion.cs|*|HasNearbyWall|Looks for a recent validated wall edge close to the listener.|Geometry caching
+Occlusion.cs|*|Mine|Recognizes player's own footsteps/equipment to skip self-occlusion.|Valheim-specific
+Occlusion.cs|MyStep|Prefix|Marks player's footstep generator during effect creation.|Hook
+Occlusion.cs|MyStep|Finalizer|Unmarks footstep origin even after exception.|Hook
+Occlusion.cs|*|WatchLoop|Re-enqueues loop after movement/geometry change or elapsed fallback.|Polling
+Occlusion.cs|*|Summary|Formats and resets source check/wall/proxy hit statistics.|Debug
+Ocean.cs|*|Postfix|On Valheim ocean update, updates shoreline scan, shade and moves vanilla ocean loop source.|Periodic scan
+Ocean.cs|*|RestoreUnlocated|Returns ocean loop to vanilla placement/rolloff when no shore is found.|Lifecycle
+Ocean.cs|*|Shade|Weights 16 observed shoreline bearings by room exposure, blends shelter gain and virtual direction.|Authored illusion
+Ocean.cs|*|Cast|Schedules 96 downward terrain rays in six radii around listener.|Fixed sampling
+Ocean.cs|*|Read|Finds nearest water/sea patch per direction and computes weighted shoreline direction/width.|Valheim-specific
+Ocean.cs|*|SeaZone|Caches Valheim ocean-depth classification per zone to reject ponds/rivers.|Good content use
+Ocean.cs|*|Shutdown|Stops and clears ocean geometry job, shoreline cache and position.|Lifecycle
+Ocean.cs|*|Dispose|Shuts down ocean cache and frees native raycast buffers.|Lifecycle
+Ocean.cs|*|Summary|Reports detected shoreline and skipped stationary scans.|Debug
+OpenPanelArea.cs|*|FromPrefab|Exact-name lookup of seven hardcoded open-area ratios; strips Clone suffix.|Correct cheap; unvalidated values
+PlayerSounds.cs|*|RestoreAll|Restores spatial blend, distance and bypass settings of converted player sounds.|Lifecycle
+PlayerSounds.cs|*|Place|Converts own/other player's 2D sound into positioned 3D source with reversible snapshot.|Gameplay compatibility
+PlayerSounds.cs|*|Of|Locates player owning a sound through ancestors or nearby character lookup.|Source identity
+PlayerSounds.cs|*|IsCue|Recognizes skill/level-up and UI gameplay cues that should stay 2D.|Valheim-specific
+PlayerSounds.cs|*|MarkCue|Marks spawned cue audio components to bypass 3D placement.|Valheim-specific
+Plugin.cs|*|Setting|Creates and binds BepInEx configuration entries under named category.|Initialization
+Plugin.cs|*|Awake|Registers config, patches Harmony systems and hooks diagnostics/voices.|Initialization
+Plugin.cs|*|MoreVoices|Raises Unity real voice count from 32 to 128 when possible.|Resource trade-off
+Plugin.cs|*|OnDestroy|Unpatches Harmony, restores vanilla settings and disposes native jobs.|Lifecycle
+PortalLoop.cs|Hold|Prefix|Records active portal teleport animation context.|Hook
+PortalLoop.cs|Through|Postfix|Repositions portal arrival/teleport sound effects after transit.|Valheim-specific
+PortalLoop.cs|*|Take|Captures looping portal audio and its owner for position tracking.|Lifecycle
+PortalLoop.cs|*|Step|Maintains portal-loop sound spatial positions and crossfades active fades.|Per-frame
+PortalLoop.cs|*|Hand|Moves sound between active portal positions/parent and target orientation.|Spatial effects
+PortalLoop.cs|*|Let|Releases portal-owned audio when no longer needed.|Lifecycle
+PortalLoop.cs|*|BaseOf|Finds source portal base transform.|Valheim-specific
+PortalLoop.cs|*|Drop|Stops and restores tracked portal sound on despawn.|Lifecycle
+PortalLoop.cs|*|Clear|Releases all portal sound records.|Lifecycle
+PortalLoop.cs|*|Reset|Clears static portal tracking flags and caches.|Lifecycle
+Portals.cs|*|Find|Discovers candidate openings by room ray-gap patterns and estimates portal position/area.|Finite sampling
+Portals.cs|*|NeighboursOf|Obtains precomputed directional neighbor list for room rays.|Caching
+Portals.cs|*|BuildNeighbours|Builds nearest-neighbor topology for 64 room sample directions.|One-time precompute
+Portals.cs|*|LengthGain|Attenuates routed path by relative source-to-listener detour length.|Acoustic approximation
+Portals.cs|*|Summary|Reports candidate openings, directions and sizes for debug.|Debug
+Prefabs.cs|*|Postfix|On scene prefab init, walks sound prefabs, labels placement and adjusts emitter counts.|One-time scan
+RayJobs.cs|*|Query|Builds query parameters for chosen physics layer mask.|Physics wrapper
+RayJobs.cs|*|Ensure|Allocates/grows persistent NativeArrays of commands and hits as needed.|Amortized allocation
+RayJobs.cs|*|EnsureFixed|Allocates exact-size persistent arrays when layout changes.|Buffer management
+RayJobs.cs|*|Submit|Schedules batched Unity RaycastCommand worker job.|Asynchronous
+RayJobs.cs|*|Cast3|Builds three parallel raycasts around direct line.|Finite sampling
+RayJobs.cs|*|ReadHits|Compacts non-null ray hits into fixed scratch buffer.|Capacity bound
+RayJobs.cs|*|Dispose|Disposes native raycast command/hit arrays.|Lifecycle
+Room.cs|*|Invalidate|Marks room sample geometry invalid, triggering remeasurement.|Event response
+Room.cs|*|SpeedAmbientAtBoundary|Temporarily shortens Valheim's ambient fade at indoor/outdoor transition.|Gameplay tuning
+Room.cs|*|RestoreAmbientFade|Restores previously saved vanilla ambient crossfade time.|Lifecycle
+Room.cs|*|Mask.get|Lazily creates physics layer mask for world/terrain/pieces.|Caching
+Room.cs|*|BuildDirs|Generates 64 quasi-uniform sphere directions with golden-angle spacing.|Finite sampling
+Room.cs|Params|Lerp|Interpolates Unity reverb parameter snapshot.|DSP environment
+Room.cs|Params|ApplyTo|Writes generated reverb parameters to one Unity AudioReverbZone.|Integration
+Room.cs|Params|Differs|Tests whether latest room reverb params changed materially.|CPU gating
+Room.cs|Params|ToString|Formats current room reverb parameters for debug.|Debug
+Room.cs|Tick|Postfix|Main WA per-frame host hook on AudioMan.Update; runs all room/audio subsystems and jobs.|Critical scheduling
+Room.cs|Tick|Run|At scheduled interval completes room job, computes statistics and queues next sample rays.|Periodic sampling
+Room.cs|*|EnsureArrays|Creates/resizes persistent raycast arrays for room sampling.|Buffer management
+Room.cs|*|Setup|Creates/reparents global Unity reverb zone attached to listener.|Audio integration
+Room.cs|*|RemoveZone|Disables original game reverb zone while saving its state for restore.|Compatibility risk
+Room.cs|*|RemoveVanilla|Scans live Unity AudioReverbZones and disables incompatible vanilla ones.|Periodic full scan
+Room.cs|*|RestoreZones|Returns original reverb-zone enabled states and removes WA zone.|Lifecycle
+Room.cs|*|Restore|Resets portal/room/ambient state and pending cast when WA disabled.|Lifecycle
+Room.cs|*|Shutdown|Stops room jobs and frees native buffers.|Lifecycle
+Room.cs|*|Exposure|Weights measured directional room openings toward a given wind/ocean direction.|Finite sampling
+Room.cs|*|Out|Reports whether a room ray escapes through accepted opening.|Geometry
+Room.cs|*|PortalEvidence|Separates a measured built-geometry opening from open sky.|Geometry
+Room.cs|*|WriteLog|Emits aggregated per-system room, sound, budget and performance reports.|Debug overhead
+Room.cs|*|Pick|Chooses first room ray hit or offset-neighbor hit to suppress tiny gaps.|Seam heuristic
+Room.cs|*|Measure|Integrates 64 room rays into size, absorption, enclosure, RT60, wetness and reverb.|191-line complex hybrid
+Room.cs|*|Surface|Classifies one ray's first hit as ground/water/wall, assigns absorption.|First-hit limit
+Room.cs|*|Furniture|Maps comfort-type props to 500Hz absorption coefficients.|Approximation
+Room.cs|*|Word|Recognizes complete lexical tokens in prefab names.|Valheim-specific
+Room.cs|*|GroundClassAt|Determines ground/biome material under sample ray.|Valheim-specific
+Room.cs|*|GroundAt|Maps current ground texture to a rough absorption class.|Approximation
+Room.cs|*|Absorption|Assigns surface sound absorption based on prefab class/material and ground.|Material lookup
+Room.cs|Solids|Of|Looks up or lazily classifies physics collider by instance ID.|Caching
+Room.cs|Solids|BoxOf|Returns bounds, refreshing cached static bounds when door generation changes.|Caching
+Room.cs|Solids|IsCoarseOpenPanel|Recognizes seven Valheim open-panel collision proxies by exact name/shape.|Exact-name authoring
+Room.cs|Solids|Make|Builds collider type/material/open-area/absorption cache record.|Critical classification
+SharedEdges.cs|*|Clear|Clears shared cached diffraction edge records.|Lifecycle
+SharedEdges.cs|*|TryCopy|Reuses validated nearby edge geometry rather than recasting for each source.|Optimization; staleness
+SharedEdges.cs|*|Publish|Publishes newly measured edge record for nearby sources.|Caching
+SharedEdges.cs|*|Summary|Reports shared-edge hits and cache misses.|Debug
+SourceVolume.cs|*|Halton|Generates low-discrepancy deterministic sample coordinate in chosen base.|Sampling
+SourceVolume.cs|*|Project|Builds spherical source bounds from owner colliders or configured fallback radius.|Geometry approximation
+SourceVolume.cs|*|Count|Chooses 4,8,16,32 source rays based on angular radius and cap.|Quantized quality
+SourceVolume.cs|*|Point|Maps Halton samples to uniform sphere volume points in world orientation.|Finite sampling
+Spawned.cs|*|Take|Scans spawned location/game objects for AudioSources and reverb zones and marks them.|One-off scan
+Spawned.cs|AtLocation|Postfix|Processes newly spawned location sounds.|Hook
+Spawned.cs|AtDungeonRoom|TargetMethod|Finds dungeon-room generation function via reflection.|Version risk
+Spawned.cs|AtDungeonRoom|Postfix|Processes generated dungeon-room sound sources.|Hook
+Spawned.cs|*|Summary|Reports previously registered location sounds and suppressed native zones.|Debug
+SpectralPaths.cs|*|BandK|Precomputes digital angular-frequency 2kHz response constant.|DSP math
+SpectralPaths.cs|*|SetSampleRate|Rebuilds 2kHz reference constant if Unity output rate changes.|Format handling
+SpectralPaths.cs|*|Response|Calculates exact 2kHz power response of WA's two cascaded one-pole DSP stages.|Validated DSP model
+SpectralPaths.cs|*|HighEnergy|Returns gain-squared times 2kHz power response.|DSP math
+SpectralPaths.cs|*|Add|Accumulates incoherent pathway energies at DC/2kHz.|Energy sum
+SpectralPaths.cs|*|CutoffFor|Analytically inverts desired 2kHz transfer into implementable cutoff.|DSP approximation
+SpectralPaths.cs|*|Decode|Fits low+mid energies to a single gain and cutoff, clamping energy above unity.|Two-band limit
+SpectralPaths.cs|*|Cascade|Multiplies serial path energy spectra, then refits DSP.|Acoustic approximation
+SpectralPaths.cs|*|Combine|Sums two independent path energies, then refits gain/cutoff.|Acoustic approximation
+Spots.cs|*|Mask(property)|Lazily creates physics layer mask for sound attachment guesses.|Caching
+Spots.cs|*|Clear|Clears temporary source placement/equipment context.|Lifecycle
+Spots.cs|*|Place|Resolves effect sound transform to weapon, player, door, workstation or piece sound position.|66-line heuristic
+Spots.cs|*|Note|Records current sound-triggering effect and its source object/position.|Placement context
+Spots.cs|*|Attacking|Tests whether a character is currently executing an attack animation.|Valheim-specific
+Spots.cs|*|WeaponHand|Maps equipped weapon/hand to preferred sound attachment transform.|Valheim-specific
+Spots.cs|*|ItemSound|Locates world origin of item-pickup/drop/equipment audio.|Valheim-specific
+Spots.cs|*|CharacterAt|Resolves nearby character owning a sound effect at a point.|Search
+Spots.cs|*|KindOf|Categorizes source effect/piece based on known prefab names and ancestry.|Heuristic
+Spots.cs|*|Move|Moves a ZSFX emitter to corrected source location.|Integration
+Spots.cs|*|MoveOne|Moves or parents an individual source while preserving relative transform.|Integration
+Spots.cs|*|Hinge|Finds moving gate/door hinge transform for opening sounds.|Valheim-specific
+Spots.cs|*|StationPart|Finds moving part on kiln/smelter/crafting station to anchor sound.|Valheim-specific
+Spots.cs|*|PieceAt|Searches nearby placed building piece to attach effect sound.|Search/perf risk
+Spots.cs|*|BackSlot|Finds player back-slot/weapon holder to attach equipped item sound.|Valheim-specific
+Stackify.cs|*|Active(property)|Returns whether Stackify audio compatibility patch is currently active.|Compatibility
+Stackify.cs|*|Restore|Restores saved output mixer group of chest sound.|Compatibility
+Stackify.cs|Opening|Prepare|Only enables patch when optional Stackify mod is present.|Optional hook
+Stackify.cs|Opening|TargetMethod|Finds Stackify opening method by reflection.|Version risk
+Stackify.cs|Opening|Prefix|Records active chest opening context.|Hook
+Stackify.cs|Opening|Finalizer|Clears temporary opening flag/output group.|Hook
+Stackify.cs|Near|Prepare|Guards patch if Stackify integration installed.|Optional hook
+Stackify.cs|Near|TargetMethod|Reflects Stackify's nearest container method.|Version risk
+Stackify.cs|Near|Postfix|Redirects sound's container source to actual selected container.|Compatibility
+Stackify.cs|PlayNow|Prepare|Guards optional Stackify audio play patch.|Optional hook
+Stackify.cs|PlayNow|TargetMethod|Finds Stackify's audio playback routine.|Version risk
+Stackify.cs|PlayNow|Prefix|Captures and preserves mixer group before Stackify plays chest audio.|Compatibility
+Starts.cs|*|Summary|Formats how many new sounds had start delayed for acoustic rays.|Debug
+Starts.cs|*|Hold|Puts a new source in pending-start queue before playing, to resolve occlusion first.|Sound latency
+Starts.cs|*|HoldAir|Puts random outdoor one-shot in pending queue for open-air placement.|Source placement
+Starts.cs|PlayEnd|Postfix|Cleans up first-play state after ZSFX.Play actually starts.|Lifecycle
+Starts.cs|*|Travel|Calculates estimated first-arrival propagation delay from source to listener.|Gameplay option
+Starts.cs|*|Step|Finishes pending first-sound rays then initializes playback with geometry/underwater state.|103-line critical
+Starts.cs|*|Schedule|Schedules finite direct, source volume and open-air source cast jobs.|60-line scheduling
+Starts.cs|*|Cast3|Enqueues three offset first-play raycasts.|Finite sampling
+Starts.cs|*|PlaceInOpenAir|Relocates random exterior ambience source above nearby ground and roof.|Valheim-specific
+Starts.cs|*|Flush|Completes and clears pending first-play raycast job.|Lifecycle
+Starts.cs|*|Shutdown|Flushes and disposes first-play persistent buffers.|Lifecycle
+ThreeRayTransmission.cs|*|Blend|Energy-interpolates two sampled direct paths by face share.|Finite quadrature
+ThreeRayTransmission.cs|*|IndirectAmplitude|Returns square root of hidden fraction for indirect route amplitude.|Acoustic assumption
+ThreeRayTransmission.cs|*|Combine|Weights center and two side ray energies, returns gain/cutoff/blocked fraction.|Finite quadrature
+Underwater.cs|*|Apply|Applies underwater gain and cutoff to one acoustic sound.|Medium model
+Underwater.cs|*|High|Applies underwater low-pass spectral adjustment to gain/cutoff.|Medium model
+Underwater.cs|*|Below|Tests world position under current water surface.|World geometry
+Underwater.cs|*|SubmergedAmount|Computes smooth fraction submerged near water surface.|Transition
+Underwater.cs|*|Muffles|Checks whether source lies under water and should use underwater path.|Medium model
+Underwater.cs|*|SourceAmount|Computes source/submarine path water proportion by geometry.|Approximation
+Underwater.cs|*|CharacterAt|Tests whether sound belongs to a character currently underwater.|Valheim-specific
+Underwater.cs|*|Update|Updates global listener water gain/filter based on position.|Periodic
+Underwater.cs|*|Reset|Resets global underwater attenuation and filter.|Lifecycle
+Underwater.cs|*|Summary|Reports listener submerged fraction.|Debug
+VanillaShortAmbient.cs|*|Prefix|Adjusts short vanilla ambient sound spawn location to better match acoustic scene.|Compatibility
+VoiceChat.cs|Build|Prepare|Checks whether proximity voice stream type exists before patching.|Optional hook
+VoiceChat.cs|Build|TargetMethod|Reflects private voice stream source method and field.|Version risk
+VoiceChat.cs|Build|Postfix|Initializes newly built voice chat AudioSource for WA spatialization.|Compatibility
+VoiceChat.cs|FromHead|Prepare|Checks whether spatial voice renderer exists.|Optional hook
+VoiceChat.cs|FromHead|TargetMethod|Reflects spatial-voice source location routine.|Version risk
+VoiceChat.cs|FromHead|Postfix|Moves voice emitter to character head transform.|Valheim-specific
+VoiceChat.cs|NoMuffle|Prepare|Checks if third-party voice muffling routine exists.|Optional hook
+VoiceChat.cs|NoMuffle|TargetMethod|Finds third-party SetMuffle method.|Version risk
+VoiceChat.cs|NoMuffle|Prefix|Disables overlapping third-party voice low-pass/volume so WA owns acoustics.|Compatibility tradeoff
+VolumeFresnel.cs|*|Transfer|Evaluates Fresnel screen crossing and two-band response for one volume sample.|Single-edge approximation

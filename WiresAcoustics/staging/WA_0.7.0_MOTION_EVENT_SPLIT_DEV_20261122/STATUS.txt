@@ -1,0 +1,8 @@
+Private WA 0.7.0 developer experiment - not a public release.
+SHA256: 983144ACC3EECBE53B82ECC12CA7CDA12506FD115552CA42B52CA4E6E4FAE2D5
+Walking around an existing wall now uses normal DSP gain and cutoff glide.
+World placement/removal and door edits continue to use prompt updates.
+This corrects a confirmed timing bug, NOT the entire obstruction
+geometry/diffraction model. In-game sound and CPU still unverified.
+Rollback after closing Valheim:
+C:\Users\kajet\WireMods\WiresAcoustics\backup\MOTION_VS_WORLD_CHANGES_20261122\Restore.ps1

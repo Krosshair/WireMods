@@ -11,23 +11,21 @@ namespace WiresAcoustics
     internal static class Diffraction
     {
         private const float Step = .05f, Max = 50f, Cap = 20f, Sound = 343f;
-        private static readonly float[] Gains, Cutoffs;
+        private static readonly float[] Gains, MidEnergies;
 
         static Diffraction()
         {
             int n = (int)(Max / Step) + 1;
             Gains = new float[n];
-            Cutoffs = new float[n];
+            MidEnergies = new float[n];
             for (int i = 0; i < n; i++)
             {
                 float delta = i * Step;
                 float low = Loss(delta, 125f);
                 Gains[i] = Mathf.Pow(10f, -low / 20f);
-                // the low-pass that takes as much more at 2 kHz as the edge does (a single low-pass
-                // keeps falling where the formula levels off at its cap: matched in the middle)
-                float extra = Loss(delta, 2000f) - low;
-                float r = Mathf.Pow(10f, extra / 10f) - 1f;
-                Cutoffs[i] = r <= 1e-4f ? 22000f : Mathf.Clamp(2000f / Mathf.Sqrt(r), 200f, 22000f);
+                // Store the physically calculated high-band ENERGY, not a
+                // cutoff fitted to an unrelated one-pole response.
+                MidEnergies[i] = Mathf.Pow(10f, -Loss(delta, 2000f) / 10f);
             }
         }
 
@@ -65,10 +63,10 @@ namespace WiresAcoustics
                 low += Mathf.Pow(10f, -Loss(delta, 125f) / 10f);
                 mid += Mathf.Pow(10f, -Loss(delta, 2000f) / 10f);
             }
-            low = Mathf.Min(1f, low); mid = Mathf.Min(1f, mid);
-            gain = Mathf.Sqrt(low);
-            float r = low / Mathf.Max(1e-9f, mid) - 1f; // the low-pass that takes the rest at 2 kHz
-            cutoff = r <= 1e-4f ? 22000f : Mathf.Clamp(2000f / Mathf.Sqrt(r), 200f, 22000f);
+            // Three distinct paths can sum above unity. Do not cap
+            // 125-Hz and 2-kHz energies separately: that alters the
+            // spectral ratio. Decode applies one common energy scale.
+            SpectralPaths.Decode(low, mid, out gain, out cutoff);
             return true;
         }
 
@@ -92,9 +90,8 @@ namespace WiresAcoustics
             bool lit = along > 1e-4f && at < along && o <= radius;
             float low = lit ? Lit(delta, 125f) : Loss(delta, 125f);
             float mid = lit ? Lit(delta, 2000f) : Loss(delta, 2000f);
-            gain = Mathf.Pow(10f, -low / 20f);
-            float r = Mathf.Pow(10f, (mid - low) / 10f) - 1f;
-            cutoff = r <= 1e-4f ? 22000f : Mathf.Clamp(2000f / Mathf.Sqrt(r), 200f, 22000f);
+            SpectralPaths.Decode(Mathf.Pow(10f, -low / 10f),
+                                 Mathf.Pow(10f, -mid / 10f), out gain, out cutoff);
         }
 
         // Kurze and Anderson on the lit side of an edge (a negative Fresnel number, as |N| here).
@@ -107,23 +104,56 @@ namespace WiresAcoustics
             return Mathf.Max(0f, 5f + 20f * Mathf.Log10(x / Mathf.Tan(x)));
         }
 
+        // Illuminated side of a measured edge. The same diffraction
+        // formula used by Opening approaches 5 dB at the geometrical
+        // shadow boundary, falling continuously to 0 dB as clearance
+        // grows. This complements Round() on the shadowed side; no
+        // arbitrary binary blocked/clear crossfade is involved.
+        internal static void LitEdge(float detour, out float gain, out float cutoff)
+        {
+            float low = Lit(detour, 125f);
+            float high = Lit(detour, 2000f);
+            SpectralPaths.Decode(Mathf.Pow(10f, -low / 10f),
+                                 Mathf.Pow(10f, -high / 10f), out gain, out cutoff);
+        }
+
         // The detour round an edge that loses as much at 125 Hz as "gain" (amplitude). Past the
         // formula's 20 dB cap, as far as it goes.
         internal static float DetourFor(float gain)
         {
-            for (int i = 0; i < Gains.Length; i++) if (Gains[i] <= gain) return i * Step;
-            return Max;
+            // Gains are monotonically non-increasing: increasing the
+            // detour cannot improve transmission. Find the first table
+            // entry at or below the requested gain without walking every
+            // sample (up to 1001 comparisons per new wall probe).
+            // The comparison and returned table index match the former
+            // forward scan, including its behavior for NaN.
+            int low = 0, high = Gains.Length;
+            while (low < high)
+            {
+                int mid = low + (high - low) / 2;
+                if (Gains[mid] <= gain) high = mid;
+                else low = mid + 1;
+            }
+            return low < Gains.Length ? low * Step : Max;
         }
 
-        // Round the edge at "edge" from the listener to the sound.
-        internal static void Round(Vector3 listener, Vector3 edge, Vector3 sound, out float gain, out float cutoff)
+        // Shadow-side diffraction evaluated from a geometric detour, independent
+        // of any discrete blocked/clear state or a raycast result.
+        internal static void RoundDetour(float delta, out float gain, out float cutoff)
         {
-            float delta = (edge - listener).magnitude + (sound - edge).magnitude - (sound - listener).magnitude;
             float x = Mathf.Clamp(delta, 0f, Max) / Step;
             int i = Mathf.Min((int)x, Gains.Length - 2);
             float t = x - i;
             gain = Mathf.Lerp(Gains[i], Gains[i + 1], t);
-            cutoff = Mathf.Exp(Mathf.Lerp(Mathf.Log(Cutoffs[i]), Mathf.Log(Cutoffs[i + 1]), t));
+            float high = Mathf.Lerp(MidEnergies[i], MidEnergies[i + 1], t);
+            SpectralPaths.Decode(gain * gain, high, out gain, out cutoff);
+        }
+
+        // Existing API retained for routed geometry checks.
+        internal static void Round(Vector3 listener, Vector3 edge, Vector3 sound, out float gain, out float cutoff)
+        {
+            float delta = (edge - listener).magnitude + (sound - edge).magnitude - (sound - listener).magnitude;
+            RoundDetour(delta, out gain, out cutoff);
         }
     }
 }

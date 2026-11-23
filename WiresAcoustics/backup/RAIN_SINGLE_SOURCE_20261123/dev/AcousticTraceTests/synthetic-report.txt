@@ -1,0 +1,16 @@
+WIRE'S ACOUSTICS - OFFLINE TRACE SUMMARY
+Source log: C:\Users\kajet\WireMods\WiresAcoustics\dev\AcousticTraceTests\synthetic.log
+Counts: 1 snapshots; 1 source entries; 1 significant gain/filter transitions; 1 geometry events; 0 overwritten history entries
+Last game time in trace: 10
+Strongest per-source post-DSP RMS among logged snapshots: 0,10000 (chest)
+
+PATH DISTRIBUTION (logged samples, not unique sounds):
+  portal                        1
+
+LARGEST RECORDED GAIN TRANSITIONS (>=6 dB):
+  chest: -6,0 dB, path portal
+
+POSSIBLE ANOMALIES (heuristics, not proof of an audible defect):
+  None flagged
+
+LIMITATION: RMS measures per-source audio before final Unity mixing/output. Paths, attenuation, reverb and source fields are telemetry, NOT a waveform recording. This report cannot reproduce sound, spatial hearing, audio-device processing or audible crackles. Compare with a captured output audio signal if exact playback diagnosis is required.

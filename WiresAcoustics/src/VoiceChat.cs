@@ -30,7 +30,7 @@ namespace WiresAcoustics
             private static void Postfix(object __instance)
             {
                 if (!(s_source.GetValue(__instance) is AudioSource src) || src == null) return;
-                AcousticFilter f = src.GetComponent<AcousticFilter>() ?? src.gameObject.AddComponent<AcousticFilter>();
+                AcousticFilter f = AcousticFilter.For(src);
                 f.Voice = true; // HRTF (by its placed/global switch) and muffling from Room's tick
                 Plugin.Log.LogInfo("[acoustics] voice chat: " + src.name + " handled here (HRTF, muffling)");
             }

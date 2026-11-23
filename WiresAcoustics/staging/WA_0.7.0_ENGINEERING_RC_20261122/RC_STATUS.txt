@@ -1,0 +1,10 @@
+WIRE'S ACOUSTICS v0.7.0 - ENGINEERING RELEASE CANDIDATE
+Compiled DLL SHA256: B1D383F00FA64192330B351C6A92D3C086541E8E96CBCA12C9F2349595148B42
+Regression: passed 6060 source-extracted direct occlusion cases across
+4 output rates and 3 strengths, plus existing spectral/Fresnel/geometry
+and concurrent audio meter tests.
+Final wall processing accumulates frequency-band energies and performs
+one digital-filter fit per route, with no new raycasts or per-frame hooks.
+DO NOT PUBLISH: gameplay playback, target mod stack and CPU budget unverified.
+Rollback while Valheim closed:
+C:\Users\kajet\WireMods\WiresAcoustics\backup\RELEASE_ENGINEERING_20261122\Restore.ps1

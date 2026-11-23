@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework><LangVersion>latest</LangVersion><ImplicitUsings>enable</ImplicitUsings></PropertyGroup><ItemGroup><Compile Include="..\..\src\AudioMeterHistory.cs" Link="AudioMeterHistory.cs"/></ItemGroup></Project>
