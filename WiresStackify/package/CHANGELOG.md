@@ -1,3 +1,6 @@
+## 0.2.3
+- Added: Ctrl + scroll down over an item drops one of it on the ground, from your inventory or an open container (favorites stay).
+
 ## 0.2.2
 - Performance: nothing runs every frame any more. Dragging over slots, the wheel and the hotbar numbers are told by the slot the pointer is on instead of being checked each frame; the numbers are only looked at while the pointer is over a slot.
 

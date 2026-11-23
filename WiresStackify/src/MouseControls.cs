@@ -283,8 +283,22 @@ namespace WiresStackify
             ItemDrop.ItemData held = DragItem(gui);
             ItemDrop.ItemData item = held ?? inv.GetItemAt(pos.x, pos.y);
             if (item == null) return false;
-            Scroll(gui, item, held != null ? DragInv(gui) : inv, delta < 0f);
+            Inventory from = held != null ? DragInv(gui) : inv;
+            // Ctrl and down: one dropped on the ground instead, from your inventory or an open chest
+            if (Ctrl && delta < 0f) { DropOne(gui, item, from, held != null); return true; }
+            Scroll(gui, item, from, delta < 0f);
             return true;
+        }
+
+        // One of the item onto the ground, the game's own drop (in front of you; favorites stay, FavoriteDropProtection).
+        private static void DropOne(InventoryGui gui, ItemDrop.ItemData item, Inventory inv, bool carried)
+        {
+            Player p = Player.m_localPlayer;
+            if (p == null || inv == null || !p.DropItem(inv, item, 1)) return;
+            if (!carried) return;
+            int remaining = DragAmount(gui) - 1;
+            if (remaining <= 0 || !inv.ContainsItem(item)) ClearDrag(gui);
+            else DragAmount(gui) = Mathf.Min(remaining, item.m_stack);
         }
 
         // A hotbar number while the pointer is over an item: it swaps with that hotbar slot, by the
