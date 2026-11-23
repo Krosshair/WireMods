@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System;
 using System.IO;
 using BepInEx;
@@ -18,7 +18,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.3.5";
+        public const string Version = "0.3.6";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 

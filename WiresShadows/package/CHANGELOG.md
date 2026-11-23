@@ -1,3 +1,6 @@
+## 0.3.6
+- Performance: drawing a light's shadow map no longer does the lighting work a normal camera does (the sun's shadows, per-pixel lights) for each of its six faces; none of it was used.
+
 ## 0.3.5
 - Performance: moving round a large base no longer makes lights repeatedly rebuild their shadow maps just because they trade places in the shadow slots. A light that loses its slot keeps its finished map for when it comes back, and near-resolution maps wait until a light has stayed near long enough instead of being promoted back and forth while you move.
 - Performance: a light's shadow map doesn't immediately shrink when you step away from it. It waits a few seconds, while higher resolution is still given back right away when needed. A resize that no longer makes sense is cancelled before it draws, and a resize alone reuses the existing list of shadow casters instead of searching the area again.

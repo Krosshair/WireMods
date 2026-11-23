@@ -5019,9 +5019,16 @@ namespace WiresShadows
             // small target), which swapped detailed pieces (the spice rack's herbs and frame)
             // for their simplified LOD in the cached shadow.
             float lodBias = QualitySettings.lodBias;
+            // And no lighting work for this render: it's a forward camera, which can redo the sun's
+            // shadow cascades and set up per-pixel lights for every render, six times a map, none of
+            // it used (the replacement shader reads neither).
+            float shadowDistance = QualitySettings.shadowDistance;
+            int pixelLights = QualitySettings.pixelLightCount;
             try
             {
                 QualitySettings.lodBias = 10000f;
+                QualitySettings.shadowDistance = 0f;
+                QualitySettings.pixelLightCount = 0;
                 DrawUntaggedOnePass(t);
 
                 Timing.Stop(Timing.Part.FaceSetup, setupAt);
@@ -5041,6 +5048,8 @@ namespace WiresShadows
             {
                 long restoreAt = Timing.Start();
                 QualitySettings.lodBias = lodBias;
+                QualitySettings.shadowDistance = shadowDistance;
+                QualitySettings.pixelLightCount = pixelLights;
                 Shader.SetGlobalFloat(NearCutId, 0f);
                 _staticCb.Clear();
                 foreach (Renderer r in ChangedForceOff)
