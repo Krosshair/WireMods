@@ -290,6 +290,15 @@ namespace WiresStackify
             return true;
         }
 
+        // Right click outside the inventory (DropOutside): one of the held stack onto the ground.
+        internal static void DropOneHeld()
+        {
+            InventoryGui gui = InventoryGui.instance;
+            if (gui == null || !InventoryGui.IsVisible()) return;
+            ItemDrop.ItemData held = DragItem(gui);
+            if (held != null) DropOne(gui, held, DragInv(gui), true);
+        }
+
         // One of the item onto the ground, the game's own drop (in front of you; favorites stay, FavoriteDropProtection).
         private static void DropOne(InventoryGui gui, ItemDrop.ItemData item, Inventory inv, bool carried)
         {

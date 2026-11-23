@@ -1,3 +1,6 @@
+## 0.2.4
+- Added: holding a stack, right click outside the inventory drops one of it on the ground (left click still drops the whole stack, as in the game).
+
 ## 0.2.3
 - Added: Ctrl + scroll down over an item drops one of it on the ground, from your inventory or an open container (favorites stay).
 
