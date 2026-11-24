@@ -329,6 +329,7 @@ NOV 7 2026 — APPROXIMATE CASTER-PIVOT FIRE WOBBLE, EXPERIMENTAL AND INSTALLED
 2026-11-08 — ALL PENUMBRA/PCSS EXPERIMENTS REJECTED AND REVERTED
 
 User tested combined point PCSS and directional-sun PCSS and rejected both. Both removed from live Enngard with Valheim closed. No penumbra, contrast breathing, independent fire light wobble, or increased brightness remains. Do not reintroduce without a new explicit request.
+Reason (Kajetan, 2026-11-24): it looked ugly. Not a cost problem.
 
 Restored pre-PCSS point shader, Plugin.cs, ShadowCache.cs, StationaryFireFlicker.cs, live and staged DLL, asset bundle and BepInEx config from _removed/point_pcss_prototype_20261108. Restored UnityValidation builder from _removed/sun_pcss_prototype_20261108/validation_builder_before.cs. Removed experimental WireSunScreenSpacePenumbra.shader from LightRework and isolated validation clone after backing both up.
 

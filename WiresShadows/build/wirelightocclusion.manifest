@@ -1,16 +1,16 @@
 ManifestFileVersion: 0
 UnityVersion: 6000.0.75f1
-CRC: 1411237542
+CRC: 972065037
 Hashes:
   AssetFileHash:
     serializedVersion: 2
-    Hash: 820d7da6f87fd0ae0a2a7e64fd837091
+    Hash: b47bc5379f6b0279468b996febf8dd6b
   TypeTreeHash:
     serializedVersion: 2
     Hash: 8d1d92437860ef1e6eac6eb62fc95ba0
   IncrementalBuildHash:
     serializedVersion: 2
-    Hash: 09b4412e0c57a120173923889c4acb9a
+    Hash: 55e0f572b3e58c8ba27cd00fe87592a3
 HashAppended: 0
 ClassTypes:
 - Class: 21
@@ -30,8 +30,10 @@ Assets:
 - Assets/Shaders/WireAO/WireAOApply.shader
 - Assets/Shaders/WireOcclusion.compute
 - Assets/Shaders/WireShadowFrontBackInstanced.mat
+- Assets/Shaders/WireContactApply.shader
 - Assets/Shaders/WireLitParticles.shader
 - Assets/Shaders/WireOcclusionMask.shader
 - Assets/Shaders/WireTiledLights.compute
+- Assets/Shaders/WireContactShadows.compute
 - Assets/Shaders/WireShadowFrontBack.shader
 Dependencies: []

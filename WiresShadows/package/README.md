@@ -36,10 +36,12 @@ Valheim lights every surface with Lambert's model ([Lambert, 1760](https://en.wi
 
 The mod uses Burley's diffuse instead ([Burley, Disney, 2012](https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf)), which does both from each surface's roughness and was built to match measured real materials. It's the same model as in Unity's own Standard shader. Lit straight on, it gives exactly what Lambert does.
 
-On, then off (the game's look):
+Enhanced shading and contact shadows on, then off (the game's look):
 
-![Enhanced shading on, nature](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/moddedburleynature.jpg)
-![Enhanced shading off, nature](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/vanillalambertnature.jpg)
+![Wire's Shadows, nature](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/onnature.jpg)
+![Vanilla, nature](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/offnature.jpg)
+
+Enhanced shading on, then off:
 
 ![Enhanced shading on](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/eitrlookon.jpg)
 ![Enhanced shading off](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/eitrlookoff.jpg)
@@ -47,6 +49,14 @@ On, then off (the game's look):
 ### Improved ambient occlusion: multi-bounce
 
 Valheim's ambient occlusion (Amplify Occlusion, GTAO) darkens corners and creases the same grey everywhere. In reality light bounces around inside a corner and picks up the surface's colour, so bright corners stay lighter and coloured ones keep their colour. The mod adds that bounce, per colour channel from the surface's own colour, with the fit from [Jimenez et al., Activision, 2016](https://blog.selfshadow.com/publications/s2016-shading-course/activision/s2016_pbs_activision_occlusion.pdf). It also runs at full resolution and stays steady from frame to frame.
+
+### Contact shadows
+
+Short, sharp sun and moon shadows where the shadow map is too coarse: stones on the ground, plank edges, the foot of a post. Traced on screen toward the sun with Bend Studio's screen-space shadows ([Aldridge, Sony Interactive Entertainment, 2023](https://www.bendstudio.com/blog/inside-bend-screen-space-shadows/)). Pixels the sun can't shadow anyway (sky, beyond its shadow distance, surfaces facing away) are skipped, so it costs very little.
+
+### Weather catches light
+
+Rain and snow are lit by which way each flake faces the light, so they catch firelight and moonlight instead of being flat white specks.
 
 ### Smooth shading (optional)
 
@@ -76,14 +86,16 @@ With the Look settings off, the lighting is exactly the game's own.
 * **Enhanced shading:** on by default. Burley's diffuse instead of Lambert. Off: the game's look.
 * **Smooth shading:** off by default. No toon steps, for the sun, moon and every light. Just as bright overall.
 * **Improved AO:** on by default. Multi-bounce ambient occlusion. Off: the game's own.
+* **Contact shadows:** on by default. Short sun and moon shadows the shadow map is too coarse for.
+* **Weather catches light:** on by default. Rain and snow lit by which way each flake faces the light.
 
 ### Performance
 
 * **Weather lit in one pass:** on by default. Rain, snow, mist and wind dust lit by every nearby light in one draw. Same look.
 * **Flicker culling:** on by default. Lights further than the flicker distance, or not lighting anything on screen, stop flickering and hold a steady brightness.
 * **Flicker distance:** 15 metres by default. How far from you lights still flicker.
-* **Tiled lights:** experimental, off by default. Every point light in one pass instead of one pass each.
-* **Occlusion culling:** experimental, off by default. Build pieces fully hidden behind others (the rooms above your basement, the inside of a house from outside) aren't drawn. Their shadows stay.
+* **Lights in one pass:** on by default. Every point light in one pass instead of one pass each.
+* **Skip hidden pieces:** on by default. Build pieces fully hidden behind others (the rooms above your basement, the inside of a house from outside) aren't drawn. Their shadows stay.
 
 ### Testing
 
@@ -108,6 +120,8 @@ Measure it yourself: turn on Benchmark in an in-game config menu (such as Shudna
 * Mods that replace the game's lighting shader can't be used together with this one.
 
 The ambient occlusion shader is built from Amplify Occlusion by Amplify Creations (MIT license, included in the DLL).
+
+Contact shadows are a port of Bend Studio's screen-space shadows ([Graham Aldridge, Sony Interactive Entertainment, 2023](https://www.bendstudio.com/blog/inside-bend-screen-space-shadows/), Apache License 2.0, included in the DLL).
 
 Disclaimer: development is AI assisted. Not fully human or AI.
 

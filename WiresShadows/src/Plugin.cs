@@ -18,7 +18,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.4.1";
+        public const string Version = "0.5.0";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -42,6 +42,8 @@ namespace WiresShadows
         internal static ConfigEntry<bool> OcclusionCulling;
         internal static ConfigEntry<bool> BurleyDiffuse;
         internal static ConfigEntry<bool> SmoothShading;
+        internal static ConfigEntry<bool> WeatherFacing;
+        internal static ConfigEntry<bool> ContactShadowsOn;
         internal enum ShadowMode { All, Performance, Off }
         internal static ConfigEntry<ShadowMode> Shadows;
         private static readonly int BurleyId = Shader.PropertyToID("_WireBurley");
@@ -127,6 +129,12 @@ namespace WiresShadows
                 new ConfigDescription("Improves the game's ambient occlusion (the shade in corners and creases): light bouncing between surfaces is taken into account, so bright surfaces darken less and coloured ones keep their colour instead of going grey. Full resolution and steady from frame to frame. Off: the game's own. Needs Enabled on."),
                 "Ambient occlusion");
             ModAO.SettingChanged += (_, __) => { AmbientOcclusion.Apply(); };
+            WeatherFacing = Setting(Look, "Weather catches light", true,
+                "Rain and snow are lit by which way each flake faces the light, so flakes turned toward a fire or the moon catch it and those turned away stay dark, instead of flat white specks. Off: the game's look.");
+            WeatherFacing.SettingChanged += (_, __) => ShadowCache.FacingSettingChanged();
+            ContactShadowsOn = Setting(Look, "Contact shadows", true,
+                "Short sun shadows the game's shadow map is too coarse for: stones on the ground, plank edges, the foot of a post, traced on screen toward the sun (Bend Studio's screen-space shadows). Only direct sunlight is darkened. GPU only. Off: the game's sun shadows alone. Needs Enabled on.");
+            ContactShadowsOn.SettingChanged += (_, __) => ContactShadows.Apply();
 
             LitParticles = Setting(Speed, "Weather lit in one pass", true,
                 "Rain, snow, mist and wind dust lit by every nearby point light in one draw, instead of the game drawing them again for each light (one more draw call per light per weather effect). Same look. Off: the game's way.");
@@ -136,10 +144,10 @@ namespace WiresShadows
             FlickerDistance = Setting(Speed, "Flicker distance", 15f,
                 new ConfigDescription("How far away (metres) a light still flickers. It also has to light something on screen.",
                     new AcceptableValueRange<float>(0f, 250f)));
-            TiledLights = Setting(Speed, "Tiled lights", false,
-                "Experimental. Every point light in one pass instead of one pass each. Off: the game's way, one at a time.");
-            OcclusionCulling = Setting(Speed, "Occlusion culling", false,
-                "Experimental. Build pieces fully hidden behind others (the rooms upstairs from the basement, the inside of a house from outside) aren't drawn; their shadows stay. Off: the game's way.");
+            TiledLights = Setting(Speed, "Lights in one pass", true,
+                "Every point light in one pass instead of one pass each. Off: the game's way, one at a time.");
+            OcclusionCulling = Setting(Speed, "Skip hidden pieces", true,
+                "Build pieces fully hidden behind others (the rooms upstairs from the basement, the inside of a house from outside) aren't drawn; their shadows stay. Off: the game's way.");
             OcclusionCulling.SettingChanged += (_, __) => { if (!OcclusionCulling.Value) Occlusion.Disable(); };
 
             Benchmark = Setting(Testing, "Benchmark", false,
@@ -172,10 +180,13 @@ namespace WiresShadows
                     else if (s.name == "Hidden/WireAOApply") AmbientOcclusion.BounceShader = s;
                     else if (s.name == "Hidden/WireTiledLights") ShadowCache.TiledShader = s;
                     else if (s.name == "Wire/LitParticles") ShadowCache.LitParticlesShader = s;
-                    else if (s.name == "Hidden/WireOcclusionMask") Occlusion.MaskShader = s;                }
+                    else if (s.name == "Hidden/WireOcclusionMask") Occlusion.MaskShader = s;
+                    else if (s.name == "Hidden/WireContactApply") ContactShadows.ApplyShader = s;
+                }
                 foreach (ComputeShader cs in bundle.LoadAllAssets<ComputeShader>())
                     if (cs.name == "WireTiledLights") ShadowCache.TiledCompute = cs;
                     else if (cs.name == "WireOcclusion") Occlusion.Compute = cs;
+                    else if (cs.name == "WireContactShadows") ContactShadows.Compute = cs;
             }
             if (_shader == null || !_shader.isSupported || ShadowCache.DistanceShader == null ||
                 ShadowCache.CombineShader == null)
@@ -211,8 +222,9 @@ namespace WiresShadows
 
 
             gameObject.AddComponent<ShadowCache>();
-            UseShader.SettingChanged += (_, __) => { Apply(); AmbientOcclusion.Apply(); if (!UseShader.Value) Occlusion.Disable(); };
+            UseShader.SettingChanged += (_, __) => { Apply(); AmbientOcclusion.Apply(); ContactShadows.Apply(); if (!UseShader.Value) Occlusion.Disable(); };
             Apply();
+            ContactShadows.Apply();
         }
 
         // The benchmark's phase with the game's own lighting shader and the rest of the mod running.

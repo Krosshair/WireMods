@@ -1,3 +1,9 @@
+## 0.5.0
+- New: Contact shadows (Look, on by default). Short, sharp sun and moon shadows where the shadow map is too coarse: stones on the ground, plank edges, the foot of a post. A port of Bend Studio's screen-space shadows; pixels the sun can't shadow anyway are skipped, so it costs very little.
+- New: Weather catches light (Look, on by default). Rain and snow are lit by which way each flake faces the light, so they catch firelight and moonlight instead of being flat white specks.
+- Performance: rain, snow, mist and wind dust are lit by nearby lights at each particle's corners instead of at every pixel. Same look, much less GPU work in heavy weather.
+- Lights in one pass (was Tiled lights) and Skip hidden pieces (was Occlusion culling) are no longer experimental and are now on for everyone.
+
 ## 0.4.1
 - Removed seven internal switches that were always on, and the code paths behind them that could never run. Nothing changes in game.
 - README: the comparison images now sit under the features they show.

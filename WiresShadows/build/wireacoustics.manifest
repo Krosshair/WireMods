@@ -1,0 +1,21 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.0.75f1
+CRC: 968843631
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: 1751d73e7b8af82a5891c86a88a9fb43
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: bb8521372c98e74594d3b7eb1b0a7a88
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: 9f6d2f656410b5e61add229b0ff64bab
+HashAppended: 0
+ClassTypes:
+- Class: 48
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Assets/Shaders/WireAcousticCoverage.shader
+Dependencies: []

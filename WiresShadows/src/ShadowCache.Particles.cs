@@ -40,8 +40,50 @@ namespace WiresShadows
         {
             private static void Postfix(GameObject[] psystems, bool enabled)
             {
-                if (enabled && LitWanted) LitSwap(psystems);
+                if (!enabled) return;
+                if (LitWanted) LitSwap(psystems);
+                if (FacingWanted) FacingApply(psystems);
             }
+        }
+
+        // ---- Weather catching the light ----
+        // The game's particle shader can light each particle by which way it faces the light
+        // (_LightNormalFactor, 0 to 1), but rain and snow ship at 0: a flake is lit the same whichever
+        // way it's turned, so falling snow reads as flat white specks. Weather materials left at 0 get
+        // this value; ones the game set itself are left alone. Once per material, when the weather
+        // turns it on. Idea from ValheimVisuals (Ivvty), which sets the same 0.5.
+        private const float FacingValue = .5f; // picked (ValheimVisuals' default)
+        private static readonly int LightNormalFactorId = Shader.PropertyToID("_LightNormalFactor");
+        private static readonly List<Material> s_facingSet = new List<Material>();
+
+        private static bool FacingWanted => Plugin.WeatherFacing != null && Plugin.WeatherFacing.Value;
+
+        private static void FacingApply(GameObject[] psystems)
+        {
+            if (psystems == null) return;
+            foreach (GameObject go in psystems)
+            {
+                if (go == null) continue;
+                foreach (ParticleSystemRenderer r in go.GetComponentsInChildren<ParticleSystemRenderer>(true))
+                    foreach (Material m in r.sharedMaterials)
+                    {
+                        if (m == null || !m.HasProperty(LightNormalFactorId) || m.GetFloat(LightNormalFactorId) != 0f) continue;
+                        m.SetFloat(LightNormalFactorId, FacingValue);
+                        s_facingSet.Add(m);
+                    }
+            }
+        }
+
+        // Setting changed (Plugin): set it now on the weather showing, or put the game's 0 back.
+        internal static void FacingSettingChanged()
+        {
+            if (FacingWanted)
+            {
+                if (EnvMan.instance != null) FacingApply(CurrentPSystems(EnvMan.instance));
+                return;
+            }
+            foreach (Material m in s_facingSet) if (m != null) m.SetFloat(LightNormalFactorId, 0f);
+            s_facingSet.Clear();
         }
 
         private static void LitSwap(GameObject[] psystems)
