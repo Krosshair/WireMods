@@ -10,9 +10,10 @@ namespace WiresUpscalers
 {
     internal enum Upscaler { None = 0, DLSS = 1, FSR3 = 2, FSR4 = 3, XeSS = 4 }
 
-    [BepInPlugin("wire.valheim.upscalers", "Wire's Upscalers", "0.1.0")]
+    [BepInPlugin("wire.valheim.upscalers", "Wire's Upscalers", Version)]
     public sealed class Plugin : BaseUnityPlugin
     {
+        public const string Version = "0.1.3";
         internal static Plugin Instance;
         internal static ConfigEntry<int> UpscalerConfig, DlssModel;
         internal static ConfigEntry<float> Sharpness;

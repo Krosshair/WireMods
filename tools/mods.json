@@ -6,7 +6,6 @@
                  "WiresAldr":  {
                                    "thunderstore":  true,
                                    "thunderstore_categories":  [
-                                                                   "ai-generated",
                                                                    "client-side",
                                                                    "server-side",
                                                                    "mods",
@@ -30,7 +29,6 @@
                  "WiresBalancedCraftFromNearbyChests":  {
                                                             "thunderstore":  true,
                                                             "thunderstore_categories":  [
-                                                                                            "ai-generated",
                                                                                             "client-side",
                                                                                             "deep-north-update",
                                                                                             "mods"
@@ -43,7 +41,6 @@
                  "WiresCameraTweaks":  {
                                            "thunderstore":  true,
                                            "thunderstore_categories":  [
-                                                                           "ai-generated",
                                                                            "client-side",
                                                                            "deep-north-update",
                                                                            "misc",
@@ -58,7 +55,6 @@
                  "WiresCombatFlow":  {
                                          "thunderstore":  true,
                                          "thunderstore_categories":  [
-                                                                         "ai-generated",
                                                                          "mods"
                                                                      ],
                                          "hexium":  true,
@@ -90,7 +86,6 @@
                  "WiresEnemyHUD":  {
                                        "thunderstore":  true,
                                        "thunderstore_categories":  [
-                                                                       "ai-generated",
                                                                        "client-side",
                                                                        "enemies",
                                                                        "mods",
@@ -119,7 +114,6 @@
                  "WiresGrassTweaks":  {
                                           "thunderstore":  true,
                                           "thunderstore_categories":  [
-                                                                          "ai-generated",
                                                                           "client-side",
                                                                           "mods",
                                                                           "tweaks",
@@ -157,7 +151,6 @@
                  "WiresInstafill":  {
                                         "thunderstore":  true,
                                         "thunderstore_categories":  [
-                                                                        "ai-generated",
                                                                         "mods"
                                                                     ],
                                         "hexium":  true,
@@ -179,7 +172,6 @@
                  "WiresMeisterhau":  {
                                          "thunderstore":  true,
                                          "thunderstore_categories":  [
-                                                                         "ai-generated",
                                                                          "client-side",
                                                                          "deep-north-update",
                                                                          "enemies",
@@ -209,7 +201,6 @@
                  "WiresNotificationOverhaul":  {
                                                    "thunderstore":  true,
                                                    "thunderstore_categories":  [
-                                                                                   "ai-generated",
                                                                                    "client-side",
                                                                                    "mods",
                                                                                    "utility"
@@ -222,7 +213,6 @@
                  "WiresPings":  {
                                     "thunderstore":  true,
                                     "thunderstore_categories":  [
-                                                                    "ai-generated",
                                                                     "client-side",
                                                                     "utility"
                                                                 ],
@@ -234,7 +224,6 @@
                  "WiresRecycler":  {
                                        "thunderstore":  true,
                                        "thunderstore_categories":  [
-                                                                       "ai-generated",
                                                                        "client-side",
                                                                        "deep-north-update",
                                                                        "gear",
@@ -248,7 +237,6 @@
                  "WiresSailingCamera":  {
                                             "thunderstore":  true,
                                             "thunderstore_categories":  [
-                                                                            "ai-generated",
                                                                             "mods"
                                                                         ],
                                             "hexium":  true,
@@ -259,7 +247,6 @@
                  "WiresSmoothUI":  {
                                        "thunderstore":  true,
                                        "thunderstore_categories":  [
-                                                                       "ai-generated",
                                                                        "client-side",
                                                                        "mods",
                                                                        "tweaks"
@@ -272,7 +259,6 @@
                  "WiresStableFirelight":  {
                                               "thunderstore":  true,
                                               "thunderstore_categories":  [
-                                                                              "ai-generated",
                                                                               "client-side",
                                                                               "mods",
                                                                               "tweaks"
@@ -295,7 +281,6 @@
                  "WiresTinyToolTweaks":  {
                                              "thunderstore":  true,
                                              "thunderstore_categories":  [
-                                                                             "ai-generated",
                                                                              "mods"
                                                                          ],
                                              "hexium":  true,
@@ -306,7 +291,6 @@
                  "WiresWeaponMaster":  {
                                            "thunderstore":  true,
                                            "thunderstore_categories":  [
-                                                                           "ai-generated",
                                                                            "client-side",
                                                                            "deep-north-update",
                                                                            "mods",
@@ -320,7 +304,6 @@
                  "WiresWeightedSlots":  {
                                             "thunderstore":  true,
                                             "thunderstore_categories":  [
-                                                                            "ai-generated",
                                                                             "mods"
                                                                         ],
                                             "hexium":  true,
@@ -352,7 +335,6 @@
                  "WiresAI":  {
                                  "thunderstore":  true,
                                  "thunderstore_categories":  [
-                                                                 "ai-generated",
                                                                  "client-side",
                                                                  "server-side",
                                                                  "mods",
@@ -366,7 +348,6 @@
                  "WiresAcoustics":  {
                                         "thunderstore":  true,
                                         "thunderstore_categories":  [
-                                                                        "ai-generated",
                                                                         "audio",
                                                                         "client-side",
                                                                         "mods"
@@ -379,7 +360,6 @@
                  "WiresShadows":  {
                                       "thunderstore":  true,
                                       "thunderstore_categories":  [
-                                                                      "ai-generated",
                                                                       "client-side",
                                                                       "mods",
                                                                       "tweaks"
@@ -392,7 +372,6 @@
                  "WiresReflections":  {
                                           "thunderstore":  true,
                                           "thunderstore_categories":  [
-                                                                          "ai-generated",
                                                                           "client-side",
                                                                           "mods",
                                                                           "tweaks"

@@ -23,6 +23,8 @@ namespace WiresUpscalers
         private int _jitterIndex;
         private readonly List<RawImage> _shown = new List<RawImage>(2);
         private Upscaler _last;
+        // looked up by name once, not every frame
+        private static readonly int DepthId = Shader.PropertyToID("_CameraDepthTexture"), MotionId = Shader.PropertyToID("_CameraMotionVectorsTexture");
 
         private void Awake()
         {
@@ -108,8 +110,8 @@ namespace WiresUpscalers
         {
             Upscaler u = Plugin.Current;
             if (u != _last) { _last = u; _reset = true; }
-            Texture depth = Shader.GetGlobalTexture("_CameraDepthTexture");
-            Texture motion = Shader.GetGlobalTexture("_CameraMotionVectorsTexture");
+            Texture depth = Shader.GetGlobalTexture(DepthId);
+            Texture motion = Shader.GetGlobalTexture(MotionId);
             if (!Active || source == null || depth == null || motion == null)
             {
                 Restore();
