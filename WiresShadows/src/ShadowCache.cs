@@ -427,7 +427,7 @@ namespace WiresShadows
         }
         private bool EnsureNativeMovingTier(bool near)
         {
-            if (!Plugin.NativeMovingDepthPcf || _nativeMovingFailed || NativeCopyShader == null) return false;
+            if (_nativeMovingFailed || NativeCopyShader == null) return false;
             if (!SupportsShadowmap())
             {
                 _nativeMovingFailed = true;
@@ -823,7 +823,7 @@ namespace WiresShadows
                 DisableWispShadows(light, light.GetComponent<LightLod>());
                 return;
             }
-            if (on && (!Plugin.MovingLightShadows || (why == "carried" && !IsTorch(light))))
+            if (on && why == "carried" && !IsTorch(light))
                 return;
             light.shadows = on ? LightShadows.Soft : LightShadows.None;
             if (on)
@@ -1774,7 +1774,7 @@ namespace WiresShadows
                         ParticleSystem ps = pr.GetComponent<ParticleSystem>();
                         Material m = pr.sharedMaterial;
                         if (ps == null || m == null) continue;
-                        if (Plugin.ParticleShadows && SheetMaterial(m) is Material sheet)
+                        if (SheetMaterial(m) is Material sheet)
                         {
                             if (Particles.Count > 512) Particles.RemoveAll(p => p.R == null);
                             Particles.Add(new ParticleCaster { R = pr, Ps = ps, Sheet = sheet });
@@ -2064,7 +2064,6 @@ namespace WiresShadows
         // and the direct moving-shadow draws. Anything failing at runtime switches back to the old
         // way at the next reassignment (EnsureResources sees the change and rebuilds).
         private bool WantNativeOnly() =>
-            Plugin.NativeDepthPcf && Plugin.NativeMovingDepthPcf && Plugin.DirectMovingDraw &&
             !_nativeMovingFailed && NativeCopyShader != null &&
             CombineShader != null && CombineShader.passCount >= 4 && SupportsShadowmap();
         private RenderTexture _movScratch; // native-only: moving shadows are drawn here, then converted
@@ -3032,7 +3031,7 @@ namespace WiresShadows
                 UpdatePlacements();
             UpdateStandHandoffs(); // Dropped items no longer need a static-map handoff.
             if (!_active || !Plugin.UseShader.Value || !Plugin.CachedShadows ||
-                _dynMaps == null || _movScratch == null || !Plugin.MovingCasters ||
+                _dynMaps == null || _movScratch == null ||
                 _slots.Length == 0)
                 return;
             List<Character> characters = Character.GetAllCharacters();
@@ -3300,7 +3299,7 @@ namespace WiresShadows
                     closestCasterDistanceSq < 256f ? 2 :
                     closestCasterDistanceSq < 576f ? 3 :
                     closestCasterDistanceSq < 1024f ? 4 : 5;
-                if (Plugin.FaintCut && nearestMoving < float.PositiveInfinity)
+                if (nearestMoving < float.PositiveInfinity)
                     updateEvery = Mathf.Max(updateEvery, FaintEvery(nearestMoving));
                 // Stand attachment/removal must be instant even if the
                 // stand is beyond the camera's normal detail distance.
@@ -3413,7 +3412,7 @@ namespace WiresShadows
                 RenderTexture drawMaps = _movScratch;
                 const int drawBase = 0;
                 int draw = DynDraw[sl];
-                bool nativeMoving = Plugin.NativeMovingDepthPcf && EnsureNativeMovingTier(sl < _near);
+                bool nativeMoving = EnsureNativeMovingTier(sl < _near);
                 if (nativeMoving && _dynFacesLast[sl] == 0)
                     InitNativeMovingSlot(t, pl);
                 for (int f = 0; f < 6; f++)
@@ -3458,7 +3457,7 @@ namespace WiresShadows
                             // entire cubemap side. Only direct draws have a
                             // provably complete changed-pixel rectangle.
                             bool drawn = (draw & (1 << f)) != 0 && (toClear & (1 << f)) == 0;
-                            RectInt touched = Plugin.DirectMovingDraw && drawn
+                            RectInt touched = drawn
                                 ? _nativeMovingTouched[sl * 6 + f] : default;
                             // Native-only: a drawn face with nothing drawn on it this time has no
                             // new pixels in the scratch cube (what's there is another light's).

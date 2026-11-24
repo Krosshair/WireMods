@@ -1,3 +1,7 @@
+## 0.4.1
+- Removed seven internal switches that were always on, and the code paths behind them that could never run. Nothing changes in game.
+- README: the comparison images now sit under the features they show.
+
 ## 0.4.0
 - New: Shadows setting (General). All (default): every placed light, as before. Performance: only the lights the game itself gives shadows (fires, braziers, hearths, lanterns); sconces, standing torches and the like get none. Off: no shadows from placed lights. The game's own Point light shadows setting is no longer used.
 - Enhanced shading (on by default): surfaces are lit with Burley's diffuse, the one in Unity's own Standard shader, instead of the game's Lambert. Rough surfaces such as ground, rock, wood and foliage brighten a little when the light is behind you, and smooth ones darken a little at their edges, which looks softer and more natural. Lit straight on, nothing changes. Off gives back the game's look.

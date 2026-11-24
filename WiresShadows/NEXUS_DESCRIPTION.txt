@@ -6,7 +6,15 @@ In vanilla Valheim only the few lights nearest you get shadows, and the game red
 
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/showcaseimage.jpg[/img]
 
-[size=5][b]Comparison[/b][/size]
+[size=5][b]Features[/b][/size]
+
+[b]Shadows for every light[/b]
+
+* [b]Every placed light casts shadows:[/b] sconces, torches, braziers, hearths, lanterns, forges and the rest. No more light leaking through walls, floors and roofs.
+* [b]Cached:[/b] a light's shadow is drawn once and again only when something near it changes (building, a door opening).
+* [b]Moving shadows[/b] for players, creatures, doors, dropped items and moving machine parts. Only the changed part is redrawn, only where it can be seen.
+* [b]Items on stands, food and meads[/b] cast shadows, and their glows are lights of their own.
+* [b]Ready before the loading screen fades,[/b] so nothing pops in after loading or teleporting.
 
 Each scene with Wire's Shadows first and vanilla second.
 
@@ -22,34 +30,19 @@ Each scene with Wire's Shadows first and vanilla second.
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/moddedmainmenu.jpg[/img]
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/vanillamainmenu.jpg[/img]
 
-Enhanced shading on, then off (the game's look):
+[b]Enhanced shading: Burley's diffuse[/b]
+
+Valheim lights every surface with Lambert's model ([url=https://en.wikipedia.org/wiki/Lambertian_reflectance]Lambert, 1760[/url]): how bright a surface is depends only on the angle of the light, and it looks the same from every side. Real surfaces don't. A rough one (ground, rock, bark, leaves) looks brighter and flatter when the light is behind you, and a smooth one darkens toward its edges.
+
+The mod uses Burley's diffuse instead ([url=https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf]Burley, Disney, 2012[/url]), which does both from each surface's roughness and was built to match measured real materials. It's the same model as in Unity's own Standard shader. Lit straight on, it gives exactly what Lambert does.
+
+On, then off (the game's look):
 
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/moddedburleynature.jpg[/img]
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/vanillalambertnature.jpg[/img]
 
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/eitrlookon.jpg[/img]
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/eitrlookoff.jpg[/img]
-
-The game's toon steps, then Smooth shading on:
-
-[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/toonon.jpg[/img]
-[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/toonoff.jpg[/img]
-
-[size=5][b]Features[/b][/size]
-
-[b]Shadows for every light[/b]
-
-* [b]Every placed light casts shadows:[/b] sconces, torches, braziers, hearths, lanterns, forges and the rest. No more light leaking through walls, floors and roofs.
-* [b]Cached:[/b] a light's shadow is drawn once and again only when something near it changes (building, a door opening).
-* [b]Moving shadows[/b] for players, creatures, doors, dropped items and moving machine parts. Only the changed part is redrawn, only where it can be seen.
-* [b]Items on stands, food and meads[/b] cast shadows, and their glows are lights of their own.
-* [b]Ready before the loading screen fades,[/b] so nothing pops in after loading or teleporting.
-
-[b]Enhanced shading: Burley's diffuse[/b]
-
-Valheim lights every surface with Lambert's model ([url=https://en.wikipedia.org/wiki/Lambertian_reflectance]Lambert, 1760[/url]): how bright a surface is depends only on the angle of the light, and it looks the same from every side. Real surfaces don't. A rough one (ground, rock, bark, leaves) looks brighter and flatter when the light is behind you, and a smooth one darkens toward its edges.
-
-The mod uses Burley's diffuse instead ([url=https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf]Burley, Disney, 2012[/url]), which does both from each surface's roughness and was built to match measured real materials. It's the same model as in Unity's own Standard shader. Lit straight on, it gives exactly what Lambert does.
 
 [b]Improved ambient occlusion: multi-bounce[/b]
 
@@ -58,6 +51,11 @@ Valheim's ambient occlusion (Amplify Occlusion, GTAO) darkens corners and crease
 [b]Smooth shading (optional)[/b]
 
 Off by default. Light fades smoothly from lit to unlit instead of in Valheim's toon steps, the look of Badgers Shading Overhaul, built in.
+
+The game's toon steps, then Smooth shading on:
+
+[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/toonon.jpg[/img]
+[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/toonoff.jpg[/img]
 
 With the Look settings off, the lighting is exactly the game's own.
 

@@ -18,16 +18,13 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.4.0";
+        public const string Version = "0.4.1";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
         internal static ManualLogSource Log;
         // Benchmark temporarily turns the cached path off; normal play always uses it.
         internal static bool CachedShadows = true;
-        // Moving shadows redrawn less often the fainter the light is where the moving things are
-        // (ShadowCache.FaintEvery).
-        internal const bool FaintCut = true;
         internal const int Slots = 24;
         internal const int Resolution = 1024;
         internal const int FarSlots = 40;
@@ -35,11 +32,7 @@ namespace WiresShadows
         internal const float UltraDistance = 150f;
         internal const int FarMovingLights = 8;
 
-        internal const bool MovingLightShadows = true;
-
         internal const float Distance = 60f;
-        internal const bool MovingCasters = true;
-        internal const bool ParticleShadows = true; // effects' particles cast moving shadows
         internal static ConfigEntry<bool> Benchmark;
         internal static ConfigEntry<bool> QuickBenchmark;
         internal static ConfigEntry<bool> DebugLog;
@@ -59,9 +52,6 @@ namespace WiresShadows
         internal static bool BenchRunning; // the log is on while the benchmark runs
         internal static bool Debug => BenchRunning || (DebugLog != null && DebugLog.Value);
         internal static void Note(string text) { if (Debug) Log.LogInfo(text); }
-        internal const bool DirectMovingDraw = true;
-        internal const bool NativeDepthPcf = true;
-        internal const bool NativeMovingDepthPcf = true;
         internal static ConfigEntry<bool> UseShader;
 
         private Shader _original;
