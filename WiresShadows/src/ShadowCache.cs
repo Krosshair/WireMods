@@ -730,7 +730,9 @@ namespace WiresShadows
             // No LightLod to tell us it switched on: watch it ourselves.
             if (lod == null && light.GetComponent<LightWatch>() == null)
                 light.gameObject.AddComponent<LightWatch>().Light = light;
-            if (Instance != null && Instance._active)
+            // Shadows Off keeps the game's own off too, from the light's first frame.
+            if (Instance != null && (Instance._active ||
+                (Plugin.Shadows.Value == Plugin.ShadowMode.Off && Plugin.UseShader.Value && Plugin.CachedShadows)))
                 Suppress(t);
         }
 
@@ -2228,11 +2230,16 @@ namespace WiresShadows
         private void Reassign() { long t0 = Timing.Start(); ReassignCore(); Timing.Stop(Timing.Part.Reassign, t0); }
         private void ReassignCore()
         {
-            // the game's point-light shadows set to Off: none from the mod either (GameLevel)
-            if (!Plugin.CachedShadows || !Plugin.UseShader.Value || DistanceShader == null || GameOff || !EnsureResources())
+            bool off = Plugin.Shadows.Value == Plugin.ShadowMode.Off;
+            if (!Plugin.CachedShadows || !Plugin.UseShader.Value || DistanceShader == null || off || !EnsureResources())
             {
                 SetActive(false);
                 ReleaseAll();
+                // Shadows Off: no point-light shadows at all, the game's own included. Anything else
+                // that stops the mod (Enabled off, the benchmark's vanilla run): the game's own.
+                bool none = off && Plugin.CachedShadows && Plugin.UseShader.Value;
+                foreach (Tracked t in Lights)
+                    if (none) Suppress(t); else Unsuppress(t);
                 return;
             }
             SetActive(true);
@@ -2333,7 +2340,7 @@ namespace WiresShadows
                     _dynFacesLast[sl] == 0 && _dynActive[sl] <= 0f)
                     FreeDynSlot(sl);
                 if (_slots[sl] != null && (_slots[sl].Reach > (sl >= UltraStart ? ultraDist : maxDist) + KeepMargin ||
-                                           BeyondGame(_slots[sl], at, KeepMargin)))
+                                           !Allowed(_slots[sl])))
                     Release(_slots[sl]);
             }
             // The existing coroutine budgets new shadow-map faces; avoid
@@ -2363,10 +2370,10 @@ namespace WiresShadows
                     }
                     continue;
                 }
-                if (BeyondGame(t, at, 0f))
+                if (!Allowed(t))
                 {
                     t.NearEligibleSince = -1f;
-                    continue; // past the distance the game's own setting gives shadows at
+                    continue; // Shadows on Performance: a light the game gives no shadow
                 }
                 if (t.Reach > maxDist)
                 {
@@ -3354,19 +3361,6 @@ namespace WiresShadows
                     UploadNativeMovingActive();
                 }
                 return;
-            }
-            // The game's point-light shadow setting below its highest: vanilla's per-frame work only.
-            if (GameLimited)
-            {
-                HoldToGameBudget(DynCandidates, DynDraw, cameraPosition);
-                if (DynCandidates.Count == 0)
-                {
-                    if (releasedAnyMovingMaps) { UploadDynActive(); UploadNativeMovingActive(); }
-                    return;
-                }
-                newNearCubes = newFarCubes = 0; // only the ones drawn this frame need a cube
-                foreach (int sl in DynCandidates)
-                    if (_dynPhysical[sl] < 0 && DynFaces[sl] != 0) { if (sl < _near) newNearCubes++; else newFarCubes++; }
             }
             // GPU pool growth can involve gigabytes of texture copies with
             // 2048px faces and native depth enabled. Batch newly needed
@@ -4868,6 +4862,14 @@ namespace WiresShadows
         // Lights loaded in while loading get slotted on the next frame, not
         // the next 1 s Reassign: by the time you see them they're done.
         private static bool _reassignSoon;
+
+        // The Shadows setting changed: the lights are sorted again now, not at the next 1 s Reassign.
+        internal static void ShadowsSettingChanged() { if (Instance != null) Instance.Reassign(); }
+
+        // Shadows on Performance: only the lights the game itself gives shadows (fires, braziers,
+        // hearths, lanterns), as their prefab has them. Sconces, standing torches and the like get none.
+        private static bool Allowed(Tracked t) =>
+            Plugin.Shadows.Value != Plugin.ShadowMode.Performance || t.OriginalShadowLod || t.OriginalShadows != LightShadows.None;
 
         private static float _spawnedAt = -10f;
 

@@ -18,7 +18,7 @@ namespace WiresShadows
     {
         public const string Guid = "wire.valheim.shadows";
         public const string Name = "Wire's Shadows";
-        public const string Version = "0.3.6";
+        public const string Version = "0.4.0";
 
         private const string BundleResource = "wiresshadows.bundle"; // the shaders, built into the DLL
 
@@ -47,6 +47,11 @@ namespace WiresShadows
         internal static ConfigEntry<bool> LitParticles;
         internal static ConfigEntry<bool> ModAO;
         internal static ConfigEntry<bool> OcclusionCulling;
+        internal static ConfigEntry<bool> BurleyDiffuse;
+        internal static ConfigEntry<bool> SmoothShading;
+        internal enum ShadowMode { All, Performance, Off }
+        internal static ConfigEntry<ShadowMode> Shadows;
+        private static readonly int BurleyId = Shader.PropertyToID("_WireBurley");
         
         internal static ConfigEntry<bool> FlickerCulling;
         internal static ConfigEntry<float> FlickerDistance;
@@ -76,49 +81,85 @@ namespace WiresShadows
         private ConfigEntry<T> Setting<T>(string section, string name, T value, string help) =>
             Setting(section, name, value, new ConfigDescription(help));
 
-        // In-game menu: listed in the order bound here, Benchmark first.
-        private ConfigEntry<T> Setting<T>(string section, string name, T value, ConfigDescription description)
+        private const string General = "1 - General", Look = "2 - Look", Speed = "3 - Performance", Testing = "4 - Testing";
+
+        // In-game menu: listed in the order bound here, the sections by their number.
+        private ConfigEntry<T> Setting<T>(string section, string name, T value, ConfigDescription description, string was = null)
         {
-            var a = new ConfigurationManagerAttributes
-            {
-                Order = section == "General" && name == "Benchmark" ? 10000 : section == "General" && name == "Quick benchmark" ? 9999 : section == "General" && name == "Enabled" ? 9000 : _order--
-            };
-            return Config.Bind(section, name, value,
+            var a = new ConfigurationManagerAttributes { Order = _order-- };
+            ConfigEntry<T> entry = Config.Bind(section, name, value,
                 new ConfigDescription(description.Description, description.AcceptableValues, a));
+            KeepOldValue(entry, "General", name);
+            if (was != null) { KeepOldValue(entry, "General", was); KeepOldValue(entry, section, was); }
+            return entry;
+        }
+
+        // Up to 0.3.6 every setting was under [General], and some had other names. A value someone
+        // set there is carried over to the setting's new place once, then the old line is dropped.
+        // Only at startup.
+        private static readonly System.Reflection.PropertyInfo Orphans = AccessTools.Property(typeof(ConfigFile), "OrphanedEntries");
+        private void KeepOldValue(ConfigEntryBase entry, string section, string name)
+        {
+            if (!(Orphans?.GetValue(Config) is Dictionary<ConfigDefinition, string> orphans)) return;
+            var old = new ConfigDefinition(section, name);
+            if (!orphans.TryGetValue(old, out string value)) return;
+            entry.SetSerializedValue(value);
+            orphans.Remove(old);
+            Config.Save();
+        }
+
+        private static void ApplySmooth(bool smooth)
+        {
+            if (smooth) Shader.EnableKeyword("WIRE_SMOOTH_ALL"); else Shader.DisableKeyword("WIRE_SMOOTH_ALL");
         }
         private void Awake()
         {
             Log = Logger;
-            UseShader = Setting("General", "Enabled", true,
+            UseShader = Setting(General, "Enabled", true,
                 "Master switch for Wire's Shadows. Off restores the game's own lighting and shadows.");
+            Shadows = Setting(General, "Shadows", ShadowMode.All,
+                "Which placed lights cast shadows. All: every light. Performance: only the lights the game itself gives shadows (fires, braziers, hearths, lanterns); sconces, standing torches and the like get none. Off: no shadows from placed lights. The game's own Point light shadows setting isn't used.");
+            Shadows.SettingChanged += (_, __) => ShadowCache.ShadowsSettingChanged();
             // All rendering quality and capacity choices now use the working
             // built-in defaults. They are not user-facing configuration toggles.
             // Existing shadow fallbacks handle unsupported GPU formats.
 
-            Benchmark = Setting("General", "Benchmark", false,
-                "Measures the mod against vanilla where you stand (about a minute) and shows the frame times. Resets itself.");
-            TiledLights = Setting("General", "Tiled lights", false,
-                "Experimental. Every point light in one pass instead of one pass each. Off: the game's way, one at a time.");
-            LitParticles = Setting("General", "Weather lit in one pass", true,
+            BurleyDiffuse = Setting(Look, "Enhanced shading", true,
+                new ConfigDescription("More natural shading from every light (Burley's diffuse, the one in Unity's own Standard shader): rough surfaces such as ground, rock, wood and foliage brighten a little when the light is behind you, smooth ones darken a little at their edges. Lit straight on, the same as the game. Off: the game's look. Needs Enabled on."),
+                "Diffuse lighting");
+            Shader.SetGlobalFloat(BurleyId, BurleyDiffuse.Value ? 1f : 0f);
+            BurleyDiffuse.SettingChanged += (_, __) => Shader.SetGlobalFloat(BurleyId, BurleyDiffuse.Value ? 1f : 0f);
+            SmoothShading = Setting(Look, "Smooth shading", false,
+                "Light fades smoothly from lit to unlit instead of in the game's toon steps, for the sun, moon and every light. Just as bright overall. Off: the game's steps. Needs Enabled on.");
+            ApplySmooth(SmoothShading.Value);
+            SmoothShading.SettingChanged += (_, __) => ApplySmooth(SmoothShading.Value);
+            ModAO = Setting(Look, "Improved AO", true,
+                new ConfigDescription("Improves the game's ambient occlusion (the shade in corners and creases): light bouncing between surfaces is taken into account, so bright surfaces darken less and coloured ones keep their colour instead of going grey. Full resolution and steady from frame to frame. Off: the game's own. Needs Enabled on."),
+                "Ambient occlusion");
+            ModAO.SettingChanged += (_, __) => { AmbientOcclusion.Apply(); };
+
+            LitParticles = Setting(Speed, "Weather lit in one pass", true,
                 "Rain, snow, mist and wind dust lit by every nearby point light in one draw, instead of the game drawing them again for each light (one more draw call per light per weather effect). Same look. Off: the game's way.");
             LitParticles.SettingChanged += (_, __) => ShadowCache.LitSettingChanged();
-            ModAO = Setting("General", "Ambient occlusion", true,
-                "The game's ambient occlusion coloured by the surface it lands on, at full resolution and steady from frame to frame. Off: the game's own ambient occlusion. Needs Enabled on.");
-            ModAO.SettingChanged += (_, __) => { AmbientOcclusion.Apply(); };
-            OcclusionCulling = Setting("General", "Occlusion culling", false,
+            FlickerCulling = Setting(Speed, "Flicker culling", true,
+                "Lights far away or fully off screen stop flickering, where nobody sees it. Lights that fade out still do.");
+            FlickerDistance = Setting(Speed, "Flicker distance", 15f,
+                new ConfigDescription("How far away (metres) a light still flickers. It also has to light something on screen.",
+                    new AcceptableValueRange<float>(0f, 250f)));
+            TiledLights = Setting(Speed, "Tiled lights", false,
+                "Experimental. Every point light in one pass instead of one pass each. Off: the game's way, one at a time.");
+            OcclusionCulling = Setting(Speed, "Occlusion culling", false,
                 "Experimental. Build pieces fully hidden behind others (the rooms upstairs from the basement, the inside of a house from outside) aren't drawn; their shadows stay. Off: the game's way.");
             OcclusionCulling.SettingChanged += (_, __) => { if (!OcclusionCulling.Value) Occlusion.Disable(); };
-            FlickerCulling = Setting("General", "Flicker culling", true,
-                "Skip brightness flicker for distant and completely off-screen lights; preserve TTL/fade/accessibility.");
-            FlickerDistance = Setting("General", "Flicker distance", 15f,
-                new ConfigDescription("Maximum source-to-camera distance (metres) for animated brightness flicker. Complete light influence must also intersect camera view.",
-                    new AcceptableValueRange<float>(0f, 250f)));
-            TimingLog = Setting("General", "Timing log", false,
-                "Every 5 seconds, what the mod's own work costs per frame (average and worst), in the log (BepInEx/LogOutput.log).");
-            DebugLog = Setting("General", "Debug log", false,
-                "Writes what the mod is doing to the log (BepInEx/LogOutput.log). On by itself while a benchmark runs.");
-            QuickBenchmark = Setting("General", "Quick benchmark", false,
+
+            Benchmark = Setting(Testing, "Benchmark", false,
+                "Measures the mod against vanilla where you stand (about a minute) and shows the frame times. Resets itself.");
+            QuickBenchmark = Setting(Testing, "Quick benchmark", false,
                 "The same against vanilla in about 10 seconds, the mod and vanilla only. For small changes. Resets itself.");
+            TimingLog = Setting(Testing, "Timing log", false,
+                "Every 5 seconds, what the mod's own work costs per frame (average and worst), in the log (BepInEx/LogOutput.log).");
+            DebugLog = Setting(Testing, "Debug log", false,
+                "Writes what the mod is doing to the log (BepInEx/LogOutput.log). On by itself while a benchmark runs.");
             Benchmark.SettingChanged += (_, __) => { if (Benchmark.Value && GetComponent<Bench>() == null) gameObject.AddComponent<Bench>(); };
             QuickBenchmark.SettingChanged += (_, __) => { if (QuickBenchmark.Value && GetComponent<Bench>() == null) gameObject.AddComponent<Bench>(); };
             AssetBundle bundle = null;

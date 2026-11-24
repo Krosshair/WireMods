@@ -1,3 +1,9 @@
+## 0.4.0
+- New: Shadows setting (General). All (default): every placed light, as before. Performance: only the lights the game itself gives shadows (fires, braziers, hearths, lanterns); sconces, standing torches and the like get none. Off: no shadows from placed lights. The game's own Point light shadows setting is no longer used.
+- Enhanced shading (on by default): surfaces are lit with Burley's diffuse, the one in Unity's own Standard shader, instead of the game's Lambert. Rough surfaces such as ground, rock, wood and foliage brighten a little when the light is behind you, and smooth ones darken a little at their edges, which looks softer and more natural. Lit straight on, nothing changes. Off gives back the game's look.
+- Smooth shading (off by default): light fades smoothly from lit to unlit instead of in the game's toon steps, for the sun, moon and every light.
+- Ambient occlusion is now called Improved AO, and the settings are sorted into sections: General, Look, Performance and Testing. Values you already set are kept.
+
 ## 0.3.6
 - Performance: drawing a light's shadow map no longer does the lighting work a normal camera does (the sun's shadows, per-pixel lights) for each of its six faces; none of it was used.
 
