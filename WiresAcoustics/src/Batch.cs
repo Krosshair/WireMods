@@ -114,6 +114,8 @@ namespace WiresAcoustics
             f.CheckedFrom = Hearing.At;
             f.CheckedAt = to;
             f.CheckedTime = Time.time;
+            // from what you acted on: its walls traced to the point you touched (Interaction)
+            if (f.Interacted) to = f.Touched;
             f.CheckedGen = Occlusion.WorldGen;
             // Skip expensive obstacle rays for a source with estimated open
             // gain below -60 dB. This is ONLY a geometry-work skip: the source
@@ -126,8 +128,8 @@ namespace WiresAcoustics
                 s_silentRaysSkipped++;
                 return;
             }
-            // Your own sounds, and what you're using within reach: nothing in the way, no rays.
-            if (Occlusion.Mine(f.transform, f) || (f.Interacted && Interaction.InReach(to)))
+            // Your own sounds: nothing in the way (Occlusion.Mine), no rays.
+            if (Occlusion.Mine(f.transform, f))
             {
                 f.EdgeModelValid = false;
                 f.UnderAmount = Underwater.SourceAmount(to, f.transform);

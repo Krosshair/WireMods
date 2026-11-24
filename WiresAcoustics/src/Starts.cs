@@ -23,7 +23,8 @@ namespace WiresAcoustics
             internal ZSFX Z;
             internal AudioSource Src;
             internal Vector3 Eye, To;
-            internal bool Air;
+            internal Vector3 Origin; // where the sound was when asked (To can be the point you touched instead)
+            internal bool Air, Aimed;
             internal Vector3 Away; // Air: the way out from you
             internal float Asked;
             internal int First, Generation, MoveRetries, VolumeN;
@@ -87,9 +88,10 @@ namespace WiresAcoustics
         }
 
         // From Occlusion.Run, inside the sound's Play: check its walls first, start it after.
-        internal static void Hold(ZSFX z, AudioSource src, Vector3 to)
+        // aimed: "to" is the point of the thing you touched (Interaction), not the sound's own spot.
+        internal static void Hold(ZSFX z, AudioSource src, Vector3 to, bool aimed)
         {
-            Queue.Add(new Req { Z = z, Src = src, Eye = Hearing.At, To = to, Asked = Time.time });
+            Queue.Add(new Req { Z = z, Src = src, Eye = Hearing.At, To = to, Origin = z.transform.position, Aimed = aimed, Asked = Time.time });
             s_hold = z;
         }
 
@@ -98,7 +100,7 @@ namespace WiresAcoustics
         {
             Vector3 away = z.transform.position - Hearing.At; away.y = 0f;
             away = away.sqrMagnitude > 1e-4f ? away.normalized : Vector3.forward;
-            Queue.Add(new Req { Z = z, Src = src, To = z.transform.position, Air = true, Away = away, Asked = Time.time });
+            Queue.Add(new Req { Z = z, Src = src, To = z.transform.position, Origin = z.transform.position, Air = true, Away = away, Asked = Time.time });
             s_hold = z;
         }
 
@@ -186,7 +188,7 @@ namespace WiresAcoustics
                 bool listenerMoved = !r.Air &&
                     (r.Eye - Hearing.At).sqrMagnitude > .25f * .25f;
                 bool sourceMoved = !r.Air &&
-                    (r.To - current).sqrMagnitude > .25f * .25f;
+                    (r.Origin - current).sqrMagnitude > .25f * .25f;
                 // Allow one extra check for rapid movement, then start it:
                 // perpetual movement must never starve a moving sound.
                 if (geometryChanged || ((listenerMoved || sourceMoved) && r.MoveRetries < 1))
@@ -194,7 +196,8 @@ namespace WiresAcoustics
                     if (geometryChanged) s_geometryRetries++;
                     else { s_motionRetries++; r.MoveRetries++; }
                     r.Eye = Hearing.At;
-                    r.To = current;
+                    r.Origin = current;
+                    if (!r.Aimed) r.To = current;
                     Queue.Add(r); // resubmitted with the current scene, still silent
                     continue;
                 }
@@ -204,7 +207,7 @@ namespace WiresAcoustics
                     if (!Plugin.Occlusion.Value) { Occlusion.Resume(r.Z, r.Src, 0f, Occlusion.Block.Clear); Travel(r.Z, r.Src, now - r.Asked); continue; }
                     // its walls from the new spot, next
                     r.Air = false;
-                    r.To = r.Z.transform.position;
+                    r.To = r.Origin = r.Z.transform.position;
                     r.Eye = Hearing.At;
                     Queue.Add(r);
                     continue;

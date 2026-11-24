@@ -7,42 +7,18 @@ namespace WiresAcoustics
     // additional emitters or separate rain propagation are introduced.
     internal static class WeatherAcoustics
     {
-        // An authored, exposed physical roof surface, not an intermediate
-        // floor or the gable wall that carries the name "wall_roof".
-        internal static bool IsRoofPieceName(string name) =>
-            !string.IsNullOrEmpty(name) &&
-            name.IndexOf("roof",
-                System.StringComparison.OrdinalIgnoreCase) >= 0 &&
-            name.IndexOf("wall_roof",
-                System.StringComparison.OrdinalIgnoreCase) < 0;
-
-        // An isolated room ray is NOT an aperture merely because one
-        // 8 cm offset ray misses a roof/floor seam. Both orthogonal
-        // offsets must pass the enclosing wall plane. The 10 cm depth
-        // tolerance avoids mistaking a slightly slanted solid face for
-        // a clean exit. This reuses the existing three rays.
-        internal static bool VerifiedNarrowAperture(float sideDistance,
-            float upDistance, float wallDepth) =>
-            sideDistance > wallDepth + .10f &&
-            upDistance > wallDepth + .10f;
-
-        // The existing room survey weights an actual overhead roofing
-        // collider by distance; intermediate floors cannot count as roof.
+        // How much a roof above counts, by how high it is over you (Room's survey).
         internal static float RoofImpactWeight(float verticalDistance)
         {
             float h = Mathf.Max(0f, verticalDistance);
             return 1f / (1f + h * h / 20.25f);
         }
 
-        // Reinstated from the previous single-source roof treatment.
-        // These values shape the EXISTING Valheim rain recording; they
-        // do not play, synthesize, or copy any additional rain audio.
-        internal const float RainRoofGain = .72f;
-        internal const float RainRoofCutoff = 6500f;
+        // The roof's gain and low-pass come from the survey (Room.RoofGain, RoofCutoff): the materials
+        // the rain is heard through. They shape the EXISTING Valheim rain recording only.
 
-        // Only an actual nearby first-hit exterior roof contributes.
-        // Room.BuiltRoof is already distance-weighted and rejects floors
-        // between storeys. Keep the old partial-cover/enclosure response.
+        // Room.BuiltRoof: how much of the sky above is roofed (the outermost built surface,
+        // distance-weighted). Keep the old partial-cover/enclosure response.
         internal static float RoofRainPresence(float builtRoof,
             float enclosure)
         {
@@ -62,9 +38,9 @@ namespace WiresAcoustics
         {
             float mix = Mathf.Clamp01(roofPresence);
             gain = Mathf.Lerp(exteriorGain,
-                Mathf.Max(exteriorGain, RainRoofGain), mix);
+                Mathf.Max(exteriorGain, Room.RoofGain), mix);
             cutoff = AcousticMath.LogLerp(exteriorCutoff,
-                Mathf.Max(exteriorCutoff, RainRoofCutoff), mix);
+                Mathf.Max(exteriorCutoff, Room.RoofCutoff), mix);
         }
 
         // Ordinary non-rain ambient/wind copies retain their existing

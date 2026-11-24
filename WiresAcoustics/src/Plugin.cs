@@ -16,7 +16,7 @@ namespace WiresAcoustics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.acoustics";
-        public const string Version = "0.7.0";
+        public const string Version = "0.7.1";
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled, RoomReverb, Occlusion, Hrtf, RealDistance, DebugLog;
         internal static ConfigEntry<bool> TravelTime, DopplerOn, UnderwaterOn, Air, Wind, Placement, VoiceChatOn, RandomLoopPhase;
@@ -70,6 +70,7 @@ namespace WiresAcoustics
                 "Optional area radius in metres for otherwise unshaped world sounds. 0 (default) means an exact event point with no fabricated volume rays. One-shot/loop status is irrelevant; explicit localized events always stay points, and known emitting areas use their true cached collider bounds.",
                 new AcceptableValueRange<float>(0f, 3f), true);
             DebugLog = Setting("Debug", "Debug log", false, "Every three seconds, logs room geometry, DSP cost, and the 24 most potentially audible sources with their geometric coverage and source-volume ray count, path, target and actual gain/filter, localization, reverb, water and path age. These measurements do not capture the final mixed sound.", null, true);
+            OpenPanelArea.Load();
             MoreVoices();
             m_harmony = new Harmony(Guid);
             m_harmony.PatchAll(typeof(Plugin).Assembly);

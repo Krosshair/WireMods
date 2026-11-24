@@ -1,3 +1,12 @@
+## 0.7.1
+
+- Fixed: fires got quieter with distance twice, so far fires faded out too early.
+- Opening or closing a door changes nearby sounds gradually as the door swings, instead of all at once. Building or removing a piece also changes nearby sounds smoothly.
+- What you're acting on is now heard from the exact spot you touched, so walls between you and it still count. A chest in a stacked wall, a station or a piece you just placed is heard clearly from where you reached it.
+- Rain under a roof now sounds like the roof material above you (wood, stone, iron and so on), and only built surfaces count as a roof.
+- Openings are now judged by how big they are, so small gaps between building pieces don't sound like windows.
+- Grates, lattice walls, windows, fence gates and any other see-through building piece, modded ones included, let sound through by how open they really are. Each kind of piece is measured once, the first time sound reaches it; before, only seven pieces counted as open, by estimate.
+
 ## 0.7.0
 
 - Sounds change more naturally as you move behind a wall or past its edge. As more of the sound is hidden, what reaches you gradually changes from clear sound to sound passing through the wall or round its edge.

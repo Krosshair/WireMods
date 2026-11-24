@@ -3,24 +3,33 @@ using UnityEngine;
 
 namespace WiresAcoustics
 {
-    // What you're acting on is heard clearly: what you use (a chest, a door, a station), put an item
-    // on or in (ore in a smelter, a trophy on a stand), place, remove or repair. Every sound the game
-    // makes during that action is yours (marked when it's made, Follow), and so is any later sound
-    // from the thing itself (a crafting station's crafting). They get no muffling while you're
-    // within the game's own reach for that action (using: m_maxInteractDistance, building: m_maxPlaceDistance).
-    // You're right at it, so nothing stands between you and it. Told by the game when you act; nothing
-    // per frame.
+    // What you act on (use, put an item on or in, place, remove, repair) is heard from the point you
+    // actually touched: the game's own aim result (the hover ray for using, the placement marker for
+    // building, the hammer's ray for removing and repairing). The game only let you reach that point
+    // because nothing was between you and it, so these sounds trace their walls from your head to that
+    // point instead of to their own spot (often inside or behind the thing: a chest's pivot, a floor's
+    // middle below the surface you aimed at, a station's sound inside its model). Walls between you
+    // and it still count, so nothing is heard through a wall it shouldn't be. Later sounds from the
+    // same thing (a station crafting, a smelter running) trace to the part you last touched. Told by
+    // the game when you act; nothing per frame, one ray per action.
     internal static class Interaction
     {
         private static Transform s_used;  // what you last acted on (its networked object)
         private static Bounds s_box;      // its colliders and its pivot, in the world then
         private static bool s_any;
+        private static Vector3 s_touched; // the point you touched on it
         private static int s_acting;      // inside one of your actions: the sounds made now are yours
         private static bool s_building;   // the last action was building (place, remove, repair): the build reach
 
         internal static bool Acting => s_acting > 0;
+        internal static Vector3 Touched => s_touched;
 
-        private static void Used(Transform owner, Vector3 point)
+        private static readonly AccessTools.FieldRef<Player, int> InteractMask = AccessTools.FieldRefAccess<Player, int>("m_interactMask");
+        private static readonly AccessTools.FieldRef<Player, int> RemoveMask = AccessTools.FieldRefAccess<Player, int>("m_removeRayMask");
+        private static readonly AccessTools.FieldRef<Player, GameObject> Marker = AccessTools.FieldRefAccess<Player, GameObject>("m_placementMarkerInstance");
+        private static readonly RaycastHit[] Hits = new RaycastHit[16];
+
+        private static void Used(Transform owner, Vector3 point, Vector3 touched)
         {
             s_used = owner;
             s_box = new Bounds(point, Vector3.zero);
@@ -30,17 +39,36 @@ namespace WiresAcoustics
                 foreach (Collider c in owner.GetComponentsInChildren<Collider>(false))
                     if (c != null && !c.isTrigger) s_box.Encapsulate(c.bounds);
             }
+            s_touched = touched;
             s_any = true;
         }
 
-        private static void Used(GameObject go)
+        // Where the game's aim ray (from the camera, as the game casts it) first meets something that
+        // isn't you: the point you touched. Falls back to the thing's own position.
+        private static Vector3 Aim(Player p, int mask, Vector3 fallback)
+        {
+            GameCamera cam = GameCamera.instance;
+            if (cam == null) return fallback;
+            int n = Physics.RaycastNonAlloc(cam.transform.position, cam.transform.forward, Hits, 50f, mask);
+            float best = float.MaxValue;
+            Vector3 at = fallback;
+            for (int i = 0; i < n; i++)
+            {
+                Collider c = Hits[i].collider;
+                if (c == null || (c.attachedRigidbody != null && c.attachedRigidbody.gameObject == p.gameObject)) continue;
+                if (Hits[i].distance < best) { best = Hits[i].distance; at = Hits[i].point; }
+            }
+            return at;
+        }
+
+        private static void Used(Player p, GameObject go, int mask)
         {
             if (go == null) return;
             ZNetView nv = go.GetComponentInParent<ZNetView>();
-            Used(nv != null ? nv.transform : go.transform, go.transform.position);
+            Used(nv != null ? nv.transform : go.transform, go.transform.position, Aim(p, mask, go.transform.position));
         }
 
-        // At a sound's start: whether it comes from what you acted on (on it, or made where it is).
+        // At a sound's start: whether it comes from what you acted on (on it, or made inside its box).
         internal static bool From(Vector3 at, Transform sound)
         {
             if (!s_any) return false;
@@ -48,31 +76,15 @@ namespace WiresAcoustics
             return s_box.Contains(at);
         }
 
-        // While it plays: clear as long as it, or what you acted on, is within your reach, measured
-        // as the game measures it (to its nearest point).
-        internal static bool InReach(Vector3 at)
-        {
-            Player p = Player.m_localPlayer;
-            if (p == null) return false;
-            float reach = Reach(p);
-            Vector3 eye = p.GetEyePoint();
-            float d = (at - eye).sqrMagnitude;
-            if (s_any) d = Mathf.Min(d, (s_box.ClosestPoint(eye) - eye).sqrMagnitude);
-            return d <= reach * reach;
-        }
-
-        // A sound made during your action counts only if it's made within your reach (to the sound
-        // itself): the action can set off sounds elsewhere too.
+        // A sound made during your action counts only if it's made within your reach: the action can
+        // set off sounds elsewhere too.
         internal static bool Near(Vector3 at)
         {
             Player p = Player.m_localPlayer;
             if (p == null) return false;
-            float reach = Reach(p);
+            float reach = s_building ? p.m_maxPlaceDistance : p.m_maxInteractDistance;
             return (at - p.GetEyePoint()).sqrMagnitude <= reach * reach;
         }
-
-        // The game's own reach for what you did: building (8 m on the player prefab) or using (3.5 m).
-        private static float Reach(Player p) => s_building ? p.m_maxPlaceDistance : p.m_maxInteractDistance;
 
         private static bool Mine(Humanoid h) => h != null && h == Player.m_localPlayer;
 
@@ -85,7 +97,7 @@ namespace WiresAcoustics
                 __state = Mine(__instance);
                 if (!__state) return;
                 s_building = false;
-                Used(go);
+                Used(__instance, go, InteractMask(__instance));
                 s_acting++;
             }
             private static void Finalizer(bool __state) { if (__state) s_acting--; }
@@ -100,7 +112,8 @@ namespace WiresAcoustics
                 __state = Mine(__instance);
                 if (!__state) return;
                 s_building = false;
-                Used(__instance.GetHoverObject());
+                Player p = (Player)__instance;
+                Used(p, p.GetHoverObject(), InteractMask(p));
                 s_acting++;
             }
             private static void Finalizer(bool __state) { if (__state) s_acting--; }
@@ -114,7 +127,10 @@ namespace WiresAcoustics
                 __state = Mine(__instance);
                 if (!__state) return;
                 s_building = true;
-                Used(null, pos);
+                // the placement marker sits on the surface you aimed at
+                GameObject marker = Marker(__instance);
+                Vector3 touched = marker != null && marker.activeSelf ? marker.transform.position : pos;
+                Used(null, pos, touched);
                 s_acting++;
             }
 
@@ -126,7 +142,7 @@ namespace WiresAcoustics
                 for (int i = 0; i < n; i++)
                 {
                     ZNetView nv = Near[i] != null ? Near[i].GetComponentInParent<ZNetView>() : null;
-                    if (nv != null && (nv.transform.position - pos).sqrMagnitude < 1e-4f) { Used(nv.transform, pos); break; }
+                    if (nv != null && (nv.transform.position - pos).sqrMagnitude < 1e-4f) { Used(nv.transform, pos, s_touched); break; }
                 }
             }
 
@@ -143,6 +159,8 @@ namespace WiresAcoustics
                 __state = Mine(__instance);
                 if (!__state) return;
                 s_building = true;
+                Vector3 touched = Aim(__instance, RemoveMask(__instance), __instance.GetEyePoint());
+                Used(null, touched, touched);
                 s_acting++;
             }
             private static void Finalizer(bool __state) { if (__state) s_acting--; }
@@ -156,7 +174,7 @@ namespace WiresAcoustics
                 __state = Mine(__instance);
                 if (!__state) return;
                 s_building = true;
-                if (repairPiece != null) Used(repairPiece.gameObject);
+                if (repairPiece != null) Used(__instance, repairPiece.gameObject, RemoveMask(__instance));
                 s_acting++;
             }
             private static void Finalizer(bool __state) { if (__state) s_acting--; }

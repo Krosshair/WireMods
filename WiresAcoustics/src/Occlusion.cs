@@ -107,6 +107,7 @@ namespace WiresAcoustics
             if (starting && f != null)
             {
                 f.Interacted = f.MadeByYou || Interaction.From(to, __instance.transform);
+                if (f.Interacted) f.Touched = Interaction.Touched;
                 // A pooled/restarted source needs current owner geometry
                 // before its very first occlusion rays and HRTF width.
                 f.AreaKnown = false;
@@ -131,13 +132,14 @@ namespace WiresAcoustics
             // your own body, so no check (three rays each, at every step)
             float occ = 0f;
             if (s_resume) { occ = s_resumeOcc; block = s_resumeBlock; } // its check is in (Starts)
-            else if (starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f) && !(f != null && f.Interacted && Interaction.InReach(to)))
+            else if (starting && Plugin.Occlusion.Value && !Mine(__instance.transform, f))
             {
                 // what's in the way, from the camera (Hearing), on the worker threads; it starts next
                 // frame with the answer. From the sound's own spot only: its own object never counts
                 // (Counts), and what you're using is clear (Interaction).
                 Own = null;
-                Starts.Hold(__instance, src, to);
+                bool aimed = f != null && f.Interacted;
+                Starts.Hold(__instance, src, aimed ? f.Touched : to, aimed);
                 return;
             }
             Own = null;

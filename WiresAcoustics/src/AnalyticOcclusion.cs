@@ -234,8 +234,7 @@ namespace WiresAcoustics
             if(Mathf.Abs(f.TargetGain-gain) > .0001f ||
                Mathf.Abs(f.TargetCutoff-cutoff) > 1f)
             {
-                // Movement glides. Actual construction and door operations
-                // separately request a prompt one-buffer response.
+                // Glides, as every change does (doors are rechecked as they swing).
                 f.Set(gain,cutoff,false);
             }
         }

@@ -22,12 +22,26 @@ namespace WiresAcoustics
         private const int Rays = 64;
         internal const float MaxDistance = 50f; private const float Interval = .2f, Smooth = .35f, RescanEvery = 30f; // a safety net: locations and dungeons are handled as they're placed (Spawned)
         private static readonly Vector3[] Dirs = BuildDirs();
+        // The upward survey rays (more than ~20 degrees up) each get one more ray, cast back down from the
+        // sky toward you: the first thing it meets is the outermost surface, where the rain lands (Roofs).
+        private static readonly int[] UpIndex = BuildUpIndex(out UpCount);
+        private static readonly int UpCount;
+        private static int[] BuildUpIndex(out int count)
+        {
+            var idx = new int[Rays];
+            count = 0;
+            for (int i = 0; i < Rays; i++) idx[i] = Dirs[i].y > .35f ? count++ : -1;
+            return idx;
+        }
         private static NativeArray<RaycastCommand> s_cmds;
         private static NativeArray<RaycastHit> s_hits;
         private static JobHandle s_job;
         private static bool s_pending, s_haveCurrent;
         private static float s_next, s_nextScan, s_nextLog, s_nextVoice, s_nextRecheck;
         private static Vector3 s_from;
+        // The smallest gap that counts as an opening, as a sphere's radius (picked: a seam between snapped
+        // pieces is millimetres, the smallest window or grate is tens of centimetres).
+        private const float ApertureProbe = .10f;
         private static int s_mask;
         private static AudioReverbZone s_zone;
         private static Transform s_zoneParent, s_listener;
@@ -51,6 +65,16 @@ namespace WiresAcoustics
         // Measured, smoothed (read by Occlusion for the per-sound reverb send).
         internal static float Enclosure;
         internal static float BuiltRoof; // distance-weighted coverage of actual overhead roof pieces, not intermediate floors
+        // How rain on that roof sounds from below: through its own material (and a floor between, if any).
+        internal static float RoofGain = 1f, RoofCutoff = 22000f;
+        // What a surface lets through (its material, Occlusion.Loss); one without measured values (a small
+        // or modded piece) as the generic material (Occlusion.TransmissionEnergy's default).
+        private static void Through(Solids.Info s, out float gain, out float cutoff)
+        {
+            if (s.First < 1f || s.Cut < 22000f) { gain = s.First; cutoff = s.Cut; return; }
+            Occlusion.TransmissionEnergy((WearNTear.MaterialType)(-1), out float low, out float mid);
+            SpectralPaths.Decode(low, mid, out gain, out cutoff);
+        }
         // No additional casts: wind cover uses our current 64 measured
         // room directions; before the first complete measurement assume
         // open air rather than incorrectly suppressing every world sound.
@@ -207,6 +231,7 @@ namespace WiresAcoustics
                     Ambience.Pan(__instance, lt, Time.deltaTime);
                     float t = Time.time;
                     GeometryEvents.Step(t); // building changes held while a base loads in
+                    OpenPanelArea.Step(); // piece types waiting to have their openness measured
                     c = Cost.Start();
                     if (r != 0L) rest += c - r;
                     if (t >= s_nextVoice) { s_nextVoice = t + Interval; Occlusion.Voices(Hearing.At); }
@@ -314,6 +339,8 @@ namespace WiresAcoustics
                     Occlusion.Lines(from, from + Dirs[i], out Vector3 side, out Vector3 up);
                     s_cmds[Rays + 2 * i] = new RaycastCommand(from + side, Dirs[i], q, MaxDistance);
                     s_cmds[Rays + 2 * i + 1] = new RaycastCommand(from + up, Dirs[i], q, MaxDistance);
+                    if (UpIndex[i] >= 0)
+                        s_cmds[Rays * 3 + UpIndex[i]] = new RaycastCommand(from + Dirs[i] * MaxDistance, -Dirs[i], q, MaxDistance);
                 }
                 s_job = RayJobs.Submit(s_cmds, s_hits, 16, 1);
                 s_pending = true;
@@ -321,7 +348,7 @@ namespace WiresAcoustics
         }
 
         private static void EnsureArrays() =>
-            RayJobs.EnsureFixed(ref s_cmds, ref s_hits, Rays * 3);
+            RayJobs.EnsureFixed(ref s_cmds, ref s_hits, Rays * 3 + UpCount);
 
         private static void Setup(Transform listener)
         {
@@ -496,6 +523,7 @@ namespace WiresAcoustics
             float hits = 0f;
             int roofRays = 0;
             float builtRoofRays = 0f;
+            float roofGainSum = 0f, roofCutLog = 0f, roofWeight = 0f;
             float groundSoftSum = 0f, floorHeightSum = 0f, localFloorWeight = 0f;
             // The outside through the walls round you (Ambience's muffled bed): what the walls you're
             // surrounded by let through as the first wall a sound comes through (Occlusion), averaged.
@@ -533,15 +561,33 @@ namespace WiresAcoustics
                 if (Dirs[i].y > .35f)
                 {
                     roofRays++;
-                    // Previously any built surface counted as an exposed
-                    // roof. A basement ceiling is usually the FLOOR above;
-                    // hearing the attic's roof impacts at full strength
-                    // through that floor is incorrect. The first existing
-                    // room ray must hit an actual roof piece to contribute.
-                    if (hitSurface != null && hitSurface.Roof)
-                        builtRoofRays += (1f - Mathf.Clamp01(hitSurface.OpenFraction)) *
-                            WeatherAcoustics.RoofImpactWeight(
-                                Dist[i] * Dirs[i].y);
+                    // The roof is where the rain lands: the outermost built surface along this
+                    // direction, found by the ray cast back down from the sky (UpIndex). Any roof,
+                    // a floor used as one, stone, modded: no names. A surface between it and you
+                    // (the floor above, on a ground floor) muffles it further. How it sounds comes
+                    // from the surfaces' own materials (Solids: First, Cut), not fixed values.
+                    if (hitSurface != null && hitSurface.Built && UpIndex[i] >= 0)
+                    {
+                        RaycastHit back = s_hits[Rays * 3 + UpIndex[i]];
+                        Solids.Info outer = back.colliderInstanceID != 0 ? Solids.Of(back) : null;
+                        // nothing built further out (open sky, or a tree or cliff over it): the
+                        // first surface is the roof itself
+                        bool firstIsRoof = outer == null || !outer.Built || outer == hitSurface;
+                        Solids.Info roof = firstIsRoof ? hitSurface : outer;
+                        float height = firstIsRoof ? Dist[i] * Dirs[i].y : back.point.y - s_from.y;
+                        float w = (1f - Mathf.Clamp01(roof.OpenFraction)) *
+                            WeatherAcoustics.RoofImpactWeight(height);
+                        builtRoofRays += w;
+                        Through(roof, out float through, out float cut);
+                        if (!firstIsRoof)
+                        {
+                            Through(hitSurface, out float g2, out float c2);
+                            through *= g2; cut = Mathf.Min(cut, c2);
+                        }
+                        roofGainSum += through * w;
+                        roofCutLog += Mathf.Log(Mathf.Max(20f, cut)) * w;
+                        roofWeight += w;
+                    }
                 }
             }
             // Gaps: a ray that leaves a building through a window, a door or a crack goes on to the sky
@@ -575,19 +621,14 @@ namespace WiresAcoustics
                 // orthogonal 8 cm offsets at the nearby enclosing wall plane.
                 // A lone secondary miss cannot turn a construction seam into
                 // a full-strength weather/sound portal.
-                if (by >= 0)
-                {
-                    float wallDepth = Dist[by];
-                    RaycastHit side = s_hits[Rays + 2 * i];
-                    RaycastHit up = s_hits[Rays + 2 * i + 1];
-                    float sideDepth = side.colliderInstanceID == 0
-                        ? float.PositiveInfinity : side.distance;
-                    float upDepth = up.colliderInstanceID == 0
-                        ? float.PositiveInfinity : up.distance;
-                    if (WeatherAcoustics.VerifiedNarrowAperture(
-                        sideDepth, upDepth, wallDepth))
-                        by = -1;
-                }
+                // Told apart by the gap's size, not by how many rays found it (rays spread with
+                // distance, so a real window across the room is often one ray): a small sphere is
+                // pushed through along the ray. A seam between pieces is too thin for it; a window or
+                // a doorway lets it past the wall. A lone escaped ray is rare (a few per survey, every
+                // 0.2 s at most), and this is one sphere cast each.
+                if (by >= 0 && Physics.SphereCast(s_from, ApertureProbe, Dirs[i], out RaycastHit probe,
+                        Dist[by] + .10f, Mask, QueryTriggerInteraction.Ignore) == false)
+                    by = -1;
                 SealedBy[i] = by;
             }
             for (int i = 0; i < Rays; i++)
@@ -708,6 +749,7 @@ namespace WiresAcoustics
             // playback fade, and s_current retains the reverb-tail smoothing.
             Enclosure = enclosure;
             BuiltRoof = roofRays > 0 ? builtRoofRays / roofRays : 0f;
+            if (roofWeight > 0f) { RoofGain = roofGainSum / roofWeight; RoofCutoff = Mathf.Exp(roofCutLog / roofWeight); }
             WallBed = bedWalls > 0 ? Mathf.Sqrt(bedSum / bedWalls) : 0f;
             Critical = Mathf.Lerp(Critical, critical, response);
             GroundSoftness = Mathf.Lerp(GroundSoftness,
@@ -902,7 +944,7 @@ namespace WiresAcoustics
         {
             internal Collider C;
             internal Transform Root;
-            internal bool Built, Structural, Tree, Ground, Wall, Static, AcousticProxy, Roof;
+            internal bool Built, Structural, Tree, Ground, Wall, Static, AcousticProxy;
             internal float OpenFraction;
             internal float Weight, First = 1f, Cut = 22000f, Absorb;
             internal Heightmap Hm;
@@ -912,6 +954,8 @@ namespace WiresAcoustics
 
         private const int Cap = 1 << 16;
         private static readonly Dictionary<int, Info> Table = new Dictionary<int, Info>(4096);
+        // Everything looked at again (a piece type's openness just measured, OpenPanelArea).
+        internal static void Forget() => Table.Clear();
         internal static readonly int StaticSolid = LayerMask.NameToLayer("static_solid");
         private static readonly int PieceLayer = LayerMask.NameToLayer("piece"), TerrainLayer = LayerMask.NameToLayer("terrain");
 
@@ -936,42 +980,6 @@ namespace WiresAcoustics
             return s.Box;
         }
 
-        // These Valheim 1.0.21 prefabs contain broad gameplay collider boxes
-        // spanning VISUAL HOLES (verified against ValheimSOURCE prefab YAML).
-        // Do not treat those collision proxies as solid acoustic surfaces.
-        // Retain narrow frame/bar colliders where the prefab actually has them.
-        // This is a targeted geometry-correction, not a transmissivity guess.
-        internal static bool IsCoarseOpenPanel(Collider c, Piece p)
-        {
-            if (p == null || !(c is BoxCollider box)) return false;
-            string name = p.gameObject.name;
-            if (name.EndsWith("(Clone)", System.StringComparison.Ordinal))
-                name = name.Substring(0, name.Length - 7);
-            // Dividers: full-size box proxies; no usable separate bar
-            // colliders in these shipped prefabs.
-            switch (name)
-            {
-                case "darkwood_decowall":
-                case "ashwood_decowall_divider":
-                case "ashwood_decowall_2x2":
-                case "piece_dvergr_metal_wall_2x2":
-                    return true;
-                // Iron grate: central ~1.88 x 2.78m slab is a gameplay
-                // collider. Narrow <0.1m iron frame colliders remain active.
-                case "iron_grate":
-                    return box.size.x > 1.5f && box.size.y > 2f;
-                // Wooden fence gate: central ~1.75 x 1.37m gameplay
-                // proxy. Narrow support posts must remain acoustic solids.
-                case "wood_fence_gate":
-                    return box.size.x > 1.5f && box.size.y > 1.2f;
-                // The Valheim wooden window has collision covering the
-                // aperture; it is not a full wood wall acoustically.
-                case "wood_window":
-                    return true;
-            }
-            return false;
-        }
-
         private static Info Make(int id, Collider c)
         {
             if (c == null) return null;
@@ -988,14 +996,8 @@ namespace WiresAcoustics
             Vector3 size = s.Box.size;
             bool big = Mathf.Max(size.x, Mathf.Max(size.y, size.z)) >= 1.8f;
             Piece p = c.GetComponentInParent<Piece>();
-            // Classify one time per collider. Valheim's authored roof
-            // prefabs (wood_roof, darkwood_roof, grausten_roof, etc.)
-            // explicitly identify exposed roof geometry. Horizontal
-            // wood/stone floors between storeys must NOT count.
-            s.Roof = s.Built && p != null &&
-                WeatherAcoustics.IsRoofPieceName(p.gameObject.name);
-            s.AcousticProxy = IsCoarseOpenPanel(c, p);
-            if (s.AcousticProxy) s.OpenFraction = OpenPanelArea.FromPrefab(p);
+            // A built piece's box over holes it draws (a grate, a lattice, a window): how open, measured (OpenPanelArea).
+            if (wnt != null) { s.OpenFraction = OpenPanelArea.Of(p, c); s.AcousticProxy = s.OpenFraction > 0f; }
             if (p == null) s.Structural = big;
             else if (p.m_category == Piece.PieceCategory.BuildingWorkbench || p.m_category == Piece.PieceCategory.BuildingStonecutter) s.Structural = true;
             else if (p.m_category == Piece.PieceCategory.DeepNorth) s.Structural = big;

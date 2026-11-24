@@ -185,7 +185,6 @@ namespace WiresAcoustics
         internal volatile float Width;
         internal volatile float RouteSpread; // arrival-direction dispersion from multiple paths
         internal bool FastGeometryResponse; // next computed obstruction reflects a world edit promptly
-        private volatile bool m_quickOcclusion;
         internal Transform ShapeRoot;              // what the sound comes from (Area): never hides it
         internal Vector3 ShapeCenter, ShapeHalf;   // its box: centre in its own space, half-size
         internal float AreaRadius;                 // 0: a point; otherwise how wide (Area)
@@ -198,6 +197,7 @@ namespace WiresAcoustics
         // The point hand/impact sounds use LocalizedEvent instead.
         internal bool WeaponSource;
         internal bool Interacted;                  // it comes from what you're using (Interaction): clear within reach
+        internal Vector3 Touched;                   // the point you touched on it: its walls are traced to there (Interaction)
         internal bool MadeByYou;                   // made during one of your actions (Interaction.Acting, set by Follow when made)
         internal float BaseWidth;                  // from the source's own spread; Width adds the area's size
         internal volatile bool Stereo = true;      // the clip has two channels (a mono one has no side to keep)
@@ -278,9 +278,11 @@ namespace WiresAcoustics
         // it, 6 dB more each doubling (12 in all), so a quiet sound still reaches far, just quietly,
         // instead of being cut off (vanilla) or holding its level for ever. The extra past the range is
         // a choice for the game, not from a source: what the game's range means is "quiet by here".
+        // A fire's loop isn't: its level already comes from its range (SourceLevel, Area.FireLevelFromRange),
+        // so the extra past it would count the range twice and leave a sconce too quiet.
         internal float PastRange(float dist)
         {
-            if (!m_physical || m_origMax <= 0f || dist <= m_origMax) return 1f;
+            if (!m_physical || FireLoop || m_origMax <= 0f || dist <= m_origMax) return 1f;
             return m_origMax / dist;
         }
 
@@ -411,14 +413,9 @@ namespace WiresAcoustics
             m_targetGain = gain;
             m_targetCutoff = cutoff;
             if (snap) m_snap = true;
-            if (FastGeometryResponse)
-            {
-                FastGeometryResponse = false;
-                // Crossfade over the next audio buffer, not the normal
-                // 150 ms motion smoothing. Avoid resetting filter/HRTF
-                // state, which can click on an already-playing source.
-                m_quickOcclusion = true;
-            }
+            // A building change or a door: checked first (Batch), but faded in with the normal
+            // smoothing like any other change, not snapped (a door is followed as it swings).
+            if (FastGeometryResponse) FastGeometryResponse = false;
         }
 
         internal float TargetGain => m_targetGain;
@@ -717,8 +714,7 @@ namespace WiresAcoustics
         private void SmoothOcclusion(int frames, float tg, float tc,
             out float g0, out float g1, out float coefficient)
         {
-            float glide = m_quickOcclusion ? 1f : Glide(frames);
-            m_quickOcclusion = false;
+            float glide = Glide(frames);
             g0 = m_gain;
             g1 = Mathf.Abs(tg - m_gain) < 1e-4f
                 ? tg : m_gain + (tg - m_gain) * glide;

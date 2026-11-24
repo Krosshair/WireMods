@@ -77,8 +77,49 @@ namespace WiresAcoustics
         }
 
         // From Room's tick: the held changes, once the area is in.
+        // ---- Doors: followed while they swing ----
+        // SetState comes before the leaf moves, so one check then hears the door as it was. While it
+        // swings, the sounds round it are checked again each time the leaf has turned a step further
+        // (each check sees the leaf where it really is, and the normal smoothing glides between them),
+        // and once more when it stops. Nothing for a door at rest.
+        private const float SwingStep = 15f;   // degrees the leaf turns between checks (picked: about 6 over a 90 degree swing)
+        private const float SwingSettle = .2f; // s without turning: it has stopped (picked)
+        private sealed class Swing { internal Door Door; internal Transform Leaf; internal Quaternion Checked, Last; internal float Still; }
+        private static readonly List<Swing> Swings = new List<Swing>(4);
+
+        private static void Follow(Door door)
+        {
+            Transform leaf = null;
+            foreach (Transform t in door.GetComponentsInChildren<Transform>(true))
+                if (t != door.transform && t.name == "door") { leaf = t; break; }
+            if (leaf == null) return; // no moving part known: the check at SetState stays the only one
+            foreach (Swing s in Swings) if (s.Door == door) { s.Still = Time.time; return; }
+            Swings.Add(new Swing { Door = door, Leaf = leaf, Checked = leaf.rotation, Last = leaf.rotation, Still = Time.time });
+        }
+
+        private static void StepSwings(float now)
+        {
+            for (int i = Swings.Count - 1; i >= 0; i--)
+            {
+                Swing s = Swings[i];
+                if (s.Door == null || s.Leaf == null) { Swings.RemoveAt(i); continue; }
+                Quaternion r = s.Leaf.rotation;
+                if (Quaternion.Angle(r, s.Last) > .1f) { s.Last = r; s.Still = now; }
+                bool stopped = now - s.Still > SwingSettle;
+                float turned = Quaternion.Angle(r, s.Checked);
+                if (turned >= SwingStep || (stopped && turned > .1f))
+                {
+                    s.Checked = r;
+                    Area.Invalidate(s.Door.transform);
+                    Changed(s.Door.transform.position, true);
+                }
+                if (stopped) Swings.RemoveAt(i);
+            }
+        }
+
         internal static void Step(float now)
         {
+            if (Swings.Count > 0) StepSwings(now);
             if (!s_held || now < s_nextCheck) return;
             s_nextCheck = now + Recheck;
             if (!AreaLoaded() && now - s_heldSince < GiveUp) return;
@@ -147,6 +188,7 @@ namespace WiresAcoustics
             {
                 Area.Invalidate(__instance.transform);
                 Changed(__instance.transform.position, true);
+                Follow(__instance);
             }
         }
     }
