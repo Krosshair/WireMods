@@ -1,17 +1,14 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using BepInEx.Configuration;
 using HarmonyLib;
-using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace EnemyHudRework
 {
-    // Isolated, opt-in additions to the exact 0.5.0 HUD implementation.
-    // No changes to the layout, stagger logic or player HUD.
+    // When nameplates show: after a hit or parry, kept on the screen, far
+    // creatures you look at. Also the flash of a critical hit.
     public sealed partial class EnemyHudReworkPlugin
     {
         private const float DamageShowSeconds = 3f;
@@ -19,25 +16,8 @@ namespace EnemyHudRework
         // now a one-off message instead, and old counters are removed.
         private static readonly int OldCriticalCounterKey = "wire.enemyhud.critical_id".GetStableHashCode();
         private const string CriticalRpc = "WireEnemyHUD_Crit";
-        private bool _reportedHitReveal;
-        private bool _reportedViewportClamp;
-        private bool _reportedHpFont;
-
-        private void ReportFontIfAdjusted(TMP_Text label)
-        {
-            if (label == null || _reportedHpFont) return;
-            float scale = _hpFontScale.Value;
-            if (Mathf.Abs(scale - 1f) < .01f)
-                return;
-            _reportedHpFont = true;
-            Logger.LogInfo(
-                "Font scale applied: HP x" + scale.ToString("0.##") +
-                ", actual size " + label.fontSize.ToString("0.##") +
-                ", auto sizing " + label.enableAutoSizing);
-        }
 
         private ConfigEntry<bool> _showOnDamage;
-        private ConfigEntry<bool> _showOnParry;
         private ConfigEntry<bool> _keepNameplatesOnScreen;
         private ConfigEntry<bool> _farHover;
         private ConfigEntry<bool> _criticalHitFlash;
@@ -46,7 +26,6 @@ namespace EnemyHudRework
         private sealed class HealthSample
         {
             public float LastHp;
-            public float SeenAt;
             public float ShowUntil;
             public float ParryUntil;
             public float PendingLocalHitUntil = -999f;
@@ -64,13 +43,11 @@ namespace EnemyHudRework
             public float StartsAt = -999f;
             public float EndsAt = -999f;
             public float ObservedCriticalUntil = -999f;
-
         }
 
         private readonly Dictionary<Character, HealthSample> _healthSamples =
             new Dictionary<Character, HealthSample>();
-        private readonly Dictionary<Character, float> _lastCriticalHits =
-            new Dictionary<Character, float>();
+        private readonly Dictionary<Character, float> _lastCriticalHits = new Dictionary<Character, float>();
         private readonly Dictionary<EnemyUiState, HealthOutline> _healthOutlines =
             new Dictionary<EnemyUiState, HealthOutline>();
 
@@ -118,13 +95,11 @@ namespace EnemyHudRework
             _enemyIconShow.Value = enabled ? IconShow.Both : IconShow.Off;
             _bossIconShow.Value = enabled ? IconShow.Both : IconShow.Off;
             _hpFontScale.Value = 1f;
-            _dpsFontScale.Value = 1f;
         }
 
         private static bool IsOrdinaryEnemy(Character c)
         {
-            return c != null && !c.IsDead() &&
-                !c.IsPlayer() && !c.IsBoss() && !c.m_hideHud;
+            return c != null && !c.IsDead() && !c.IsPlayer() && !c.IsBoss() && !c.m_hideHud;
         }
 
         // Compare network identity directly. GetAttacker() can fail
@@ -133,8 +108,7 @@ namespace EnemyHudRework
         {
             Player local = Player.m_localPlayer;
             return hit != null && local != null &&
-                (hit.m_attacker.Equals(local.GetZDOID()) ||
-                 hit.GetAttacker() == local);
+                (hit.m_attacker.Equals(local.GetZDOID()) || hit.GetAttacker() == local);
         }
 
         // Called on the ATTACKER's client before Valheim forwards
@@ -143,8 +117,7 @@ namespace EnemyHudRework
         // Another player's damage never creates this pending marker.
         private void NoteOutgoingLocalHit(Character target, HitData hit)
         {
-            if (_showOnDamage == null || !_showOnDamage.Value ||
-                !IsOrdinaryEnemy(target) || hit == null ||
+            if (_showOnDamage == null || !_showOnDamage.Value || !IsOrdinaryEnemy(target) || hit == null ||
                 !IsLocalPlayerHit(hit) ||
                 hit.GetTotalDamage() <= 0f)
                 return;
@@ -161,7 +134,6 @@ namespace EnemyHudRework
             // Base the confirmation on health visible at the moment
             // our own hit is sent, not an unrelated earlier HP loss.
             sample.LastHp = Mathf.Max(0f, target.GetHealth());
-            sample.SeenAt = now;
             sample.PendingLocalHitUntil = now + 4f;
             if (!_pendingHits.Contains(target)) _pendingHits.Add(target);
         }
@@ -181,8 +153,7 @@ namespace EnemyHudRework
             {
                 Character c = _pendingHits[i];
                 HealthSample sample;
-                if (c == null || !IsOrdinaryEnemy(c) ||
-                    !_healthSamples.TryGetValue(c, out sample) ||
+                if (c == null || !IsOrdinaryEnemy(c) || !_healthSamples.TryGetValue(c, out sample) ||
                     now > sample.PendingLocalHitUntil)
                 {
                     _pendingHits.RemoveAt(i);
@@ -194,20 +165,12 @@ namespace EnemyHudRework
                 float hp = Mathf.Max(0f, c.GetHealth());
                 if (hp > 0f && sample.LastHp - hp > .01f)
                 {
-                    RememberTrailBeforeHit(
-                        sample, c, sample.LastHp, hp, now);
+                    RememberTrailBeforeHit(sample, c, sample.LastHp, hp, now);
                     sample.PendingLocalHitUntil = -999f;
                     sample.ShowUntil = now + DamageShowSeconds;
                     sample.LastHp = hp;
                     NoteReveal(c);
-                    sample.SeenAt = now;
                     _pendingHits.RemoveAt(i);
-                    if (!_reportedHitReveal)
-                    {
-                        Logger.LogInfo(
-                            "Visibility: local-player hit confirmed; 3s reveal active.");
-                        _reportedHitReveal = true;
-                    }
                 }
             }
         }
@@ -248,14 +211,13 @@ namespace EnemyHudRework
             HealthSample sample;
             if (!_healthSamples.TryGetValue(c, out sample)) return false;
             float now = Time.unscaledTime;
-            return (_showOnDamage.Value && now < sample.ShowUntil) ||
-                (_showOnParry.Value && now < sample.ParryUntil);
+            return _showOnDamage.Value && (now < sample.ShowUntil || now < sample.ParryUntil);
         }
 
         // You parried this attacker: its bar shows like after a hit.
         internal void OnLocalParry(Character attacker)
         {
-            if (_showOnParry == null || !_showOnParry.Value || !IsOrdinaryEnemy(attacker))
+            if (_showOnDamage == null || !_showOnDamage.Value || !IsOrdinaryEnemy(attacker))
                 return;
             PruneSamples(Time.unscaledTime);
             HealthSample sample;
@@ -266,20 +228,15 @@ namespace EnemyHudRework
                 _healthSamples[attacker] = sample;
             }
             RevealOnParry(attacker);
-            sample.SeenAt = Time.unscaledTime;
             sample.ParryUntil = Time.unscaledTime + DamageShowSeconds;
             NoteReveal(attacker);
         }
 
         // Real local damage, including the very first hit that
         // happens before the enemy ever had a HUD or sample.
-        private void RecordDamage(Character c,
-            float previousHp, float currentHp)
+        private void RecordDamage(Character c, float previousHp, float currentHp)
         {
-            if (!IsOrdinaryEnemy(c) ||
-                _showOnDamage == null ||
-                !_showOnDamage.Value ||
-                currentHp <= 0f ||
+            if (!IsOrdinaryEnemy(c) || _showOnDamage == null || !_showOnDamage.Value || currentHp <= 0f ||
                 currentHp >= previousHp - .01f)
                 return;
 
@@ -291,21 +248,11 @@ namespace EnemyHudRework
                 _healthSamples[c] = sample;
             }
             _pendingHits.Remove(c);
-            RememberTrailBeforeHit(
-                sample, c, previousHp, currentHp,
-                Time.unscaledTime);
+            RememberTrailBeforeHit(sample, c, previousHp, currentHp, Time.unscaledTime);
             sample.LastHp = Mathf.Max(0f, currentHp);
-            sample.SeenAt = Time.unscaledTime;
             sample.PendingLocalHitUntil = -999f;
-            sample.ShowUntil =
-                Time.unscaledTime + DamageShowSeconds;
+            sample.ShowUntil = Time.unscaledTime + DamageShowSeconds;
             NoteReveal(c);
-            if (!_reportedHitReveal)
-            {
-                Logger.LogInfo(
-                    "Visibility: local-player damage confirmed; 3s reveal active.");
-                _reportedHitReveal = true;
-            }
         }
 
         private static bool HasNativeHoverVisibility(EnemyUiState state)
@@ -317,8 +264,7 @@ namespace EnemyHudRework
 
         private void SetupCriticalOutline(EnemyUiState state)
         {
-            if (state?.HealthRect == null ||
-                state.Kind != HudKind.Enemy)
+            if (state?.HealthRect == null || state.Kind != HudKind.Enemy)
                 return;
 
             _healthOutlines[state] = new HealthOutline();
@@ -327,8 +273,7 @@ namespace EnemyHudRework
         private static void StartHealthFlash(HealthOutline outline)
         {
             outline.StartsAt = Time.unscaledTime;
-            outline.EndsAt = outline.StartsAt +
-                GetPlayerStaggerFlashDuration();
+            outline.EndsAt = outline.StartsAt + GetPlayerStaggerFlashDuration();
         }
 
         // Runs where the hit is decided (the creature's owner), which tells
@@ -390,32 +335,20 @@ namespace EnemyHudRework
             HealthOutline outline;
             if (!_healthOutlines.TryGetValue(state, out outline))
                 return;
-            bool enabled = _criticalHitFlash.Value;
             float now = Time.unscaledTime;
-
-            if (enabled)
+            float localUntil;
+            if (_lastCriticalHits.TryGetValue(state.Character, out localUntil) &&
+                localUntil > now && localUntil > outline.ObservedCriticalUntil)
             {
-                float localUntil;
-                if (_lastCriticalHits.TryGetValue(
-                        state.Character, out localUntil) &&
-                    localUntil > now &&
-                    localUntil > outline.ObservedCriticalUntil)
-                {
-                    outline.ObservedCriticalUntil = localUntil;
-                    StartHealthFlash(outline);
-                }
+                outline.ObservedCriticalUntil = localUntil;
+                StartHealthFlash(outline);
             }
 
             float duration = outline.EndsAt - outline.StartsAt;
-            float progress = duration > .001f
-                ? (now - outline.StartsAt) / duration : 1f;
-            float criticalAlpha = enabled &&
-                progress >= 0f && progress < 1f
-                ? VanillaFlash(progress) : 0f;
-
-            // Drawn like the game's own flash: the bar's dark frame itself
-            // lights up (see ApplyFrameFlash).
-            state.CritFlashAlpha = criticalAlpha;
+            float progress = duration > .001f ? (now - outline.StartsAt) / duration : 1f;
+            // Drawn like the game's flash: the bar's dark frame itself lights
+            // up (see ApplyFrameFlash).
+            state.CritFlashAlpha = VanillaFlash(progress);
         }
 
         private void DestroyCriticalOutline(EnemyUiState state)
@@ -426,38 +359,29 @@ namespace EnemyHudRework
             _healthOutlines.Remove(state);
         }
 
-        private void UpdateViewportVisibility(
-            EnemyUiState state)
+        private void UpdateViewportVisibility(EnemyUiState state)
         {
-            if (state == null ||
-                state.Gui == null ||
-                state.Kind != HudKind.Enemy ||
-                state.Character == null)
+            if (state == null || state.Gui == null || state.Kind != HudKind.Enemy || state.Character == null)
                 return;
 
-            bool damageReveal =
-                ForceShowOnDamage(state.Character);
+            bool damageReveal = ForceShowOnDamage(state.Character);
             // Nothing to do unless a reveal is on or bars are kept on screen.
             if (!damageReveal && !_keepNameplatesOnScreen.Value)
                 return;
-            bool ordinaryHover =
-                HasNativeHoverVisibility(state);
+            bool ordinaryHover = HasNativeHoverVisibility(state);
             bool vanillaVisible = state.Gui.activeSelf;
 
             // Do not invent nameplates for enemies which would
             // not normally be shown. In particular: no always-on
             // distant troll marker or new boss HUD.
-            if (!damageReveal && !ordinaryHover &&
-                !vanillaVisible)
+            if (!damageReveal && !ordinaryHover && !vanillaVisible)
                 return;
 
             Camera camera = Utils.GetMainCamera();
             if (camera == null)
                 return;
 
-            Vector3 projected =
-                camera.WorldToScreenPointScaled(
-                    state.Character.GetTopPoint());
+            Vector3 projected = camera.WorldToScreenPointScaled(state.Character.GetTopPoint());
             if (projected.z <= 0f)
             {
                 // On very tall creatures the head can cross
@@ -466,14 +390,9 @@ namespace EnemyHudRework
                 // Pin that nameplate to the top using the body's
                 // screen X. Never project a creature which is
                 // entirely behind us or off-screen.
-                Vector3 body =
-                    camera.WorldToScreenPointScaled(
-                        state.Character.GetCenterPoint());
+                Vector3 body = camera.WorldToScreenPointScaled(state.Character.GetCenterPoint());
                 bool visibleBody =
-                    _keepNameplatesOnScreen.Value &&
-                    body.z > 0f &&
-                    body.x >= 0f &&
-                    body.x <= Screen.width &&
+                    _keepNameplatesOnScreen.Value && body.z > 0f && body.x >= 0f && body.x <= Screen.width &&
                     body.y >= 0f &&
                     body.y <= Screen.height;
                 if (!visibleBody)
@@ -482,24 +401,18 @@ namespace EnemyHudRework
                         state.Gui.SetActive(false);
                     return;
                 }
-                projected =
-                    new Vector3(body.x,
-                        Screen.height + 32f, body.z);
+                projected = new Vector3(body.x, Screen.height + 32f, body.z);
             }
 
             bool outside =
-                projected.x < 0f ||
-                projected.x > Screen.width ||
-                projected.y < 0f ||
+                projected.x < 0f || projected.x > Screen.width || projected.y < 0f ||
                 projected.y > Screen.height;
 
             // Vanilla may hide a nameplate because its *head*
             // went outside the viewport even though the creature
             // is in front of us. The original hover timer is
             // better evidence than activeSelf in that case.
-            if (damageReveal ||
-                (_keepNameplatesOnScreen.Value &&
-                 outside && ordinaryHover))
+            if (damageReveal || (_keepNameplatesOnScreen.Value && outside && ordinaryHover))
             {
                 if (!state.Gui.activeSelf) ApplyLevelStars(state, state.Character);
                 state.Gui.SetActive(true);
@@ -521,8 +434,7 @@ namespace EnemyHudRework
             // Measuring the whole nameplate walks all its parts, so it's
             // only done near the screen edge, where it matters. Elsewhere
             // the last measurement says it fits with room to spare.
-            Vector3 scale =
-                state.Gui.transform.lossyScale;
+            Vector3 scale = state.Gui.transform.lossyScale;
             const float spare = 96f;
             if (state.ClampKnown)
             {
@@ -549,41 +461,23 @@ namespace EnemyHudRework
             float sy = Mathf.Max(.01f, Mathf.Abs(scale.y));
             const float padding = 8f;
 
-            float minX =
-                padding - bounds.min.x * sx;
-            float maxX =
-                Screen.width - padding -
-                bounds.max.x * sx;
-            float minY =
-                padding - bounds.min.y * sy;
-            float maxY =
-                Screen.height - padding -
-                bounds.max.y * sy;
+            float minX = padding - bounds.min.x * sx;
+            float maxX = Screen.width - padding - bounds.max.x * sx;
+            float minY = padding - bounds.min.y * sy;
+            float maxY = Screen.height - padding - bounds.max.y * sy;
 
             if (maxX < minX)
                 minX = maxX = Screen.width * .5f;
             if (maxY < minY)
                 minY = maxY = Screen.height * .5f;
 
-            float x = Mathf.Clamp(
-                projected.x, minX, maxX);
-            float y = Mathf.Clamp(
-                projected.y, minY, maxY);
-
-            if (!_reportedViewportClamp &&
-                (Mathf.Abs(x - projected.x) > .01f ||
-                 Mathf.Abs(y - projected.y) > .01f))
-            {
-                Logger.LogInfo(
-                    "Visibility: off-screen enemy nameplate clamped to viewport.");
-                _reportedViewportClamp = true;
-            }
+            float x = Mathf.Clamp(projected.x, minX, maxX);
+            float y = Mathf.Clamp(projected.y, minY, maxY);
 
             // Still the same world-space nameplate. As the
             // troll moves or the camera pans, its projected
             // horizontal coordinate keeps moving normally.
-            state.Gui.transform.position =
-                new Vector3(x, y, projected.z);
+            state.Gui.transform.position = new Vector3(x, y, projected.z);
         }
 
         // Final visibility pass after Valheim completes its native HUD.
@@ -591,7 +485,7 @@ namespace EnemyHudRework
         private void ApplyDamageRevealAfterHudUpdate(EnemyHud hud)
         {
             if (hud == null || _healthSamples.Count == 0 || Hud.IsUserHidden() ||
-                _showOnDamage == null || (!_showOnDamage.Value && !_showOnParry.Value))
+                _showOnDamage == null || !_showOnDamage.Value)
                 return;
 
             Camera camera = Utils.GetMainCamera();
@@ -601,26 +495,21 @@ namespace EnemyHudRework
             foreach (var pair in _healthSamples)
             {
                 Character enemy = pair.Key;
-                if (enemy == null || !ForceShowOnDamage(enemy) ||
-                    enemy.GetHealth() <= 0f)
+                if (enemy == null || !ForceShowOnDamage(enemy) || enemy.GetHealth() <= 0f)
                     continue;
 
                 // Nameplates that already exist were placed in this frame's
                 // update, and the game's hover timer keeps them shown: only
                 // a hit that came before the nameplate existed needs one made.
                 EnemyUiState state;
-                if (_states.TryGetValue(enemy, out state) &&
-                    state != null && state.Gui != null)
+                if (_states.TryGetValue(enemy, out state) && state != null && state.Gui != null)
                     continue;
 
-                Vector3 projected =
-                    camera.WorldToScreenPointScaled(enemy.GetTopPoint());
+                Vector3 projected = camera.WorldToScreenPointScaled(enemy.GetTopPoint());
                 if (projected.z <= 0f)
                 {
-                    Vector3 body = camera.WorldToScreenPointScaled(
-                        enemy.GetCenterPoint());
-                    if (body.z <= 0f ||
-                        body.x < 0f || body.x > Screen.width ||
+                    Vector3 body = camera.WorldToScreenPointScaled(enemy.GetCenterPoint());
+                    if (body.z <= 0f || body.x < 0f || body.x > Screen.width ||
                         body.y < 0f || body.y > Screen.height)
                         continue;
                 }
@@ -631,8 +520,7 @@ namespace EnemyHudRework
                 EnemyHudShowHudMethod.Invoke(hud, ShowHudArgs);
                 ShowHudArgs[0] = null;
                 SetupHud(hud, enemy, false);
-                if (!_states.TryGetValue(enemy, out state) ||
-                    state == null || state.Gui == null)
+                if (!_states.TryGetValue(enemy, out state) || state == null || state.Gui == null)
                     continue;
                 // Created by the hit: keep it shown and give it the
                 // yellow trail from before the hit, once.
@@ -682,7 +570,7 @@ namespace EnemyHudRework
             private static void Prefix(Humanoid __instance, out bool __state)
             {
                 __state = false;
-                if (Instance == null || !Instance._showOnParry.Value ||
+                if (Instance == null || !Instance._showOnDamage.Value ||
                     !ReferenceEquals(__instance, Player.m_localPlayer)) return;
                 ItemDrop.ItemData blocker = CurrentBlocker(__instance);
                 float timer = BlockTimer(__instance);
@@ -705,15 +593,14 @@ namespace EnemyHudRework
         [HarmonyPatch(typeof(EnemyHud), "TestShow")]
         private static class DamageAdditionalVisibility
         {
-            private static void Postfix(
-                Character c, ref bool __result)
+            private static void Postfix(Character c, ref bool __result)
             {
                 if (__result || Instance == null || c == null) return;
                 if (Instance._healthSamples.Count > 0 && Instance.ForceShowOnDamage(c))
                     __result = true;
                 // Past the game's show distance: while you look at it.
                 else if (Instance._farHover != null && Instance._farHover.Value && !c.IsPlayer() && !c.IsBoss() &&
-                    Instance.LookedAtRecently(c, Instance._lookAwayDelay.Value))
+                    Instance.LookedAtRecently(c))
                     __result = true;
             }
         }
@@ -741,14 +628,11 @@ namespace EnemyHudRework
                 internal int Types; // damage types in the hit, before resistances
             }
 
-            private static void Prefix(
-                Character __instance, HitData hit,
-                out HitState __state)
+            private static void Prefix(Character __instance, HitData hit, out HitState __state)
             {
                 __state = default(HitState);
                 if (Instance == null) return;
-                float backstab =
-BackstabTime(__instance);
+                float backstab = BackstabTime(__instance);
                 __state = new HitState {
                     Active = true,
                     Snapshot = new Vector3(
@@ -759,19 +643,16 @@ BackstabTime(__instance);
                     // creature fights would only add traffic.
                     Types = hit != null && hit.GetAttacker() is Player ? MaskOf(hit.m_damage) : 0
                 };
-
             }
 
-            private static void Postfix(
-                Character __instance, HitState __state)
+            private static void Postfix(Character __instance, HitState __state)
             {
                 Prof.Begin(Prof.DamageRpc);
                 try { PostfixTimed(__instance, __state); }
                 finally { Prof.End(Prof.DamageRpc); }
             }
 
-            private static void PostfixTimed(
-                Character __instance, HitState __state)
+            private static void PostfixTimed(Character __instance, HitState __state)
             {
                 Vector3 before = __state.Snapshot;
                 // Which damage types landed, for the icons' hit response.
@@ -779,8 +660,7 @@ BackstabTime(__instance);
                 if (__state.Active && Instance != null && __state.Types != 0 &&
                     !__instance.IsPlayer() && __instance.GetHealth() > 0f)
                     Instance.SendTypeHit(__instance, __state.Types);
-                if (!__state.Active || Instance == null ||
-                    !IsOrdinaryEnemy(__instance) ||
+                if (!__state.Active || Instance == null || !IsOrdinaryEnemy(__instance) ||
                     __instance.GetHealth() >= before.x - .01f)
                     return;
 
@@ -788,18 +668,12 @@ BackstabTime(__instance);
                 // local player's own confirmed hit reveals the bar.
                 // Remote-client hits are confirmed by the HP sampler.
                 if (__state.LocalAttacker)
-                    Instance.RecordDamage(
-                        __instance, before.x,
-                        __instance.GetHealth());
+                    Instance.RecordDamage(__instance, before.x, __instance.GetHealth());
 
-                float backstab =
-BackstabTime(__instance);
+                float backstab = BackstabTime(__instance);
                 // Not on the killing blow: the bar is gone with it.
-                if ((backstab != before.y ||
-                    before.z > .5f) &&
-                    __instance.GetHealth() > 0f)
+                if ((backstab != before.y || before.z > .5f) && __instance.GetHealth() > 0f)
                     Instance.MarkCriticalHit(__instance);
-
             }
         }
     }

@@ -21,19 +21,11 @@ namespace EnemyHudRework
         private const string SecTuning = "09 - Fine Tuning";
         private const string SecSync = "10 - Multiplayer";
         private const string SecDebug = "11 - Debug";
-        private const string SecPlayer = SecEnemy, SecBoss = SecHud, SecStagger = SecModded, SecFocus = SecVisibility;
 
-        // Earlier layouts, for carrying saved values over: O = 0.8.0 to 0.8.3,
-        // L and K = the 0.8.4 test builds.
-        private const string O1 = "01 - General", O2 = "02 - Enemy Bars", O3 = "03 - Weakness Icons", O4 = "04 - Stagger Bar",
+        // The layout of 0.8.0 to 0.8.3, for carrying saved values over.
+        private const string O2 = "02 - Enemy Bars", O3 = "03 - Weakness Icons", O4 = "04 - Stagger Bar",
             O5 = "05 - Boss Bar", O6 = "06 - Player Nameplates", O7 = "07 - Appearance", O8 = "08 - Damage Icons",
             O9 = "09 - Multiplayer", O10 = "10 - Debug", O11 = "11 - Hit Predictions", O12 = "12 - Bubble Bar";
-        private const string L3 = "03 - Visibility", L4 = "04 - Focus", L5 = "05 - Damage Icons", L6 = "06 - Icon Shapes and Colors",
-            L7 = "07 - Stagger Bar", L8 = "08 - Boss Bar", L9 = "09 - Player Nameplates", L10 = "10 - Hit Predictions", L11 = "11 - Fine Tuning";
-        private const string K2 = "02 - Creature Bars", K3 = "03 - Modded Bars", K4 = "04 - Visibility", K5 = "05 - Focus",
-            K7 = "07 - Boss Bar", K8 = "08 - Player Nameplates", K9 = "09 - Hit Predictions", K10 = "10 - Icon Shapes and Colors",
-            K11 = "11 - Fine Tuning", K12 = "12 - Multiplayer", K13 = "13 - Debug";
-        private const string M2 = "02 - In-World Nameplates", M3 = "03 - HUD", M5 = "05 - Visibility";
 
         private static readonly string[] HealthTextModes =
             { "Current HP", "Current HP/Max HP", "Percentage", "None" };
@@ -61,47 +53,43 @@ namespace EnemyHudRework
         // first. The newest saved value wins.
         private static readonly string[][] Moves =
         {
-            new[] { SecEnemy, "Transparent background", O7, "Transparent bar background", O2, "Transparent bar background", K2, "Transparent background", M2, "Transparent background" },
-            new[] { SecEnemy, "Creature HP numbers", O2, "Health display", K2, "HP numbers", M2, "Creature HP numbers" },
-            new[] { SecEnemy, "Double size creature bars", O2, "Double size", K2, "Double size", M2, "Double size creature bars" },
-            new[] { SecEnemy, "Uppercase creature names", O2, "Uppercase names", K2, "Uppercase names", M2, "Uppercase names" },
-            new[] { SecEnemy, "Star count past two stars", O2, "Star count past two stars", K2, "Star count past two stars", M2, "Star count past two stars" },
-            new[] { SecEnemy, "Critical hit flash", O2, "Critical hit flash", K2, "Critical hit flash", M2, "Critical hit flash" },
-            new[] { SecEnemy, "Status effects", O2, "Status effects", K2, "Status effects", M2, "Status effects" },
-            new[] { SecEnemy, "Awareness display", O2, "Awareness display", K2, "Awareness display", M2, "Awareness display" },
-            new[] { SecEnemy, "Player HP numbers", O6, "Health display", L9, "Health display", K8, "HP numbers", M2, "Player HP numbers" },
-            new[] { SecEnemy, "Double size player bars", O6, "Double size", L9, "Double size", K8, "Double size", M2, "Double size player bars" },
-            new[] { SecHud, "HP numbers", O5, "Health display", L8, "Health display", K7, "HP numbers", M3, "Boss HP numbers" },
-            new[] { SecHud, "HP numbers position", O5, "Health text position", L8, "Health text position", K7, "HP numbers position", M3, "Boss HP numbers position" },
-            new[] { SecHud, "DPS", O5, "DPS", L8, "DPS", K7, "DPS", M3, "Boss DPS" },
-            new[] { SecHud, "Name color", O5, "Name color", L8, "Name color", K7, "Name color", M3, "Boss name color" },
-            new[] { SecModded, "Stagger bar", O4, "Enabled", L7, "Enabled", K3, "Stagger bar" },
-            new[] { SecModded, "Stagger recovery overlay", O4, "Recovery overlay", L7, "Recovery overlay", K3, "Stagger recovery overlay" },
-            new[] { SecModded, "Bubble bar on nameplates", O12, "Bubble bar on nameplates", K3, "Bubble bar on nameplates" },
-            new[] { SecModded, "Bubble bar on your HUD", O12, "Bubble bar on your HUD", K3, "Bubble bar on your HUD" },
-            new[] { SecVisibility, "Reveal on hit or parry", L3, "Reveal on hit or parry", K4, "Reveal on hit or parry" },
-            new[] { SecVisibility, "Keep nameplates on screen", O2, "Keep bars on screen", L3, "Keep bars on screen", K4, "Keep bars on screen", M5, "Keep bars on screen" },
-            new[] { SecVisibility, "Creature HP numbers only on hover", O2, "Dynamic HP numbers", L4, "Dynamic HP numbers", K5, "Creature HP numbers only on focus" },
-            new[] { SecVisibility, "Player HP numbers only on hover", O6, "Dynamic HP numbers", L4, "Player HP numbers", K5, "Player HP numbers only on focus" },
-            new[] { SecVisibility, "Damage icons only on hover", O3, "Dynamic mode", L4, "Dynamic icons", K5, "Damage icons only on focus" },
-            new[] { SecVisibility, "Fade creature nameplates unless hovered", O2, "Fade unless looked at", L4, "Fade unless looked at", K5, "Fade creatures out of focus", M5, "Fade creatures unless hovered" },
-            new[] { SecVisibility, "Fade player nameplates unless hovered", O6, "Fade unless aimed at", L4, "Fade players unless aimed at", K5, "Fade players out of focus", M5, "Fade players unless hovered" },
-            new[] { SecWeak, "Nameplate icons", L5, "Enemy icons", SecWeak, "Creature icons" },
-            new[] { SecWeak, "Boss icons", L5, "Boss icons" },
-            new[] { SecWeak, "Immunities", L5, "Immunities" },
-            new[] { SecWeak, "Limited mode", O3, "Limited mode", L5, "Limited mode" },
-            new[] { SecWeak, "Hit response", L5, "Hit response" },
-            new[] { SecWeak, "Icon style", O8, "Icon style", L5, "Icon style" },
-            new[] { SecTuning, "Text size", O7, "HP text size", K11, "Text size" },
-            new[] { SecTuning, "Star row height", O2, "Star row height", K11, "Star row height" },
-            new[] { SecTuning, "Stagger bar gap", O4, "Gap below health bar", K11, "Stagger bar gap" },
-            new[] { SecTuning, "Icon size", O3, "Icon size", K11, "Icon size" },
-            new[] { SecTuning, "Icons per row", O3, "Icons per row", K11, "Icons per row" },
-            new[] { SecTuning, "Boss icon height", O3, "Boss icon height", K11, "Boss icon height" },
-            new[] { SecTuning, "Boss icon spacing", O3, "Boss icon spacing", K11, "Boss icon spacing" },
-            new[] { SecTuning, "Hover delay", O3, "Dynamic mode delay", O6, "Delay", O2, "Delay", L11, "Look-away delay", K11, "Focus delay" },
-            new[] { SecTuning, "Limited mode delay", O3, "Limited mode delay", K11, "Limited mode delay" },
-            new[] { SecSync, "Sync info", O9, "Sync stagger", K12, "Sync info" },
+            new[] { SecEnemy, "Transparent background", O7, "Transparent bar background", O2, "Transparent bar background" },
+            new[] { SecEnemy, "Creature HP numbers", O2, "Health display" },
+            new[] { SecEnemy, "Double size creature bars", O2, "Double size" },
+            new[] { SecEnemy, "Uppercase creature names", O2, "Uppercase names" },
+            new[] { SecEnemy, "Star count past two stars", O2, "Star count past two stars" },
+            new[] { SecEnemy, "Critical hit flash", O2, "Critical hit flash" },
+            new[] { SecEnemy, "Status effects", O2, "Status effects" },
+            new[] { SecEnemy, "Awareness display", O2, "Awareness display" },
+            new[] { SecEnemy, "Player HP numbers", O6, "Health display" },
+            new[] { SecEnemy, "Double size player bars", O6, "Double size" },
+            new[] { SecHud, "HP numbers", O5, "Health display" },
+            new[] { SecHud, "HP numbers position", O5, "Health text position" },
+            new[] { SecHud, "DPS", O5, "DPS" },
+            new[] { SecHud, "Name color", O5, "Name color" },
+            new[] { SecModded, "Stagger bar", O4, "Enabled" },
+            new[] { SecModded, "Stagger recovery overlay", O4, "Recovery overlay" },
+            new[] { SecModded, "Bubble bar on nameplates", O12, "Bubble bar on nameplates" },
+            new[] { SecModded, "Bubble bar on your HUD", O12, "Bubble bar on your HUD" },
+            new[] { SecVisibility, "Keep nameplates on screen", O2, "Keep bars on screen" },
+            new[] { SecVisibility, "Creature HP numbers only on hover", O2, "Dynamic HP numbers" },
+            new[] { SecVisibility, "Player HP numbers only on hover", O6, "Dynamic HP numbers" },
+            new[] { SecVisibility, "Damage icons only on hover", O3, "Dynamic mode" },
+            new[] { SecVisibility, "Fade creature nameplates unless hovered", O2, "Fade unless looked at" },
+            new[] { SecVisibility, "Fade player nameplates unless hovered", O6, "Fade unless aimed at" },
+            new[] { SecWeak, "Nameplate icons", SecWeak, "Creature icons" }, // 0.8.4
+            new[] { SecWeak, "Limited mode", O3, "Limited mode" },
+            new[] { SecWeak, "Icon style", O8, "Icon style" },
+            new[] { SecTuning, "Text size", O7, "HP text size" },
+            new[] { SecTuning, "Star row height", O2, "Star row height" },
+            new[] { SecTuning, "Stagger bar gap", O4, "Gap below health bar" },
+            new[] { SecTuning, "Icon size", O3, "Icon size" },
+            new[] { SecTuning, "Icons per row", O3, "Icons per row" },
+            new[] { SecTuning, "Boss icon height", O3, "Boss icon height" },
+            new[] { SecTuning, "Boss icon spacing", O3, "Boss icon spacing" },
+            new[] { SecTuning, "Hover delay", O3, "Dynamic mode delay", O6, "Delay", O2, "Delay" },
+            new[] { SecTuning, "Limited mode delay", O3, "Limited mode delay" },
+            new[] { SecSync, "Sync info", O9, "Sync stagger" },
         };
 
         private void MigrateLayout()
@@ -113,21 +101,14 @@ namespace EnemyHudRework
             DropSection("08 - Colors");
             DropSection("10 - Icon Colors");
             DropSection("08 - Icon Colors");
-            MoveSection("13 - Hit Predictions", SecPredict);
-            MoveSection("14 - Bubble Bar", O12);
 
             // Newest source first; older ones only fill in what's missing.
             foreach (string[] m in Moves)
                 for (int i = m.Length - 2; i >= 2; i -= 2)
                     MoveKey(m[i], m[i + 1], m[0], m[1]);
             // Whole sections that only moved.
-            MoveSection(K9, SecPredict);
-            MoveSection(L10, SecPredict);
             MoveSection(O11, SecPredict);
-            MoveSection(K10, SecIconColors);
-            MoveSection(L6, SecIconColors);
             MoveSection(O8, SecIconColors);
-            MoveSection(K13, SecDebug);
             MoveSection(O10, SecDebug);
         }
 
@@ -249,7 +230,6 @@ namespace EnemyHudRework
             if (hadDamage || hadParry || hadDamage0)
                 _showOnDamage.Value = IsTrue(hadDamage ? oldDamage : oldDamage0) || IsTrue(oldParry);
             _showOnDamage.SettingChanged += (s, e) => OnShowOnDamageChanged();
-            _showOnParry = _showOnDamage;
             _keepNameplatesOnScreen = Bind(SecVisibility, "Keep nameplates on screen", true,
                 "Keep visible creature nameplates within the screen edges. Ones above the screen slide along the top edge.",
                 null, null, "Enemy Health Bar", "Keep bars on screen");
@@ -336,7 +316,6 @@ namespace EnemyHudRework
                 "Scale of the mod's numbers: HP numbers on all bars and the boss DPS. 1.0 is the original size.",
                 new AcceptableValueRange<float>(.5f, 2.5f), null,
                 "Text", "HP and percent font size");
-            _dpsFontScale = _hpFontScale;
             _iconScale = Bind(SecTuning, "Icon size", 1f,
                 "Size of the damage type icons, relative to the level stars. 1.0 is exactly star size.",
                 new AcceptableValueRange<float>(0.5f, 2f), null);
@@ -355,10 +334,9 @@ namespace EnemyHudRework
             _bossIconSpacing = Bind(SecTuning, "Boss icon spacing", 3f,
                 "Space between the boss name and its icons, on both sides. Higher moves weaknesses further left and resistances further right.",
                 new AcceptableValueRange<float>(-10f, 40f), null);
-            _lookAwayDelay = Bind(SecTuning, "Hover delay", 0f,
+            _hoverDelay = Bind(SecTuning, "Hover delay", 0f,
                 "For the hover settings in Visibility: how many seconds a creature or player still counts as hovered after you look away (or after a hit or parry reveal ends). 0 is right away.",
                 new AcceptableValueRange<float>(0f, 3f), null);
-            _dynamicDelay = _dynamicHpDelay = _playerAimDelay = _lookAwayDelay;
             _limitedDelay = Bind(SecTuning, "Limited mode delay", 0f,
                 "How many seconds icons for a weapon you switched away from stay shown in Limited mode. 0 hides them right away.",
                 new AcceptableValueRange<float>(0f, 3f), null);
@@ -416,9 +394,8 @@ namespace EnemyHudRework
                 O3, "Damage icons in tooltips",
                 "Stagger Bar", "Hide on unstaggerable enemies"
             };
-            string ignored;
             for (int i = 0; i + 1 < retired.Length; i += 2)
-                TakeOrphan(retired[i], retired[i + 1], out ignored);
+                TakeOrphan(retired[i], retired[i + 1], out _);
         }
 
         private ConfigEntry<T> Bind<T>(
@@ -486,16 +463,14 @@ namespace EnemyHudRework
         private bool PeekOrphan(string section, string key, out string value)
         {
             value = null;
-            var orphans = AccessTools.Property(typeof(ConfigFile), "OrphanedEntries")
-                ?.GetValue(Config) as Dictionary<ConfigDefinition, string>;
+            var orphans = Orphans();
             return orphans != null && orphans.TryGetValue(new ConfigDefinition(section, key), out value);
         }
 
         private bool TakeOrphan(string section, string key, out string value)
         {
             value = null;
-            var orphans = AccessTools.Property(typeof(ConfigFile), "OrphanedEntries")
-                ?.GetValue(Config) as Dictionary<ConfigDefinition, string>;
+            var orphans = Orphans();
             var definition = new ConfigDefinition(section, key);
             if (orphans == null || !orphans.TryGetValue(definition, out value)) return false;
             orphans.Remove(definition);

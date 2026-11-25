@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using BepInEx.Configuration;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -13,18 +15,16 @@ namespace EnemyHudRework
     // starts or ends, up to four.
     public sealed partial class EnemyHudReworkPlugin
     {
-        private BepInEx.Configuration.ConfigEntry<bool> _otherEffects;
-        private BepInEx.Configuration.ConfigEntry<bool> _playerEffects;
+        private ConfigEntry<bool> _otherEffects;
+        private ConfigEntry<bool> _playerEffects;
         private const int MaxOtherEffects = 4;
         private static readonly int[] OtherKeys =
         {
             "wire.enemyhud.se0".GetStableHashCode(), "wire.enemyhud.se1".GetStableHashCode(),
             "wire.enemyhud.se2".GetStableHashCode(), "wire.enemyhud.se3".GetStableHashCode()
         };
-        private static readonly System.Collections.Generic.Dictionary<int, Sprite> EffectIcons =
-            new System.Collections.Generic.Dictionary<int, Sprite>();
+        private static readonly Dictionary<int, Sprite> EffectIcons = new Dictionary<int, Sprite>();
         private readonly int[] _otherWork = new int[MaxOtherEffects];
-        private readonly int[] _otherPrio = new int[MaxOtherEffects];
 
         internal sealed class EffectUi
         {
@@ -59,8 +59,6 @@ namespace EnemyHudRework
             return se.NameHash() == SEMan.s_statusEffectWet || AffectsTarget(se);
         }
 
-        private static int OtherPriority(StatusEffect se, Character c) => 0;
-
         // ---- Owner side: when an effect starts or ends ----
 
         private void ShareOtherEffects(Character c, ZDO zdo,
@@ -71,7 +69,6 @@ namespace EnemyHudRework
                 RebuildPlayerEffects(player, zdo, leaving, starting);
                 return;
             }
-            // Creatures keep their existing prioritized data-driven rule.
             int n = 0;
             SEMan seman = c.GetSEMan();
             if (seman != null)
@@ -82,14 +79,8 @@ namespace EnemyHudRework
                     bool dup = false;
                     for (int i = 0; i < n; i++) if (_otherWork[i] == h) dup = true;
                     if (dup) continue;
-                    int pr = OtherPriority(e, c);
-                    int at = n;
-                    while (at > 0 && _otherPrio[at - 1] > pr) at--;
-                    if (at >= MaxOtherEffects) continue;
-                    int last = Mathf.Min(n, MaxOtherEffects - 1);
-                    for (int i = last; i > at; i--) { _otherWork[i] = _otherWork[i - 1]; _otherPrio[i] = _otherPrio[i - 1]; }
-                    _otherWork[at] = h; _otherPrio[at] = pr;
-                    if (n < MaxOtherEffects) n++;
+                    if (n == MaxOtherEffects) break;
+                    _otherWork[n++] = h;
                 }
             // StatusEffect.Setup may run before SEMan inserts the effect.
             // Creatures need the same start-event handling as players.

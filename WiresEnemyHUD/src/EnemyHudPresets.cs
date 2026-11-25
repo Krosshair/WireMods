@@ -7,13 +7,9 @@ namespace EnemyHudRework
         private ConfigEntry<string> _preset;
         private bool _applyingPreset;
 
-        private void OnPresetSettingChanged(
-            object sender,
-            SettingChangedEventArgs args)
+        private void OnPresetSettingChanged(object sender, SettingChangedEventArgs args)
         {
-            if (_applyingPreset ||
-                _preset == null ||
-                args == null ||
+            if (_applyingPreset || _preset == null || args == null ||
                 !ReferenceEquals(args.ChangedSetting, _preset))
                 return;
 
@@ -57,7 +53,6 @@ namespace EnemyHudRework
                         ApplyVisibilityPreset(true);
                         ApplyFeaturePreset(true);
                         _hpFontScale.Value = 1.267f;
-                        _dpsFontScale.Value = 1.267f;
                         _playerNameplateAimFade.Value = true;
                         _debugSeeOwnHealthBar.Value = false;
                         _debugBossHealthBar.Value = false;
@@ -90,7 +85,7 @@ namespace EnemyHudRework
             _dynamicHp.Value = false;
             _enemyAimFade.Value = false;
             _playerDynamicHp.Value = false;
-            _lookAwayDelay.Value = 0f;
+            _hoverDelay.Value = 0f;
             _bubbleWorld.Value = mine;
             _bubbleHud.Value = mine;
             _hitPredictions.Value = false;

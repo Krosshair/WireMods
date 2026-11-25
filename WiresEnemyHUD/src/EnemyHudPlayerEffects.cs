@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using UnityEngine;
 
 namespace EnemyHudRework
 {
@@ -74,16 +73,14 @@ namespace EnemyHudRework
             if (name.StartsWith("Potion_", StringComparison.OrdinalIgnoreCase))
                 return effect.m_cooldownIcon ? PlayerPotionCooldown : PlayerPotionBuff;
 
-            if (hash == SEMan.s_statusEffectWet ||
-                hash == SEMan.s_statusEffectCold ||
+            if (hash == SEMan.s_statusEffectWet || hash == SEMan.s_statusEffectCold ||
                 hash == SEMan.s_statusEffectFreezing)
                 return PlayerWeather;
 
             // Last-priority visible impediments: encumbered, tarred, harpooned.
             // Valheim's actual prefab hash is "Tared", not "Tarred".
             // Harpooned has a visible rope and shares the same low priority.
-            if (hash == SEMan.s_statusEffectEncumbered ||
-                hash == SEMan.s_statusEffectTared ||
+            if (hash == SEMan.s_statusEffectEncumbered || hash == SEMan.s_statusEffectTared ||
                 effect is SE_Harpooned)
                 return PlayerEncumbered;
 
@@ -105,8 +102,7 @@ namespace EnemyHudRework
                 state.Groups[group].Add(hash);
         }
 
-        private void RebuildPlayerEffects(Player player, ZDO zdo,
-            StatusEffect leaving, StatusEffect starting)
+        private void RebuildPlayerEffects(Player player, ZDO zdo, StatusEffect leaving, StatusEffect starting)
         {
             if (player == null || zdo == null) return;
             if (!_playerEffectsByOwner.TryGetValue(player, out PlayerEffectCycle state))

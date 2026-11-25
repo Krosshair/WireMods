@@ -1,3 +1,10 @@
+## 1.0.0
+- The code is cleaned up: the main file is split by topic, settings that had several names inside have one, and code that was there twice or did nothing is gone. About 400 lines less. Nothing looks or works differently.
+- Slightly less work on each nameplate: health is read once instead of twice for the HP numbers, and the hover check runs once for fading instead of twice.
+- No more one-time notes in the log when a hit shows a bar, a bar is kept on screen or the text size is set.
+- Settings from unreleased 0.8.4 test builds aren't carried over anymore. Those from every released version since 0.8.0, and the older ones the mod already knew, still are.
+- README and store description rewritten.
+
 ## 0.9.6
 - Fixed: the yellow damage trail didn't show on a nameplate that appeared because of your hit.
 ## 0.9.5

@@ -43,8 +43,7 @@ namespace EnemyHudRework
             HealthSample sample, Character target,
             float previousHp, float currentHp, float now)
         {
-            if (sample == null || target == null ||
-                currentHp <= 0f || previousHp <= currentHp)
+            if (sample == null || target == null || currentHp <= 0f || previousHp <= currentHp)
                 return;
 
             float max = target.GetMaxHealth();
@@ -93,8 +92,7 @@ namespace EnemyHudRework
                 state.Gui.SetActive(true); // the game snaps the bars here
             }
 
-            Transform slowTransform = state.HealthRect != null
-                ? state.HealthRect.Find("health_slow") : null;
+            Transform slowTransform = state.HealthRect != null ? state.HealthRect.Find("health_slow") : null;
             GuiBar slow = slowTransform != null ? slowTransform.GetComponent<GuiBar>() : null;
             if (slow == null || !slow.m_smoothDrain || slow.m_bar == null)
                 return;
@@ -113,8 +111,7 @@ namespace EnemyHudRework
 
             SlowSmoothValue(slow) = old;
             SlowDelayTimer(slow) = Mathf.Max(0f, slow.m_changeDelay);
-            slow.m_bar.SetSizeWithCurrentAnchors(
-                RectTransform.Axis.Horizontal, SlowBarWidth(slow) * old);
+            slow.m_bar.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, SlowBarWidth(slow) * old);
         }
 
         // A parry reveal: the game keeps showing it too.

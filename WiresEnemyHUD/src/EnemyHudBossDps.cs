@@ -15,7 +15,6 @@ namespace EnemyHudRework
         private const float DpsNormalizeAfterSeconds = 3f;
 
         private ConfigEntry<string> _bossDpsMode;
-        private ConfigEntry<float> _dpsFontScale;
 
         private sealed class DpsUiState
         {
@@ -46,8 +45,7 @@ namespace EnemyHudRework
 
         private void SetupBossDps(EnemyUiState state)
         {
-            if (state == null || state.Kind != HudKind.Boss ||
-                state.Character == null || state.Gui == null)
+            if (state == null || state.Kind != HudKind.Boss || state.Character == null || state.Gui == null)
                 return;
 
             DestroyBossDps(state);
@@ -224,7 +222,7 @@ namespace EnemyHudRework
                 dps.MeasuredText = dps.Text.text;
                 dps.MeasuredHp = hpText;
                 dps.Rect.localScale = Vector3.one;
-                dps.Text.fontSize = dps.BaseFontSize * 0.738f * _dpsFontScale.Value;
+                dps.Text.fontSize = dps.BaseFontSize * 0.738f * _hpFontScale.Value;
                 dps.TextWidth = Mathf.Max(80f, dps.Text.preferredWidth + 12f);
                 dps.TextHeight = Mathf.Max(dps.Text.preferredHeight, dps.Text.fontSize * 1.2f);
                 dps.Rect.sizeDelta = new Vector2(dps.TextWidth, dps.TextHeight);

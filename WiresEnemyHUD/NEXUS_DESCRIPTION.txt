@@ -1,86 +1,94 @@
 [size=6][b]Wire's Enemy HUD[/b][/size]
 
-The ORIGINAL Valheim 1.0 health bar mod. Weakness icons, a stagger bar, HP numbers, status effects, bubble bars, hit predictions, smarter visibility and more. (fully configurable)
+[b]Valheim's health bars tell you almost nothing. These tell you how to win the fight.[/b]
 
+[list]
+[*][b]What hurts it:[/b] its weaknesses and resistances, as little icons under its bar.
+[*][b]When to go all in:[/b] a stagger bar, and a countdown of how long your hits deal double damage.
+[*][b]How much is left:[/b] HP numbers, and DPS on bosses.
+[*][b]What's going on:[/b] burning, poisoned, frozen, shielded, and whether it has noticed you.
+[/list]
 
+All of it in Valheim's style, small enough to stay out of the way, and every bit can be changed or turned off. Works on creatures, bosses, other players and modded creatures.
+
+The ORIGINAL Valheim 1.0 health bar mod.
 
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/health-bar-legend.jpg[/img]
 
-[size=5][b]Stagger bar[/b][/size]
+[size=5][b]Is it for you?[/b][/size]
+
 [list]
-[*]A stagger meter under the health bar, styled after your own.
-[*]While staggered, a yellow bar drains over the exact window your hits deal double damage.
+[*][b]You're new:[/b] learn what works on what by playing, without a wiki on your second screen.
+[*][b]You like a challenge:[/b] it doesn't change the fight at all, it only lets you plan it. Keep just the parts you want.
+[*][b]You play with friends:[/b] see who's rested, freezing or waiting on a potion cooldown, and how hard you're hitting the boss together.
+[*][b]You play with mods:[/b] weaknesses are read from the creature, so modded ones work right away. Enemies with three stars or more show their count.
+[*][b]You like Valheim the way it is:[/b] pick the Vanilla preset and turn on only what you miss.
 [/list]
 
-[size=5][b]Weakness icons[/b][/size]
+[size=5][b]Know what to hit it with[/b][/size]
+
+No more guessing why your weapon barely scratches something. Weaknesses come first, in color. Resistances follow in gray, immunities in darker gray.
+
+[list]
+[*][b]Your weapon counts:[/b] the damage types of the weapon in your hand stand out, so you know at a glance if it's a good pick. Or show only those.
+[*][b]Hits answer back:[/b] hit a weakness and its icon flashes white and swells. Hit a resistance and it goes dark.
+[*][b]Bosses too:[/b] weaknesses left of the name, resistances right of it.
+[*][b]On your weapons:[/b] item tooltips show the same icons, so you learn them quickly.
+[/list]
 
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/damage-icons-legend.jpg[/img]
 
-[list]
-[*]What an enemy is weak to, at the end of its star row. Resistances follow in faint gray, immunities in a darker gray, all sorted by strength.
-[*]Hit an enemy with its weakness and that icon flashes white. Hit what it resists and it goes darker.
-[*]Bosses show weaknesses left of their name and resistances to the right.
-[*]Read from each creature's real damage modifiers, so modded creatures work too.
-[*]Either use the custom symbols (which can be configured in both shape and color) or vanilla icons, taken from skills and status effects (really not recommended)
-[/list]
+Every shape and color can be changed, or use the icons of Valheim's skills and status effects instead (really not recommended).
 
-[size=5][b]Status effects[/b][/size]
-
-[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.4.jpg[/img]
+[size=5][b]Know when to go all in[/b][/size]
 
 [list]
-[*]Creatures and players that are burning, frozen, shocked, poisoned or hit by spirit show it next to their health bar.
+[*][b]Stagger bar:[/b] watch it fill up, then break them.
+[*][b]Stagger countdown:[/b] a yellow bar drains while the enemy is staggered, which is exactly how long your hits deal double damage.
+[*][b]Critical flash:[/b] the bar flashes white when a backstab or a hit on a staggered enemy lands.
+[*][b]Bubble bars:[/b] see how much a Staff of Protection or fuling shaman bubble can still take. Yours gets a bar next to your health.
 [/list]
 
-[size=5][b]Health bars[/b][/size]
+[size=5][b]Know how much is left[/b][/size]
+
 [list]
-[*]Doubles the thickness of health bars
-[*]HP numbers
-[*]Enemies above two stars (from level mods) show their star count.
-[*]Transparent backgrounds, like your own HUD bars.
-[*]Friendly creatures get their own bar color (green).
-[*]A white flash on the frame when a backstab or a hit on a staggered enemy lands.
-[*]The name color shows whether an enemy noticed you or is hunting you.
+[*][b]HP numbers[/b] on creatures, players and bosses: current, current/max or percent.
+[*][b]Boss DPS,[/b] from all the damage the boss takes.
+[*][b]Hit predictions[/b] (off by default): how much your next hit would take from the enemy you look at, before you swing. They count resistances, sneak attacks, combo finishers and staggers.
 [/list]
-
-[size=5][b]Bubble bars[/b][/size]
 
 [img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.0.jpg[/img]
 
+[size=5][b]Know what's going on[/b][/size]
+
 [list]
-[*]A bar above the health bar of anyone inside a protective bubble (Staff of Protection)
-[*]Purple on friendlies (eitr), blue on enemies (shaman magic).
-[*]Your own bubble gets a bar right of your health bar.
+[*][b]Burning, frozen, shocked, poisoned or hit by spirit:[/b] an icon next to the health bar.
+[*][b]Other effects[/b] such as wet, tarred or harpooned show too.
+[*][b]Did it see me?[/b] The name changes color when an enemy notices you and when it's hunting you.
+[*][b]Friend or foe:[/b] friendly creatures have green bars.
 [/list]
 
-[size=5][b]Hit predictions[/b][/size]
+[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.4.jpg[/img]
+
+[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresEnemyHUD/docs/added-in-0.8.6.jpg[/img]
+
+[size=5][b]Bars that are there when you need them[/b][/size]
+
 [list]
-[*]Off by default. Shows what your next hit would do to the enemy you're looking at, on its health, stagger and bubble bars.
-[*]Uses the middle of your possible damage, or the weakest possible hit if you never want to see something that might not happen.
-[*]Counts the creature's weaknesses and resistances, sneak attacks, the combo finisher and double damage on staggered enemies.
+[*][b]Easier to read:[/b] twice as thick, with see-through backgrounds.
+[*][b]There when it matters:[/b] hit or parry something and its bar shows, however far away it is. Look at a creature up to 50 m away and you see it too.
+[*][b]Always on screen:[/b] a troll's bar slides along the top edge instead of vanishing above you.
+[*][b]Out of the way:[/b] other players' names fade until you aim at them. Enemies can do the same.
 [/list]
 
-[size=5][b]Visibility[/b][/size]
+[size=5][b]Questions[/b][/size]
+
 [list]
-[*]Hitting or parrying an enemy shows its bar for a few seconds, at any distance.
-[*]Bars stay on screen: a troll's bar slides along the top edge instead of vanishing.
-[*]Other players' nameplates fade until you aim at them. Enemy nameplates can do the same (off by default).
+[*][b]Do others need it?[/b] No. It works with just you. Players who have it too share stagger, bubbles, status effects, critical hits and hit responses for the creatures their game runs, and for themselves.
+[*][b]Is it too much?[/b] Start from the Vanilla preset and add what you like. Icons and HP numbers can also show only on what you're looking at, and the rest can fade.
+[*][b]Where are the settings?[/b] In the config, or in-game with a configuration manager.
 [/list]
 
-[size=5][b]Make it yours[/b][/size]
-[list]
-[*]Presets: Author's Choice, or Vanilla as a clean starting point.
-[*]Everything can be changed or turned off in the config
-[/list]
+Disclaimer: the code is AI assisted. No AI image generation was used.
 
-[size=5][b]Multiplayer[/b][/size]
-
-Other clients need the mod to share stagger, bubble, status effect, critical hit and hit response info on creatures they're hosting and themselves.
-
-
-
-[b]Disclaimer:[/b] the code is AI assisted. No AI image generation was used.
-
-
-[url=https://ko-fi.com/krosshair]https://ko-fi.com/krosshair[/url]
-
+Donations: [url=https://ko-fi.com/krosshair]ko-fi.com/krosshair[/url]

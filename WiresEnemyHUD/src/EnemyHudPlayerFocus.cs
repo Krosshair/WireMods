@@ -60,12 +60,9 @@ namespace EnemyHudRework
             return null;
         }
 
-        private void UpdatePlayerNameplateOpacity(
-            EnemyUiState state, Player localPlayer,
-            Player directlyTargeted, float dt)
+        private void UpdatePlayerNameplateOpacity(EnemyUiState state, Player localPlayer)
         {
-            if (state == null || state.Kind == HudKind.Boss ||
-                state.Gui == null)
+            if (state == null || state.Kind == HudKind.Boss || state.Gui == null)
                 return;
 
             // Players: your crosshair on them. Creatures: the same "looked
@@ -86,8 +83,7 @@ namespace EnemyHudRework
                     ? existing
                     : state.Gui.AddComponent<CanvasGroup>();
                 state.PlayerFadeGroupAdded = existing == null;
-                state.PlayerOriginalAlpha = existing != null
-                    ? existing.alpha : 1f;
+                state.PlayerOriginalAlpha = existing != null ? existing.alpha : 1f;
             }
 
             CanvasGroup group = state.PlayerOpacityGroup;
@@ -110,16 +106,9 @@ namespace EnemyHudRework
             // active for unrelated reasons after a reveal has ended.
             bool focused = player
                 ? AimedAtRecently(state)
-                : LookedAtRecently(
-                      state.Character, _dynamicHpDelay.Value) ||
-                  ForceShowOnDamage(state.Character) ||
-                  HasNativeHoverVisibility(state) ||
-                  (_farHover != null && _farHover.Value &&
-                   LookedAtRecently(
-                       state.Character, _lookAwayDelay.Value));
-            float target = focused
-                ? state.PlayerOriginalAlpha
-                : state.PlayerOriginalAlpha * 0.1f;
+                : LookedAtRecently(state.Character) || ForceShowOnDamage(state.Character) ||
+                  HasNativeHoverVisibility(state);
+            float target = focused ? state.PlayerOriginalAlpha : state.PlayerOriginalAlpha * 0.1f;
 
             // Instant: 10% until aimed at, full the moment you are.
             if (group.alpha != target) group.alpha = target;

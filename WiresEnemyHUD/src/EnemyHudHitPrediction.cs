@@ -221,7 +221,7 @@ namespace EnemyHudRework
         // Predictions only show on the creature you are looking at, popping
         // in and out.
 
-        private void UpdateHitPrediction(EnemyUiState state, bool isEnemy, Player local, Character looked, float dt)
+        private void UpdateHitPrediction(EnemyUiState state, bool isEnemy, Player local, Character looked)
         {
             if (state == null || state.Character == null || state.Kind == HudKind.Player || state.HealthRect == null) return;
             HitPredictionUi ui = state.Prediction;
@@ -295,22 +295,7 @@ namespace EnemyHudRework
             ui.HealthShown = have && fast != null && now > after;
             if (ui.HealthShown)
             {
-                Image look = null;
-                Color color;
-                if (_predictionHighContrast.Value)
-                {
-                    // The damage trail: the bar's own slow fill.
-                    GuiBar slow = state.HealthRect.Find("health_slow")?.GetComponent<GuiBar>();
-                    look = slow != null && slow.m_bar != null ? slow.m_bar.GetComponent<Image>() : null;
-                    color = look != null ? look.color : new Color(1f, 0.8482759f, 0f, 1f);
-                }
-                else
-                {
-                    GuiBar gb = fast.GetComponent<GuiBar>();
-                    Image fill = gb != null && gb.m_bar != null ? gb.m_bar.GetComponent<Image>() : null;
-                    Color b = fill != null ? fill.color : new Color(1f, 0.333f, 0.333f, 1f);
-                    color = new Color(b.r * 0.5f, b.g * 0.5f, b.b * 0.5f, 1f);
-                }
+                Color color = PredictionColor(state, fast.GetComponent<GuiBar>(), new Color(1f, 0.333f, 0.333f, 1f), out Image look);
                 PlacePrediction(ref ui.HealthOverlay, ref ui.HealthBar, fast, after, now, true, color, look);
             }
 
@@ -332,25 +317,28 @@ namespace EnemyHudRework
                 float bAfter = Mathf.Clamp01(bNow - hit / bubbleMax);
                 if (bNow > bAfter)
                 {
-                    Color color;
-                    Image look = null;
-                    if (_predictionHighContrast.Value)
-                    {
-                        GuiBar slowBar = state.HealthRect.Find("health_slow")?.GetComponent<GuiBar>();
-                        look = slowBar != null && slowBar.m_bar != null ? slowBar.m_bar.GetComponent<Image>() : null;
-                        color = look != null ? look.color : new Color(1f, 0.8482759f, 0f, 1f);
-                    }
-                    else
-                    {
-                        Image fill = bub.Fast.m_bar != null ? bub.Fast.m_bar.GetComponent<Image>() : null;
-                        Color b = fill != null ? fill.color : BubbleColorFoe;
-                        color = new Color(b.r * 0.5f, b.g * 0.5f, b.b * 0.5f, 1f);
-                    }
+                    Color color = PredictionColor(state, bub.Fast, BubbleColorFoe, out Image look);
                     PlacePrediction(ref ui.BubbleOverlay, ref ui.BubbleBar, bub.Fast.transform, bAfter, bNow, true, color, look);
                     ui.BubbleShown = true;
                 }
             }
             ApplyPredictionFade(state, ui);
+        }
+
+        // High contrast: the damage trail (the health bar's slow fill), picture
+        // included. Otherwise the bar's fill at half brightness.
+        private Color PredictionColor(EnemyUiState state, GuiBar bar, Color fallback, out Image look)
+        {
+            look = null;
+            if (_predictionHighContrast.Value)
+            {
+                GuiBar slow = state.HealthRect.Find("health_slow")?.GetComponent<GuiBar>();
+                look = slow != null && slow.m_bar != null ? slow.m_bar.GetComponent<Image>() : null;
+                return look != null ? look.color : new Color(1f, 0.8482759f, 0f, 1f);
+            }
+            Image fill = bar != null && bar.m_bar != null ? bar.m_bar.GetComponent<Image>() : null;
+            Color b = fill != null ? fill.color : fallback;
+            return new Color(b.r * 0.5f, b.g * 0.5f, b.b * 0.5f, 1f);
         }
 
         private static void ApplyPredictionFade(EnemyUiState state, HitPredictionUi ui)

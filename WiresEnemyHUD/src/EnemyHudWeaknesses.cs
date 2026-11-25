@@ -49,7 +49,6 @@ namespace EnemyHudRework
         }
 
         private ConfigEntry<bool> _dynamicMode;
-        private ConfigEntry<float> _dynamicDelay;
 
         // Limited mode: which damage types the weapon in hand (plus its
         // ammo) can deal. Worked out only when equipment changes; a type you
@@ -485,8 +484,7 @@ namespace EnemyHudRework
         // ---- UI ----
         private void SetupWeaknessIcons(EnemyUiState state)
         {
-            if (state == null || state.Gui == null ||
-                _weaknessUi.ContainsKey(state) ||
+            if (state == null || state.Gui == null || _weaknessUi.ContainsKey(state) ||
                 (state.Kind != HudKind.Boss ? state.HealthRect == null : state.NameText == null))
                 return;
             var ui = new WeaknessUi();
@@ -570,7 +568,7 @@ namespace EnemyHudRework
             if ((mode == IconShow.Off && _immunityShow.Value == ImmunityShow.Off) ||
                 (player ? !_playerIcons.Value : !isEnemy) || state.Character == null ||
                 (!player && state.Character.IsTamed()) || star == null ||
-                (_dynamicMode.Value && !LookedAtRecently(state.Character, _dynamicDelay.Value)))
+                (_dynamicMode.Value && !LookedAtRecently(state.Character)))
             {
                 HideWeaknessIcons(ui);
                 return;

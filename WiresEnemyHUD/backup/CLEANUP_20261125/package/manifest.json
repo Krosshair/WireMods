@@ -1,0 +1,7 @@
+{
+    "name": "WiresEnemyHUD",
+    "description": "Fight smarter: see what every enemy is weak to, how close it is to staggering and how much health it has left, right on its health bar. Bosses, players and modded creatures included. The ORIGINAL 1.0 health bar mod, fully configurable.",
+    "version_number": "0.9.6",
+    "website_url": "",
+    "dependencies": []
+}
