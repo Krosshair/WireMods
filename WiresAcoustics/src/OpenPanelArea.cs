@@ -107,7 +107,7 @@ namespace WiresAcoustics
             }
             else j.Piece.GetComponentsInChildren(false, Drawn);
 
-            RenderTexture rt = RenderTexture.GetTemporary(Size, Size, 0, RenderTextureFormat.R8);
+            RenderTexture rt = RenderTexture.GetTemporary(Size, Size, 0, RenderTextureFormat.R8, RenderTextureReadWrite.Linear);
             if (s_cb == null) s_cb = new CommandBuffer { name = "Wire's Acoustics: panel openness" };
             s_cb.Clear();
             s_cb.SetRenderTarget(rt);

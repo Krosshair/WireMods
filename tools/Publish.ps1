@@ -231,7 +231,12 @@ function Publish-Nexus {
             if (@($files).Count -ne 1) { return "skipped: mod has $(@($files).Count) active files; set nexus_file_id in tools\mods.json" }
             $fileId = @($files)[0].id
         }
-        if ($DryRun) { return "ok (dry run): would add version $Ver to file $fileId" }
+        # Nexus takes at most 50 characters (and only these) for a file's name: a longer page title loses its last
+        # bracket till it fits, else the package name is used.
+        $name = [string]$modInfo.data.name; if (-not $name) { $name = $Manifest.name }
+        while ($name.Length -gt 50 -and $name -match '^(.+?)\s*\([^()]*\)\s*$') { $name = $Matches[1] }
+        if ($name.Length -gt 50 -or $name -notmatch "^[a-zA-Z0-9 _'().-]+$") { $name = $Manifest.name }
+        if ($DryRun) { return "ok (dry run): would add version $Ver to file $fileId, named '$name'" }
         $size = (Get-Item $Zip).Length
         $up = (Invoke-RestMethod -Uri "$api/uploads/multipart" -Method Post -Headers $h -ContentType 'application/json' `
                 -Body (@{ filename = [IO.Path]::GetFileName($Zip); size_bytes = "$size" } | ConvertTo-Json)).data
@@ -252,7 +257,7 @@ function Publish-Nexus {
         }
         if ($state -ne 'available') { return 'FAILED: Nexus did not finish processing the upload in time' }
         $body = @{
-            upload_id = $up.id; name = $(if ($modInfo.data.name) { $modInfo.data.name } else { $Manifest.name }); version = $Ver
+            upload_id = $up.id; name = $name; version = $Ver
             file_category = 'main'; archive_existing_file = $true; update_mod_version = $true
         }
         Invoke-RestMethod -Uri "$api/mod-files/$fileId/versions" -Method Post -Headers $h -ContentType 'application/json' `

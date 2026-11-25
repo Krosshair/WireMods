@@ -1,3 +1,7 @@
+## 0.7.2
+
+- Fixed: the log filled with "'R8_SRGB' is not supported" warnings while building pieces were measured for how open they are. Sound is unchanged.
+
 ## 0.7.1
 
 - Fixed: fires got quieter with distance twice, so far fires faded out too early.
