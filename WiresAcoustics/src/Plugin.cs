@@ -16,7 +16,7 @@ namespace WiresAcoustics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.acoustics";
-        public const string Version = "0.7.3";
+        public const string Version = "0.8.0";
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled, RoomReverb, Occlusion, Hrtf, RealDistance, DebugLog;
         internal static ConfigEntry<bool> TravelTime, DopplerOn, UnderwaterOn, Air, Wind, Placement, VoiceChatOn, RandomLoopPhase;
@@ -47,7 +47,7 @@ namespace WiresAcoustics
                 "Sounds get quieter with distance the way real sound does (6 dB each time the distance doubles, from the distance the game plays them at full volume), instead of the game's own curves, which cut many sounds off within a few metres (a hearth is silent 10 m away). The air still dulls them on top.");
             Occlusion = Setting("General", "Muffling", true, "Sounds behind walls, buildings or hills are muffled and quieter, more so through several layers.");
             Hrtf = Setting("General", "HRTF (headphones)", true,
-                "Where a sound is around your head: a tiny delay and muffling for the far ear, duller sounds from behind, and the outer ear's cue for above and below, instead of plain left/right panning. Made for headphones; turn off on speakers. On surround (5.1, 7.1) output the game's own panning is used.");
+                "Where a sound is around your head, by how real heads and ears change it from that direction (delay, level and tone at each ear), instead of plain left/right panning. Made for headphones; turn off on speakers. On surround (5.1, 7.1) output the game's own panning is used.");
             TravelTime = Setting("General", "Travel time", true,
                 "Sound takes time to reach you (350 m/s from your character's head): a sound far away starts as late as its distance makes it, up to half a second.");
             DopplerOn = Setting("General", "Doppler", true,
@@ -61,7 +61,7 @@ namespace WiresAcoustics
             RandomLoopPhase = Setting("General", "Random loop start", true,
                 "Independent continuous world sounds (fires, sconces, machines) start at random positions within their loops instead of all playing in sync. Music, ambience and UI are unaffected.");
             ReverbStrength = Setting("Tuning", "Reverb strength", 1f, "How loud the room's reverb is (1 = as designed, 0 = none).", new AcceptableValueRange<float>(0f, 2f));
-            HrtfStrength = Setting("Tuning", "HRTF strength", 1f, "How strong the direction cues are: the far ear's dulling and level drop, the shading from behind, the delay between the ears (1 = as modelled, 2 = exaggerated).", new AcceptableValueRange<float>(0f, 2f));
+            HrtfStrength = Setting("Tuning", "HRTF strength", 1f, "How strong the direction cues are: the delay between the ears and each ear's tone and level (1 = full, 0 = none).", new AcceptableValueRange<float>(0f, 1f));
             OcclusionStrength = Setting("Tuning", "Muffling strength", 1f, "How much walls muffle and quieten sounds (1 = as designed, 0 = none).", new AcceptableValueRange<float>(0f, 1.5f));
             VolumetricRays = Setting("Tuning", "Source-volume rays", 16,
                 "Maximum additional sampled rays per emitting source: 0 (legacy three-ray approximation), 4, 8, 16, or 32. The actual number adapts to projected collider/source size and distance. Increasing this improves partial occlusion near edges but increases physics-job cost.",
@@ -72,6 +72,8 @@ namespace WiresAcoustics
             DebugLog = Setting("Debug", "Debug log", false, "Every three seconds, logs room geometry, DSP cost, and the 24 most potentially audible sources with their geometric coverage and source-volume ray count, path, target and actual gain/filter, localization, reverb, water and path age. These measurements do not capture the final mixed sound.", null, true);
             OpenPanelArea.Load();
             MoreVoices();
+            using (System.IO.Stream s = typeof(Plugin).Assembly.GetManifestResourceStream("ku100.bin")) Ears.Load(s);
+            Ears.Use(AudioSettings.outputSampleRate);
             m_harmony = new Harmony(Guid);
             m_harmony.PatchAll(typeof(Plugin).Assembly);
             Log.LogInfo("Wire's Acoustics " + Version);

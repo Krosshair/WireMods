@@ -10,6 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Numerics" />
     <Reference Include="BepInEx"><HintPath>C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Enngard\BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>C:\Users\kajet\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Enngard\BepInEx\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="assembly_valheim"><HintPath>D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed\assembly_valheim.dll</HintPath><Private>false</Private></Reference>
@@ -32,6 +33,7 @@
   <ItemGroup>
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="ku100.bin" LogicalName="ku100.bin" />
     <EmbeddedResource Include="wireacoustics.bundle" LogicalName="wireacoustics.bundle" Condition="Exists('wireacoustics.bundle')" />
   </ItemGroup>
 </Project>

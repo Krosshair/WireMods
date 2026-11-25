@@ -32,7 +32,7 @@ Which way a sound is comes from the camera, as you see it. How far it is and wha
 * **Wind:** carries sound downwind, weakens it upwind, gusts and lulls, and drops to a low rumble when you're sheltered.
 * **Weather and sea:** rain sounds like the roof above you, the sea comes from the real shoreline, and under water everything above goes quiet.
 * **Sounds come from where they're made:** a swing from the weapon, a roar from the head, a chest from its lid, a fire from its flame, crafting from the station. Bigger things sound wider.
-* **HRTF (headphones):** how your head and ears change a sound by its direction, for every sound.
+* **HRTF (headphones):** how real people's heads and ears change a sound by its direction, for every sound: left and right, front and back, up and down.
 * **More sounds at once:** 128 instead of 32, so nothing drops out in a busy base.
 * **Extras:** a portal's hum carries through with you, the Mistlands mist no longer lowers the pitch, and the main menu gets the HRTF too.
 
@@ -44,7 +44,6 @@ Headphones are best. Turn off Windows Sonic and Dolby Atmos while playing: two s
 
 * **Proximity Voice Chat (Azumatt):** voices come from the speaker's head and get walls, openings and HRTF.
 * **Wire's Stackify:** its chest sounds come from each chest.
-* **Immersive Weather & Acoustics** (kinda): set `EnableAudioOcclusion = false` there, so only one mod does the audio.
 
 ## Performance
 
@@ -72,7 +71,7 @@ Wherever I could, the numbers come from measurements and standards instead of be
 * **Room reverb:** [Sabine's formula](https://sengpielaudio.com/calculator-RT60.htm) and the [critical distance](https://strutt.arup.com/help/Electroacoustics/DCritical.htm).
 * **Outside sounds indoors:** checked against [Locher et al., 2018](https://doi.org/10.3390/ijerph15010149).
 * **Direction round walls:** the [precedence effect](https://en.wikipedia.org/wiki/Precedence_effect) (Haas 1951, Blauert 1983).
-* **HRTF:** [Woodworth's delay between the ears](https://en.wikipedia.org/wiki/Interaural_time_difference), head radius from [Hartmann, 1999](https://web.pa.msu.edu/acoustics/locsound.pdf). The rest of it is modelled, not measured.
+* **HRTF:** the average of 18 real people's measured ears, subjects H3 to H20 of the [SADIE II database](https://www.york.ac.uk/sadie-project/database.html) (Armstrong, Thresh and Kearney, University of York, 2018; [paper](https://doi.org/10.3390/app8112029); Apache License 2.0, included). Turned into a filter and a delay per ear and direction, as [OpenAL Soft](https://openal-soft.org) does. Of the colour both ears hear together only the broad shape is kept (see below), so Valheim still sounds like Valheim.
 * **Water:** impedances from [UNSW Physics](https://animations.physics.unsw.edu.au/jw/sound-impedance-intensity.htm).
 * **Sea as a line source:** [Hong Kong EPD](https://www.epd.gov.hk/epd/noise_education/web/ENG_EPD_HTML/m1/intro_6.html).
 
@@ -83,7 +82,7 @@ Not from a source (judgement values):
 * **In the way:** how much soft obstacles muffle, a wall counting once however many pieces it's built from, the two rays 8 cm beside every line, where the mod looks for a way round a wall (up to 5.5 m along it).
 * **Distance:** 6 dB more per doubling past the range Valheim gives a sound instead of a cut-off, fires by their range (10 m as full size).
 * **Placing:** random bird and insect calls 1 m above whatever is at their spot and not on buildings within 10 m of you (moved out 4 m at a time), your unplaced sounds made placed with a near distance of at least 1 m, a door's sounds 15 cm in from its hinge.
-* **HRTF:** the amounts of level, shading and the outer ear's notch.
+* **HRTF:** how broad that shape is (2 octaves): the narrow peaks and dips of real ears made everything sound like worse headphones.
 * **Openings:** how big a gap must be to count as an opening (a 10 cm sphere).
 
 Disclaimer: development is AI assisted. Not fully human or AI.

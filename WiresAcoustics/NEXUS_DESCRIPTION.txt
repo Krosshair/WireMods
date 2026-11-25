@@ -35,7 +35,7 @@ Which way a sound is comes from the camera, as you see it. How far it is and wha
 [*][b]Wind:[/b] carries sound downwind, weakens it upwind, gusts and lulls, and drops to a low rumble when you're sheltered.
 [*][b]Weather and sea:[/b] rain sounds like the roof above you, the sea comes from the real shoreline, and under water everything above goes quiet.
 [*][b]Sounds come from where they're made:[/b] a swing from the weapon, a roar from the head, a chest from its lid, a fire from its flame, crafting from the station. Bigger things sound wider.
-[*][b]HRTF (headphones):[/b] how your head and ears change a sound by its direction, for every sound.
+[*][b]HRTF (headphones):[/b] how real people's heads and ears change a sound by its direction, for every sound: left and right, front and back, up and down.
 [*][b]More sounds at once:[/b] 128 instead of 32, so nothing drops out in a busy base.
 [*][b]Extras:[/b] a portal's hum carries through with you, the Mistlands mist no longer lowers the pitch, and the main menu gets the HRTF too.
 [/list]
@@ -49,7 +49,6 @@ Headphones are best. Turn off Windows Sonic and Dolby Atmos while playing: two s
 [list]
 [*][b]Proximity Voice Chat (Azumatt):[/b] voices come from the speaker's head and get walls, openings and HRTF.
 [*][b]Wire's Stackify:[/b] its chest sounds come from each chest.
-[*][b]Immersive Weather & Acoustics[/b] (kinda): set EnableAudioOcclusion = false there, so only one mod does the audio.
 [/list]
 
 [size=5][b]Performance[/b][/size]
@@ -81,7 +80,7 @@ Wherever I could, the numbers come from measurements and standards instead of be
 [*][b]Room reverb:[/b] [url=https://sengpielaudio.com/calculator-RT60.htm]Sabine's formula[/url] and the [url=https://strutt.arup.com/help/Electroacoustics/DCritical.htm]critical distance[/url].
 [*][b]Outside sounds indoors:[/b] checked against [url=https://doi.org/10.3390/ijerph15010149]Locher et al., 2018[/url].
 [*][b]Direction round walls:[/b] the [url=https://en.wikipedia.org/wiki/Precedence_effect]precedence effect[/url] (Haas 1951, Blauert 1983).
-[*][b]HRTF:[/b] [url=https://en.wikipedia.org/wiki/Interaural_time_difference]Woodworth's delay between the ears[/url], head radius from [url=https://web.pa.msu.edu/acoustics/locsound.pdf]Hartmann, 1999[/url]. The rest of it is modelled, not measured.
+[*][b]HRTF:[/b] the average of 18 real people's measured ears, subjects H3 to H20 of the [url=https://www.york.ac.uk/sadie-project/database.html]SADIE II database[/url] (Armstrong, Thresh and Kearney, University of York, 2018; [url=https://doi.org/10.3390/app8112029]paper[/url]; Apache License 2.0, included). Turned into a filter and a delay per ear and direction, as [url=https://openal-soft.org]OpenAL Soft[/url] does. Of the colour both ears hear together only the broad shape is kept (see below), so Valheim still sounds like Valheim.
 [*][b]Water:[/b] impedances from [url=https://animations.physics.unsw.edu.au/jw/sound-impedance-intensity.htm]UNSW Physics[/url].
 [*][b]Sea as a line source:[/b] [url=https://www.epd.gov.hk/epd/noise_education/web/ENG_EPD_HTML/m1/intro_6.html]Hong Kong EPD[/url].
 [/list]
@@ -94,7 +93,7 @@ Not from a source (judgement values):
 [*][b]In the way:[/b] how much soft obstacles muffle, a wall counting once however many pieces it's built from, the two rays 8 cm beside every line, where the mod looks for a way round a wall (up to 5.5 m along it).
 [*][b]Distance:[/b] 6 dB more per doubling past the range Valheim gives a sound instead of a cut-off, fires by their range (10 m as full size).
 [*][b]Placing:[/b] random bird and insect calls 1 m above whatever is at their spot and not on buildings within 10 m of you (moved out 4 m at a time), your unplaced sounds made placed with a near distance of at least 1 m, a door's sounds 15 cm in from its hinge.
-[*][b]HRTF:[/b] the amounts of level, shading and the outer ear's notch.
+[*][b]HRTF:[/b] how broad that shape is (2 octaves): the narrow peaks and dips of real ears made everything sound like worse headphones.
 [*][b]Openings:[/b] how big a gap must be to count as an opening (a 10 cm sphere).
 [/list]
 

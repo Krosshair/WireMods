@@ -1,0 +1,14 @@
+Attached: ears.zip and the SOFA files of SADIE II's human subjects (48 kHz HRIRs). Please run code, don't just describe it. I can only use the final file.
+
+ears.zip has how the table is made today from one dummy head (make.js + lib.js, robust.js, sofa.js, Node), the reader that uses it (Ears.cs, Ears.Load is the exact file format), and the current table (ku100.bin).
+
+Make a new ku100.bin from the AVERAGE of all the human subjects, in exactly the same format ("KU4F" + raw deflate). Use Python (h5py, numpy, scipy).
+
+0. First write a reader for ku100.bin and a writer, and prove the round trip on the attached ku100.bin: unpack, pack, unpack, all values identical. Stop and tell me if not.
+1. Directions: 72 azimuths (every 5 degrees, 0 = ahead, counterclockwise, 90 = left) at heights of your choice from what ALL subjects have recorded, plus the poles -90 and +90 (one value repeated around). Keep 24 rows or fewer. Use the recorded direction if there is one, else blend the nearest recorded ones in log magnitude (filters) and linearly (delay). Tell me the heights and how many directions were blended.
+2. Per subject, direction and ear: delay = excess delay over the minimum-phase version, the way robust.js does it (best straight phase line at 200-1500 Hz); magnitude over frequency. Level each subject by one gain for both ears: its power average over all directions, 200 Hz-16 kHz, to 0 dB. Flag and leave out single directions that are clearly broken (swapped ears, delays that jump), and list them.
+3. Average over subjects: magnitudes as dB, delays as samples. Make left and right mirror images: left ear at azimuth A averaged with right ear at -A (dB and delay).
+4. Level the result: power average over all directions, 200 Hz-16 kHz, to 0 dB. Do NOT smooth, flatten or equalise anything else.
+5. Filters: 64 samples, minimum phase from the magnitude (cepstrum, 2048 points), fade as in make.js (cut). Delays minus the smallest one.
+6. Report a small table: straight ahead, both ears together (power mean), at 250/500/1k/2k/4k/8k/12.5k Hz for the new table and the attached one; the RMS over direction of the power-mean response in 1/3 octaves from 200 Hz to 16 kHz with its own mean removed, for azimuths within 45 degrees of ahead and heights within 30 degrees, for both tables; the interaural delay at azimuth 90, height 0, in microseconds; how many subjects were used.
+7. Give me ku100.bin to download. If anything couldn't be done as asked, say so plainly instead of changing it silently.

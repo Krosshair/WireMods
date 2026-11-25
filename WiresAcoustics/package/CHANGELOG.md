@@ -1,3 +1,13 @@
+## 0.8.0
+
+- Much better direction: which way a sound comes from is now told by the averaged ears of 18 real people (SADIE II database, University of York) instead of a model with picked values. The delay and the level difference between your ears come from those recordings, at 1,586 directions, blended smoothly as you turn.
+- The sound's colour stays close to what it was: of what both ears hear together only the broad shape is kept, without the narrow peaks and dips (how broad is picked).
+- Cleaner turning: each ear's delay is read more precisely, so fast turns keep the highs clean.
+- HRTF strength now goes from 0 to 1 (full); over 1 exaggerated the old cues. A higher value becomes 1.
+- The sound processing uses the CPU's vector instructions, so the new ears cost about the same as the old model.
+- The license of the measured ears is included (SADIE_LICENSE.txt).
+- README: sources and picked values brought up to date; a compatibility line removed.
+
 ## 0.7.3
 
 - Fixed: everything could sound muffled for a while after eating, drinking or pressing a hotbar key (or E) while looking at the ground, a rock or a creature: sounds around you were then checked against that spot instead of their own, so anything between you and it muffled them all. The same could happen inside a location or dungeon after using something there.

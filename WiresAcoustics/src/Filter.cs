@@ -19,18 +19,8 @@ namespace WiresAcoustics
     // 7.8 kHz at 30 m, 5.3 kHz at 60 m, 4 kHz at 100 m, 2.7 kHz at 200 m (distance from
     // Directions, 4 times a second).
     //
-    // HRTF, modelled (no measured data): Unity's own panning is flattened (spread 180: both ears the
-    // same), then per ear:
-    //  - interaural time difference, Woodworth's formula: (a / c)(theta + sin theta), head radius
-    //    8.75 cm, up to ~0.66 ms; a fractional delay on the far ear;
-    //  - head shadow: the far ear loses its highs (low-pass 20 kHz down to 1.2 kHz fully to the side)
-    //    and 6 dB overall, the near ear gains 1.6 dB (what a real head does to broadband sound;
-    //    the highs differ by far more, which the low-pass gives);
-    //  - behind you the outer ear shades the highs (above ~2.5 kHz) on both ears;
-    //  - elevation: the outer ear's notch moving from ~5 kHz (below) to ~10 kHz (above), deeper the
-    //    further a sound is above or below ear level (none within 12 degrees, -9 dB from 44 degrees),
-    //    narrow (Q 4). A real ear's front response is offset by its own boosts; modelling only the
-    //    dip made everything in front sound dull.
+    // HRTF: Unity's own panning is flattened (spread 180: both ears the same), then each ear gets the
+    // measured tone, level and delay of real people's ears for that direction (Ears).
     // The direction comes from the main thread every frame (Room's AudioMan.Update hook).
     public sealed class AcousticFilter : MonoBehaviour
     {
@@ -73,6 +63,7 @@ namespace WiresAcoustics
             int rate = AudioSettings.outputSampleRate;
             if (rate > 0 && rate != s_rate) s_rate = rate;
             SpectralPaths.SetSampleRate(s_rate);
+            Ears.Use(s_rate);
             bool stereo = AudioSettings.speakerMode == AudioSpeakerMode.Stereo;
             if (stereo == s_stereoOut) return;
             s_stereoOut = stereo;
@@ -272,20 +263,6 @@ namespace WiresAcoustics
                 (.01275 * System.Math.Exp(-2239.1 / T) / (frO + f * f / frO) + .1068 * System.Math.Exp(-3352.0 / T) / (frN + f * f / frN)));
         }
 
-        // Realistic distance: how far a sound carries depends on how loud it is. The game's own range
-        // for it is what says that (a sconce's crackle is set to a few metres, a hearth to 10, a troll's
-        // roar to 50). Within it, the inverse-distance law (6 dB each time the distance doubles); past
-        // it, 6 dB more each doubling (12 in all), so a quiet sound still reaches far, just quietly,
-        // instead of being cut off (vanilla) or holding its level for ever. The extra past the range is
-        // a choice for the game, not from a source: what the game's range means is "quiet by here".
-        // A fire's loop isn't: its level already comes from its range (SourceLevel, Area.FireLevelFromRange),
-        // so the extra past it would count the range twice and leave a sconce too quiet.
-        internal float PastRange(float dist)
-        {
-            if (!m_physical || FireLoop || m_origMax <= 0f || dist <= m_origMax) return 1f;
-            return m_origMax / dist;
-        }
-
         // How loud the thing making it is, against how loud the game plays it (amplitude, 1 = as the
         // game has it). The game plays every fire's crackle at the same level, a sconce's as loud as
         // a hearth's, only cut off sooner (Area sets it for fires).
@@ -327,13 +304,10 @@ namespace WiresAcoustics
         private const float Stage = AcousticMath.FilterStage;
         private readonly float[] m_state = new float[2 * MaxChannels];
 
-        private const int Ring = 256;
-        private const float HeadRadius = .0875f, Sound = 343f;
-        private readonly float[] m_ring = new float[Ring];
-        private int m_pos;
+        private readonly EarState m_ears = new EarState();
         private volatile bool m_primed;
-        private float m_mono, m_side, m_mono2, m_side2, m_delayL, m_delayR, m_headL, m_headR, m_backL, m_backR, m_gainL = 1f, m_gainR = 1f;
-        private float m_x1L, m_x2L, m_y1L, m_y2L, m_x1R, m_x2R, m_y1R, m_y2R;
+        private float m_mono, m_side, m_mono2, m_side2;
+        [System.ThreadStatic] private static float[] t_mono;
 
         // Directions' list: where this filter is in it, and whether it should be.
         internal int Slot = -1;
@@ -471,6 +445,20 @@ namespace WiresAcoustics
             "gain " + m_targetGain.ToString("F2") + ", cut " + m_targetCutoff.ToString("F0") + ", air " + AirCutoff.ToString("F0") +
             ", distance " + DistanceGain.ToString("F2") + (SourceLevel < .999f ? ", level " + (20f * Mathf.Log10(Mathf.Max(1e-5f, SourceLevel))).ToString("F0") + " dB" : "") + (m_physical ? " (game's range " + m_origMax.ToString("F0") + " m)" : "") + ", width " + Width.ToString("F2") +
             (Source != null ? ", " + Source.rolloffMode + " " + Source.minDistance.ToString("F0") + "-" + Source.maxDistance.ToString("F0") + " m" : "");
+
+        // Realistic distance: how far a sound carries depends on how loud it is. The game's own range
+        // for it is what says that (a sconce's crackle is set to a few metres, a hearth to 10, a troll's
+        // roar to 50). Within it, the inverse-distance law (6 dB each time the distance doubles); past
+        // it, 6 dB more each doubling (12 in all), so a quiet sound still reaches far, just quietly,
+        // instead of being cut off (vanilla) or holding its level for ever. The extra past the range is
+        // a choice for the game, not from a source: what the game's range means is "quiet by here".
+        // A fire's loop isn't: its level already comes from its range (SourceLevel, Area.FireLevelFromRange),
+        // so the extra past it would count the range twice and leave a sconce too quiet.
+        internal float PastRange(float dist)
+        {
+            if (!m_physical || FireLoop || m_origMax <= 0f || dist <= m_origMax) return 1f;
+            return m_origMax / dist;
+        }
 
         // Realistic distance (setting): the game's rolloff (linear and custom curves that reach silence
         // within a few metres, logarithmic ones that stop getting quieter at their range) replaced by
@@ -735,113 +723,52 @@ namespace WiresAcoustics
             SmoothOcclusion(frames, tg, tc, out float g0, out float g1,
                 out float aOcc);
 
-            // direction
-            float x = Mathf.Clamp(m_dx, -1f, 1f), y = Mathf.Clamp(m_dy, -1f, 1f), z = Mathf.Clamp(m_dz, -1f, 1f);
-            float kw = (1f - Width) * Strength; // a wide source gets less direction
-            float lat = Mathf.Abs(x), th = Mathf.Asin(lat);
-            float itd = HeadRadius / Sound * (th + Mathf.Sin(th)) * s_rate * kw; // samples
-            float tL = x > 0f ? itd : 0f, tR = x < 0f ? itd : 0f;          // the far ear hears it later
-            float farA = Mathf.Lerp(1f, 1f - Mathf.Exp(-2f * Mathf.PI * Mathf.Exp(Mathf.Lerp(Mathf.Log(20000f), Mathf.Log(1200f), Mathf.Min(1f, lat * Mathf.Max(1f, kw)))) / s_rate), Mathf.Min(1f, kw));
-            float aL = x > 0f ? farA : 1f, aR = x < 0f ? farA : 1f;
-            // Level and shading amounts: modelled, no measured HRTF data (see the header).
-            float near = 1f + .2f * lat * kw, far = Mathf.Max(.1f, 1f - .5f * lat * kw);
-            float tgL = x > 0f ? far : near, tgR = x < 0f ? far : near;
-            float shade = Mathf.Min(.9f, .65f * Mathf.Clamp01(-z) * kw);
-            bool back = shade > 1e-3f, stereo = Stereo;
-            float aBack = 1f - Mathf.Exp(-2f * Mathf.PI * 2500f / s_rate);
-            // RBJ peaking EQ for the outer-ear notch: narrow (Q 4, like a real pinna notch) and only
-            // well above or below (a wide one dulled everything just below the camera)
-            float f0 = Mathf.Clamp(7500f + 2500f * y, 3000f, s_rate * .45f);
-            float notch = 9f * kw * Mathf.Clamp01((Mathf.Abs(y) - .2f) / .5f); // dB
-            float A = Mathf.Pow(10f, -notch / 40f), w = 2f * Mathf.PI * f0 / s_rate, cw = Mathf.Cos(w), al = Mathf.Sin(w) / (2f * 4f);
-            bool eq = notch > .05f; // level with you: no notch, no filter
-            float a0 = 1f + al / A;
-            float b0 = (1f + al * A) / a0, b1 = -2f * cw / a0, b2 = (1f - al * A) / a0, a1 = -2f * cw / a0, a2 = (1f - al / A) / a0;
-
-            if (!m_primed)
+            Ears ears = Ears.Current;
+            if (ears == null) return;
+            bool stereo = Stereo, start = !m_primed;
+            if (start)
             {
-                // Starting (a new sound, or a pooled one played again): the
-                // delay line and the filters start from this buffer's first sample, not from whatever
-                // they held when they last ran (old audio read out for the first half millisecond:
-                // a tick at the start).
+                // Starting (a new sound, or a pooled one played again): everything starts from this
+                // buffer's first sample, not from whatever it held when it last ran (old audio read out
+                // for the first half millisecond: a tick at the start).
                 m_primed = true;
-                m_delayL = tL; m_delayR = tR; m_gainL = tgL; m_gainR = tgR;
-                float first = 0f;
-                for (int c = 0; c < ch; c++) first += dataArr[c];
-                first /= ch;
-                float v0 = first * g0;
-                for (int r = 0; r < Ring; r++) m_ring[r] = v0;
-                m_mono = m_mono2 = first;
+                m_mono = m_mono2 = (dataArr[0] + dataArr[1]) * .5f; // the HRTF only runs on two channels
                 m_side = m_side2 = stereo ? (dataArr[0] - dataArr[1]) * .5f : 0f;
-                m_headL = m_headR = m_backL = m_backR = v0;
-                m_x1L = m_x2L = m_y1L = m_y2L = m_x1R = m_x2R = m_y1R = m_y2R = v0;
             }
-            float dL0 = m_delayL, dR0 = m_delayR, gL0 = m_gainL, gR0 = m_gainR;
-            m_delayL = tL; m_delayR = tR; m_gainL = tgL; m_gainR = tgR;
+            float[] scratch = t_mono;
+            if (scratch == null || scratch.Length < 2 * frames) t_mono = scratch = new float[2 * frames];
 
             // the loop works on locals and pointers (the audio thread's hot path: no field access, no
             // calls, no bounds checks)
-            int pos = m_pos;
-            float mono = m_mono, mono2 = m_mono2, sideS = m_side, side2 = m_side2, headL = m_headL, headR = m_headR, backL = m_backL, backR = m_backR;
-            float x1L = m_x1L, x2L = m_x2L, y1L = m_y1L, y2L = m_y2L, x1R = m_x1R, x2R = m_x2R, y1R = m_y1R, y2R = m_y2R;
-            float invF = 1f / frames;
-            float dg = g1 - g0, ddL = tL - dL0, ddR = tR - dR0, dgL = tgL - gL0, dgR = tgR - gR0;
-            const int mask = Ring - 1;
+            float mono = m_mono, mono2 = m_mono2, sideS = m_side, side2 = m_side2;
+            float invF = 1f / frames, dg = g1 - g0;
             unsafe
             {
-            fixed (float* data = dataArr, ring = m_ring)
-            for (int i = 0; i < frames; i++)
+            fixed (float* data = dataArr, monos = scratch)
             {
-                float t = i * invF;
-                int k = i * 2; // the HRTF only runs on two channels
-                float m = (data[k] + data[k + 1]) * .5f;
-                float g = g0 + dg * t;
-                // Stereo clips keep their width: the difference between their channels rides on top,
-                // muffled like the rest (mono clips have none).
-                float sw = 0f;
-                if (stereo)
+                float* sides = monos + frames;
+                for (int i = 0, k = 0; i < frames; i++, k += 2)
                 {
+                    float g = g0 + dg * (i * invF);
+                    float m = (data[k] + data[k + 1]) * .5f;
+                    mono += aOcc * (m - mono);
+                    mono2 += aOcc * (mono - mono2);
+                    monos[i] = mono2 * g;
+                    // Stereo clips keep their width: the difference between their channels rides on top,
+                    // muffled like the rest (mono clips have none).
+                    if (!stereo) continue;
                     float side = (data[k] - data[k + 1]) * .5f;
                     sideS += aOcc * (side - sideS);
                     side2 += aOcc * (sideS - side2);
-                    sw = side2 * g;
+                    sides[i] = side2 * g;
                 }
-                mono += aOcc * (m - mono);
-                mono2 += aOcc * (mono - mono2);
-                ring[pos] = mono2 * g;
-
-                float p = pos - (dL0 + ddL * t);
-                int i0 = (int)p; if (i0 > p) i0--;
-                float fr = p - i0;
-                float vL = ring[i0 & mask] * (1f - fr) + ring[(i0 + 1) & mask] * fr;
-                p = pos - (dR0 + ddR * t);
-                i0 = (int)p; if (i0 > p) i0--;
-                fr = p - i0;
-                float vR = ring[i0 & mask] * (1f - fr) + ring[(i0 + 1) & mask] * fr;
-                pos = (pos + 1) & mask;
-
-                headL += aL * (vL - headL); vL = headL;
-                headR += aR * (vR - headR); vR = headR;
-                if (back)
-                {
-                    backL += aBack * (vL - backL); vL -= shade * (vL - backL);
-                    backR += aBack * (vR - backR); vR -= shade * (vR - backR);
-                }
-                float oL = vL, oR = vR;
-                if (eq)
-                {
-                    oL = b0 * vL + b1 * x1L + b2 * x2L - a1 * y1L - a2 * y2L;
-                    oR = b0 * vR + b1 * x1R + b2 * x2R - a1 * y1R - a2 * y2R;
-                }
-                x2L = x1L; x1L = vL; y2L = y1L; y1L = oL;
-                x2R = x1R; x1R = vR; y2R = y1R; y1R = oR;
-                data[k] = oL * (gL0 + dgL * t) + sw;
-                data[k + 1] = oR * (gR0 + dgR * t) - sw;
+                // a wide source gets less direction
+                m_ears.Process(ears, monos, stereo ? sides : null, data, frames,
+                    Mathf.Clamp(m_dx, -1f, 1f), Mathf.Clamp(m_dy, -1f, 1f), Mathf.Clamp(m_dz, -1f, 1f),
+                    Mathf.Clamp01((1f - Width) * Strength), start);
             }
             }
-            m_pos = pos;
-            m_mono = mono; m_mono2 = mono2; m_side = sideS; m_side2 = side2; m_headL = headL; m_headR = headR; m_backL = backL; m_backR = backR;
-            m_x1L = x1L; m_x2L = x2L; m_y1L = y1L; m_y2L = y2L; m_x1R = x1R; m_x2R = x2R; m_y1R = y1R; m_y2R = y2R;
+            m_mono = mono; m_mono2 = mono2; m_side = sideS; m_side2 = side2;
         }
 
         // How far toward the target one buffer moves: a 0.15 s time constant whatever the buffer size.

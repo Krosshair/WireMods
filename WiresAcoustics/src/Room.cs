@@ -219,7 +219,7 @@ namespace WiresAcoustics
                     Hearing.Update(lt);
                     Underwater.Update(Hearing.At, Time.deltaTime);
                     Starts.Step(); // last frame's new sounds: checked, now started
-                    AcousticFilter.Strength = Mathf.Clamp(Plugin.HrtfStrength.Value, 0f, 2f);
+                    AcousticFilter.Strength = Mathf.Clamp01(Plugin.HrtfStrength.Value);
                     long c = Cost.Start();
                     if (r != 0L) rest += c - r;
                     Follow.Step();
