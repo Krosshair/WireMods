@@ -36,18 +36,16 @@ namespace WiresAldr
         private static void Prefix(Pickable __instance, Humanoid character)
         {
             Cleanup();
-            if (Plugin.Enabled == null || !Plugin.Enabled.Value ||
+            if (!Plugin.On ||
                 !Plugin.Forage.Value || __instance == null ||
                 !(character is Player player) || !WorldProgress.Ready ||
                 __instance.m_pickRaiseSkill == Skills.SkillType.None)
                 return;
 
-            if (__instance.GetComponent<Piece>() != null ||
-                __instance.m_itemPrefab == null)
+            if (__instance.GetComponent<Piece>() != null || __instance.m_itemPrefab == null)
                 return; // No cultivated crops.
             WildResource resource = ForageRules.FromItem(__instance.m_itemPrefab);
-            int sourceBiome = BiomeCatalog.FromBiome(
-                Heightmap.FindBiome(__instance.transform.position));
+            int sourceBiome = BiomeCatalog.FromBiome(Heightmap.FindBiome(__instance.transform.position));
             if (!ForageRules.ExistsIn(resource, sourceBiome))
                 return;
 
@@ -61,12 +59,10 @@ namespace WiresAldr
                 Plugin.ThistleSwampBonemassPremium.Value);
             double extra = ForageRules.Total(portions);
             float baseChance = Mathf.Clamp01(
-                player.GetSkillFactor(__instance.m_pickRaiseSkill) *
-                __instance.m_maxLevelBonusChance);
+                player.GetSkillFactor(__instance.m_pickRaiseSkill) * __instance.m_maxLevelBonusChance);
             if (extra > 0)
             {
-                double improved = ProgressionMath.HarvestChance(
-                    baseChance, extra, Plugin.ForageCap.Value);
+                double improved = ProgressionMath.HarvestChance(baseChance, extra, Plugin.ForageCap.Value);
                 _extraChance = Mathf.Clamp01((float)(improved - baseChance));
                 _active = _extraChance > 0;
             }
@@ -94,9 +90,6 @@ namespace WiresAldr
                     " bonus_chance=" + _extraChance.ToString("0.###") +
                     " veteran_extra_items=" + _veteranExtra);
         }
-
-        [HarmonyPostfix]
-        private static void Postfix() => Cleanup();
 
         [HarmonyFinalizer]
         private static Exception Finalizer(Exception __exception)
@@ -161,13 +154,11 @@ namespace WiresAldr
         }
 
         [HarmonyTranspiler]
-        private static IEnumerable<CodeInstruction> Transpiler(
-            IEnumerable<CodeInstruction> source)
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> source)
         {
             MethodInfo vanillaRandom = AccessTools.PropertyGetter(
                 typeof(UnityEngine.Random), nameof(UnityEngine.Random.value));
-            FieldInfo bonusAmount = AccessTools.Field(typeof(Pickable),
-                nameof(Pickable.m_bonusYieldAmount));
+            FieldInfo bonusAmount = AccessTools.Field(typeof(Pickable), nameof(Pickable.m_bonusYieldAmount));
             MethodInfo random = AccessTools.Method(typeof(WildForage), nameof(AdjustRandom));
             MethodInfo bonus = AccessTools.Method(typeof(WildForage), nameof(BonusYield));
             MethodInfo final = AccessTools.Method(typeof(WildForage), nameof(FinalBonus));

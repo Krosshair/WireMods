@@ -14,8 +14,7 @@ namespace WiresAldr
 
         internal static bool IsPlayerBased()
         {
-            return ZoneSystem.instance != null &&
-                ZoneSystem.instance.GetGlobalKey(GlobalKeys.PlayerEvents);
+            return ZoneSystem.instance != null && ZoneSystem.instance.GetGlobalKey(GlobalKeys.PlayerEvents);
         }
 
         // Read-only snapshot, refreshed at most once per second: callers
@@ -48,8 +47,7 @@ namespace WiresAldr
                 if (closest != null) player = closest;
             }
             float now = Time.unscaledTime;
-            if (zone != null && zone == cachedZone && player == cachedPlayer &&
-                now - cachedAt < 1f)
+            if (zone != null && zone == cachedZone && player == cachedPlayer && now - cachedAt < 1f)
                 return cached;
             // Refreshed in place: callers must not retain the result.
             bool[] result = cached;
@@ -64,7 +62,7 @@ namespace WiresAldr
 
         internal static float GetBonus(int biome, float ownBonus, Vector3? location = null)
         {
-            if (Plugin.Enabled == null || !Plugin.Enabled.Value ||
+            if (!Plugin.On ||
                 biome < 0 || biome >= ProgressionMath.BiomeCount)
                 return 0;
             return (float)ProgressionMath.Bonus(
@@ -74,7 +72,6 @@ namespace WiresAldr
         }
 
         internal static bool Ready => ZoneSystem.instance != null &&
-            (ZNet.instance == null || ZNet.instance.IsServer() ||
-             Player.m_localPlayer != null);
+            (ZNet.instance == null || ZNet.instance.IsServer() || Player.m_localPlayer != null);
     }
 }

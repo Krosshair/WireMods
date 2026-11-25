@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 
@@ -30,8 +28,7 @@ namespace WiresAldr
             {
                 if (__instance == null || hit == null || attacker == null ||
                     __instance.m_levelUpSkillOnBreak != Skills.SkillType.BloodMagic ||
-                    Plugin.Enabled == null || !Plugin.Enabled.Value ||
-                    !Plugin.XpEnabled.Value || !Plugin.Rewards.Value ||
+                    !Plugin.RewardsOn ||
                     attacker.IsBoss() || attacker.IsTamed() || attacker.IsPlayer()) return;
                 BaseAI ai = attacker.GetBaseAI();
                 if (ai == null) return;

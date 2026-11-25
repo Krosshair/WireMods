@@ -25,8 +25,7 @@ namespace WiresAldr
             return fish;
         }
 
-        internal static bool Enabled => Plugin.Enabled != null &&
-            Plugin.Enabled.Value && Plugin.FishYields.Value &&
+        internal static bool Enabled => Plugin.On && Plugin.FishYields.Value &&
             WorldProgress.Ready;
 
         internal static int SingleBiome(Heightmap.Biome mask)
@@ -88,14 +87,12 @@ namespace WiresAldr
 
                     // Never bypass the original spawner's terrain, bait,
                     // environment, depth, daylight or other spawn restrictions.
-                    spawn.m_spawnChance = Mathf.Min(100f,
-                        spawn.m_spawnChance * (1f + bonus / 100f));
+                    spawn.m_spawnChance = Mathf.Min(100f, spawn.m_spawnChance * (1f + bonus / 100f));
                     spawn.m_spawnInterval /= 1f + bonus / 100f;
                     // Population cap is an integer in vanilla. At least one
                     // additional fish slot is needed for progress to matter.
                     spawn.m_maxSpawned = Mathf.Min(100, spawn.m_maxSpawned +
-                        Mathf.Max(1, Mathf.RoundToInt(
-                            spawn.m_maxSpawned * bonus / 100f)));
+                        Mathf.Max(1, Mathf.RoundToInt(spawn.m_maxSpawned * bonus / 100f)));
                 }
             }
 
@@ -124,8 +121,7 @@ namespace WiresAldr
 
         // Purely modifies the existing native fish roll. Valheim itself
         // sets the spawned Fish's ItemDrop quality from the rolled level.
-        internal static float QualityChance(SpawnSystem.SpawnData spawn,
-            float vanillaChance)
+        internal static float QualityChance(SpawnSystem.SpawnData spawn, float vanillaChance)
         {
             if (!Enabled || !Plugin.FishQualityBoost.Value || spawn == null || !IsFish(spawn.m_prefab) ||
                 spawn.m_maxLevel <= 1) return vanillaChance;

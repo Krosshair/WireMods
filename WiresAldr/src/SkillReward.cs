@@ -1,5 +1,3 @@
-using UnityEngine;
-
 namespace WiresAldr
 {
     // Flat bonus XP for a real accomplishment, in vanilla XP units (a weapon
@@ -11,12 +9,11 @@ namespace WiresAldr
         // True while a flat reward is being paid (weapon transfer skips it).
         internal static bool Granting;
 
-        internal static void Grant(Player player, Skills.SkillType type,
-            float xp, string reason)
+        internal static void Grant(Player player, Skills.SkillType type, float xp, string reason)
         {
+            xp *= Plugin.RewardsStrength.Value / 100f;
             if (player == null || player != Player.m_localPlayer ||
-                Plugin.Enabled == null || !Plugin.Enabled.Value ||
-                !Plugin.XpEnabled.Value || !Plugin.Rewards.Value ||
+                !Plugin.RewardsOn ||
                 type == Skills.SkillType.None || xp <= 0f) return;
             if (AldrDiagnostics.Active)
                 AldrDiagnostics.Sample("REWARD_XP", "skill=" + type +

@@ -23,8 +23,8 @@ namespace WiresAldr
             AccessTools.FieldRefAccess<SkillsDialog, List<GameObject>>("m_elements");
 
         private static bool Active =>
-            Plugin.ShowSkillBonuses != null && Plugin.ShowSkillBonuses.Value &&
-            Plugin.Enabled.Value && Plugin.XpEnabled.Value;
+            Plugin.ShowSkillBonuses.Value &&
+            Plugin.XpOn;
 
         // Location, Forsaken share and Expedition, in percent.
         internal static double GlobalPercent(Player p)

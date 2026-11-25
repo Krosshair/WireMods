@@ -15,9 +15,8 @@ namespace WiresAldr
         [HarmonyPostfix]
         private static void Postfix(ref List<GameObject> __result)
         {
-            if (!NaturalDropSourceScope.IsNaturalSource ||
-                __result == null || __result.Count == 0 ||
-                Plugin.Enabled == null || !Plugin.Enabled.Value ||
+            if (!NaturalDropSourceScope.IsNaturalSource || __result == null || __result.Count == 0 ||
+                !Plugin.On ||
                 !Plugin.Materials.Value || !WorldProgress.Ready)
                 return;
 
@@ -35,8 +34,7 @@ namespace WiresAldr
                 GlobalResource shared = BiomeCatalog.SharedMaterial(prefab);
                 if (shared != GlobalResource.None)
                 {
-                    percent = GlobalYieldRules.Total(
-                        GlobalYieldRules.Parts(shared, defeated, settings));
+                    percent = GlobalYieldRules.Total(GlobalYieldRules.Parts(shared, defeated, settings));
                 }
                 else
                 {

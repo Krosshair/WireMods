@@ -164,8 +164,7 @@ namespace WiresAldr
                 defeated == null || defeated.Length != ProgressionMath.BiomeCount)
                 return parts;
 
-            parts.AddRange(BonusBreakdown.ForBiome(home, defeated,
-                ownBase, laterFraction, skippedFraction));
+            parts.AddRange(BonusBreakdown.ForBiome(home, defeated, ownBase, laterFraction, skippedFraction));
 
             // More dangerous gathering locations add separate, earned
             // contributions without changing the home resource's rules.
@@ -200,12 +199,10 @@ namespace WiresAldr
             var merged = new List<BonusBreakdown.Portion>();
             foreach (BonusBreakdown.Portion p in parts)
             {
-                if (merged.Count > 0 &&
-                    merged[merged.Count - 1].BossTier == p.BossTier)
+                if (merged.Count > 0 && merged[merged.Count - 1].BossTier == p.BossTier)
                 {
                     int index = merged.Count - 1;
-                    merged[index] = new BonusBreakdown.Portion(
-                        p.BossTier, merged[index].Percent + p.Percent);
+                    merged[index] = new BonusBreakdown.Portion(p.BossTier, merged[index].Percent + p.Percent);
                 }
                 else merged.Add(p);
             }

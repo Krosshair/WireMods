@@ -1,12 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
 using BepInEx;
 using BepInEx.Logging;
-using HarmonyLib;
-using UnityEngine;
 
 namespace WiresAldr
 {
@@ -72,16 +69,14 @@ namespace WiresAldr
             lock (Sync) { Counts.TryGetValue(category, out n); Counts[category] = ++n; }
             if (n <= 5 || n % 20 == 0) Log(category, "#" + n + " " + message);
         }
-        internal static void Skill(Skills.SkillType skill, float original,
-            float final, Player player)
+        internal static void Skill(Skills.SkillType skill, float original, float final, Player player)
         {
             if (!Active || !player) return;
             var name = skill.ToString();
             int n;
             lock (Sync) { Skills.TryGetValue(name, out n); Skills[name] = ++n; }
             if (n <= 3 || n == 10 || n % 50 == 0)
-                Log("XP_EVENT", "skill=" + name + " #" + n +
-                    " initial=" + original.ToString("0.####") +
+                Log("XP_EVENT", "skill=" + name + " #" + n + " initial=" + original.ToString("0.####") +
                     " modified=" + final.ToString("0.####") +
                     " factor=" + (final / Math.Max(0.00001f, original)).ToString("0.###") +
                     "x level=" + player.GetSkillLevel(skill).ToString("0.##") +
@@ -104,8 +99,7 @@ namespace WiresAldr
                 int local = DynamicExperience.BiomeTier(player.GetCurrentBiome());
                 double xp = ExperienceMath.BiomeAndProgress(local, tier,
                     Plugin.XpProgressionStrength.Value, Plugin.XpProgressShare.Value / 100.0);
-                Log("WORLD_READY", "source=" + origin +
-                    " biome=" + player.GetCurrentBiome() +
+                Log("WORLD_READY", "source=" + origin + " biome=" + player.GetCurrentBiome() +
                     " biomeTier=" + local + " bossTier=" + tier +
                     " bossKeys=[" + defeated + "]" +
                     " playerBasedRaids=" + WorldProgress.IsPlayerBased() +
@@ -122,7 +116,12 @@ namespace WiresAldr
                 " fishing=" + Plugin.FishYields.Value +
                 " xp=" + Plugin.XpEnabled.Value +
                 " challenge=" + Plugin.XpChallenge.Value + " rewards=" + Plugin.Rewards.Value +
-                " expedition=" + Plugin.ExpeditionEnabled.Value);
+                " expedition=" + Plugin.ExpeditionEnabled.Value +
+                " location=" + Plugin.LocationXp.Value + " catchUp=" + Plugin.CatchUp.Value +
+                " hitXp=" + Plugin.HitXp.Value + " sleep=" + Plugin.SleepBonusOn.Value +
+                " starLimits=" + Plugin.StarLimits.Value + " nightStar=" + Plugin.NightStar.Value +
+                " groupLeaders=" + Plugin.GroupLeaders.Value + " starLooks=" + Plugin.StarLooksOn.Value +
+                " durability=" + Plugin.DurabilityOn.Value + " knockback=" + Plugin.KnockbackOn.Value);
             Log("CONFIG", "biomeXp=" + Plugin.XpProgressionStrength.Value +
                 "% catchUp=" + Plugin.XpCatchUpBonus.Value +
                 "% weaponTransfer=" + Plugin.XpWeaponTransfer.Value +
@@ -153,8 +152,7 @@ namespace WiresAldr
             string events = "";
             lock (Sync)
                 foreach (var entry in Counts)
-                    events += (events.Length > 0 ? ", " : "") +
-                        entry.Key + "=" + entry.Value;
+                    events += (events.Length > 0 ? ", " : "") + entry.Key + "=" + entry.Value;
             Log("SUMMARY", reason + " XP_skill_types_seen=" + Skills.Count +
                 " events={" + events + "} unobserved mechanics remain UNTESTED");
             Flush();

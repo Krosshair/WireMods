@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -16,18 +17,19 @@ namespace WiresAldr
         // Bosses defeated from this biome's own on (biome tiers 0 Meadows .. 7 Deep North).
         internal static int Extra(int tier, Vector3? location = null)
         {
-            if (!StarRules.Enabled || tier < 0 || tier >= ProgressionMath.BiomeCount) return 0;
+            if (!StarRules.Enabled || !Plugin.StarLimits.Value || tier < 0 || tier >= ProgressionMath.BiomeCount) return 0;
             bool[] keys = WorldProgress.ReadKeys(location);
             int n = 0;
             for (int i = tier; i < keys.Length; i++) if (keys[i]) n++;
-            return n;
+            // the small bit keeps rounding errors from losing a star
+            return Mathf.FloorToInt(n * Plugin.StarLimitStrength.Value / 100f + 0.001f);
         }
 
         // The cap is soft: at night one more star is allowed (still its own roll, like every star).
         internal static int Raise(int tier, bool interior = false, Vector3? location = null)
         {
             if (!StarRules.Enabled || tier < 0) return 0;
-            return Extra(tier, location) + (!interior && EnvMan.IsNight() ? 1 : 0);
+            return Extra(tier, location) + (Plugin.NightStar.Value && !interior && EnvMan.IsNight() ? 1 : 0);
         }
     }
 
@@ -53,11 +55,10 @@ namespace WiresAldr
         private static void Postfix(SpawnSystem.SpawnData critter)
         {
             Leaders.After(critter);
-            StarRules.ActiveSpawnPoint = null;
         }
 
         [HarmonyFinalizer]
-        private static System.Exception Finalizer(SpawnSystem.SpawnData critter, int __state, System.Exception __exception)
+        private static Exception Finalizer(SpawnSystem.SpawnData critter, int __state, Exception __exception)
         {
             if (critter != null && __state > 0) critter.m_maxLevel -= __state;
             StarRules.ActiveSpawnPoint = null;
@@ -85,7 +86,7 @@ namespace WiresAldr
         }
 
         [HarmonyFinalizer]
-        private static System.Exception Finalizer(SpawnArea __instance, int __state, System.Exception __exception)
+        private static Exception Finalizer(SpawnArea __instance, int __state, Exception __exception)
         {
             if (__state > 0 && __instance != null && __instance.m_prefabs != null)
                 foreach (SpawnArea.SpawnData s in __instance.m_prefabs)
@@ -112,7 +113,7 @@ namespace WiresAldr
         }
 
         [HarmonyFinalizer]
-        private static System.Exception Finalizer(CreatureSpawner __instance, int __state, System.Exception __exception)
+        private static Exception Finalizer(CreatureSpawner __instance, int __state, Exception __exception)
         {
             if (__instance != null && __state > 0) __instance.m_maxLevel -= __state;
             return __exception;
@@ -133,18 +134,18 @@ namespace WiresAldr
         private static int s_characterCountBeforeSpawn;
 
         private static bool s_looked;
-        private static System.Func<Character, float> s_score;
+        private static Func<Character, float> s_score;
 
         // Wire's AI's public PackLeaderScore, if that version is installed.
-        private static System.Func<Character, float> Score
+        private static Func<Character, float> Score
         {
             get
             {
                 if (s_looked) return s_score;
                 s_looked = true;
-                System.Type t = AccessTools.TypeByName("WiresAI.WiresAIPlugin");
+                Type t = AccessTools.TypeByName("WiresAI.WiresAIPlugin");
                 MethodInfo m = t?.GetMethod("PackLeaderScore", BindingFlags.Public | BindingFlags.Static);
-                if (m != null) s_score = (System.Func<Character, float>)System.Delegate.CreateDelegate(typeof(System.Func<Character, float>), m);
+                if (m != null) s_score = (Func<Character, float>)Delegate.CreateDelegate(typeof(Func<Character, float>), m);
                 return s_score;
             }
         }
@@ -153,7 +154,7 @@ namespace WiresAldr
 
         internal static void Before(SpawnSystem.SpawnData critter, Vector3 spawnPoint)
         {
-            s_counts = StarRules.Enabled &&
+            s_counts = StarRules.Enabled && Plugin.GroupLeaders.Value &&
                 (critter.m_levelUpMinCenterDistance <= 0f ||
                  spawnPoint.magnitude > critter.m_levelUpMinCenterDistance);
             if (s_counts)
@@ -179,7 +180,7 @@ namespace WiresAldr
             if (StarRules.Enabled && s_members.Count >= 2)
             {
                 Character leader = s_members[0];
-                System.Func<Character, float> score = Score;
+                Func<Character, float> score = Score;
                 if (score != null)
                 {
                     float best = float.NegativeInfinity;
@@ -207,7 +208,7 @@ namespace WiresAldr
     internal static class LeadersListDone
     {
         [HarmonyFinalizer]
-        private static System.Exception Finalizer(System.Exception __exception)
+        private static Exception Finalizer(Exception __exception)
         {
             Leaders.End();
             return __exception;

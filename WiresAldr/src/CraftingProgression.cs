@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
@@ -28,24 +27,20 @@ namespace WiresAldr
         }
 
         [HarmonyPrefix]
-        private static void Prefix(InventoryGui __instance, Player player,
-            out CraftState __state)
+        private static void Prefix(InventoryGui __instance, Player player, out CraftState __state)
         {
             __state = default(CraftState);
             if (player == null || player != Player.m_localPlayer ||
                 __instance == null || Game.instance == null ||
-                Plugin.Enabled == null || !Plugin.Enabled.Value ||
-                !Plugin.XpEnabled.Value || !Plugin.Rewards.Value) return;
+                !Plugin.RewardsOn) return;
             Recipe recipe = RecipeField(__instance);
-            if (recipe == null || recipe.m_item == null ||
-                recipe.m_item.m_itemData == null ||
+            if (recipe == null || recipe.m_item == null || recipe.m_item.m_itemData == null ||
                 recipe.m_item.m_itemData.m_shared == null ||
                 recipe.m_craftingStation == null ||
                 recipe.m_craftingStation.m_craftingSkill == Skills.SkillType.None)
                 return;
             PlayerProfile profile = Game.instance.GetPlayerProfile();
-            if (profile == null || profile.m_playerStats == null ||
-                profile.m_playerStats.Length == 0 ||
+            if (profile == null || profile.m_playerStats == null || profile.m_playerStats.Length == 0 ||
                 profile.m_playerStats[0] == null) return;
 
             __state.Player = player;
@@ -64,8 +59,7 @@ namespace WiresAldr
             {
                 var inventory = player.GetInventory();
                 if (inventory != null)
-                    __state.PreviousItems = new HashSet<ItemDrop.ItemData>(
-                        inventory.GetAllItems());
+                    __state.PreviousItems = new HashSet<ItemDrop.ItemData>(inventory.GetAllItems());
             }
         }
 
@@ -73,8 +67,7 @@ namespace WiresAldr
         private static void Postfix(CraftState __state)
         {
             Player player = __state.Player;
-            if (!player || Game.instance == null ||
-                string.IsNullOrEmpty(__state.ItemName)) return;
+            if (!player || Game.instance == null || string.IsNullOrEmpty(__state.ItemName)) return;
             if (__state.Upgrade)
             {
                 // Vanilla removes the old item and creates a new one.
@@ -85,8 +78,7 @@ namespace WiresAldr
                 if (__state.PreviousItems == null) return;
                 foreach (var item in player.GetInventory().GetAllItems())
                 {
-                    if (item == null || __state.PreviousItems.Contains(item) ||
-                        item.m_shared == null ||
+                    if (item == null || __state.PreviousItems.Contains(item) || item.m_shared == null ||
                         item.m_shared.m_name != __state.ItemName ||
                         item.m_quality <= __state.PreviousQuality)
                         continue;
@@ -104,15 +96,12 @@ namespace WiresAldr
 
             // The permanent vanilla crafted-item stat changes only on
             // successful new crafts, not upgrades. No new history file.
-            if (__state.PreviousCraftCount >= 1f ||
-                __state.IngredientTypes < 2) return;
+            if (__state.PreviousCraftCount >= 1f || __state.IngredientTypes < 2) return;
             var profile = Game.instance.GetPlayerProfile();
-            if (profile == null || profile.m_playerStats == null ||
-                profile.m_playerStats.Length == 0 ||
+            if (profile == null || profile.m_playerStats == null || profile.m_playerStats.Length == 0 ||
                 profile.m_playerStats[0] == null) return;
             float after;
-            profile.m_playerStats[0].m_itemCraftStats.TryGetValue(
-                __state.ItemName, out after);
+            profile.m_playerStats[0].m_itemCraftStats.TryGetValue(__state.ItemName, out after);
             if (after <= __state.PreviousCraftCount) return;
             // First craft of a multi-ingredient item: 1.5 XP + 0.5 per ingredient type (max 5).
             SkillReward.Grant(player, __state.Skill,

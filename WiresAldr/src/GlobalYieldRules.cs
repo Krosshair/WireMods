@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 
 namespace WiresAldr
@@ -67,8 +66,7 @@ namespace WiresAldr
             return result;
         }
 
-        private static void Add(List<BonusBreakdown.Portion> parts,
-            bool[] killed, int boss, double percent)
+        private static void Add(List<BonusBreakdown.Portion> parts, bool[] killed, int boss, double percent)
         {
             if (killed[boss] && percent > 0)
                 parts.Add(new BonusBreakdown.Portion(boss, percent));

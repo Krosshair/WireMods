@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
@@ -8,19 +10,18 @@ namespace WiresAldr
     // No target categories, item tags, extra updates, or independent wear timers.
     internal static class ImpactDurability
     {
-        internal static bool On => Plugin.Enabled != null && Plugin.Enabled.Value;
-        internal static float Jitter() => UnityEngine.Random.Range(0.88f, 1.12f);
+        internal static bool On => Plugin.On && Plugin.DurabilityOn.Value;
+        private static float Jitter() => UnityEngine.Random.Range(0.88f, 1.12f);
         // Offensive equipment should vary very little around vanilla wear.
         private static float UseJitter() => UnityEngine.Random.Range(0.98f, 1.02f);
-        internal static bool Wears(ItemDrop.ItemData item) =>
-            item != null && item.m_shared != null && item.m_shared.m_useDurability &&
-            item.m_durability > 0f;
+        private static bool Wears(ItemDrop.ItemData item) =>
+            item != null && item.m_shared != null && item.m_shared.m_useDurability && item.m_durability > 0f;
 
-        // 50% of maximum health lost in a hit ~50 total durability across armor,
-        // before the small random variation. Caps prevent extreme one-hit wear.
-        internal static float WearFromHit(float damage, float maxHealth, float cap) =>
-            Mathf.Min(cap, 100f * Mathf.Max(0f, damage) / Mathf.Max(1f, maxHealth)) *
-            Jitter() * Game.m_durabilityRate;
+        // points = what a hit for the whole maximum health costs, before the
+        // small random variation. The cap prevents extreme one-hit wear.
+        private static float WearFromHit(float damage, float maxHealth, float points, float cap) =>
+            Mathf.Min(cap, points * Mathf.Max(0f, damage) / Mathf.Max(1f, maxHealth)) *
+            Jitter() * Game.m_durabilityRate * Plugin.DurabilityStrength.Value / 100f;
 
         private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData> Chest =
             AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData>("m_chestItem");
@@ -32,7 +33,7 @@ namespace WiresAldr
             AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData>("m_shoulderItem");
 
         // Replace vanilla's one-random-piece, full-damage deduction.
-        // All armor shares one roll; the cape takes only 2%, not a full share.
+        // All armor shares one roll; the cape takes only a little of it, not a full share.
         [HarmonyPatch(typeof(Player), "DamageArmorDurability")]
         private static class Armor
         {
@@ -42,7 +43,7 @@ namespace WiresAldr
                 if (__instance == null || hit == null) return false;
                 float damage = hit.GetTotalPhysicalDamage() + hit.GetTotalElementalDamage();
                 if (damage <= 0f) return false;
-                float total = WearFromHit(damage, __instance.GetMaxHealth(), 65f);
+                float total = WearFromHit(damage, __instance.GetMaxHealth(), Plugin.ArmorWear.Value, Plugin.ArmorWearCap.Value);
                 ItemDrop.ItemData chest = Chest(__instance), legs = Legs(__instance),
                     helmet = Helmet(__instance), cape = Cape(__instance);
                 float a = Wears(chest) ? UnityEngine.Random.Range(0.75f, 1.25f) : 0f;
@@ -51,9 +52,9 @@ namespace WiresAldr
                 float sum = a + b + c;
                 bool hasMainArmor = sum > 0f;
                 // With only a cape equipped, still give it modest wear instead
-                // of silently losing 98% of the budget; never treat it as a
+                // of silently losing most of the budget; never treat it as a
                 // full chest/helmet substitute.
-                float capeWear = Wears(cape) ? (hasMainArmor ? total * 0.02f
+                float capeWear = Wears(cape) ? (hasMainArmor ? total * Plugin.CapeShare.Value / 100f
                     : Mathf.Min(3f * Game.m_durabilityRate, total * 0.10f)) : 0f;
                 float main = total - capeWear;
                 if (sum > 0f)
@@ -98,10 +99,9 @@ namespace WiresAldr
             {
                 ItemDrop.ItemData item = __state.Item;
                 if (item == null || item.m_durability >= __state.Before) return;
-                // Blocking a 50%-health-strength hit costs about 22.5 points,
-                // regardless of whether a shield or weapon did the blocking.
-                float cost = Mathf.Min(35f * Game.m_durabilityRate,
-                    WearFromHit(__state.Incoming, __state.MaxHealth, 100f) * 0.45f);
+                // The same for a shield and a weapon that did the blocking.
+                float cost = Mathf.Min(Plugin.BlockWearCap.Value * Game.m_durabilityRate * Plugin.DurabilityStrength.Value / 100f,
+                    WearFromHit(__state.Incoming, __state.MaxHealth, Plugin.BlockWear.Value, Plugin.BlockWear.Value));
                 item.m_durability = Mathf.Max(0f, __state.Before - cost);
             }
         }
@@ -156,33 +156,27 @@ namespace WiresAldr
             }
         }
 
-        [HarmonyPatch(typeof(Attack), "DoMeleeAttack")]
-        private static class Melee
+        [HarmonyPatch]
+        private static class Use
         {
+            private static IEnumerable<MethodBase> TargetMethods() =>
+                AttackMethods.Of("DoMeleeAttack", "DoAreaAttack", "ProjectileAttackTriggered", "DoNonAttack");
             private static void Prefix(Attack __instance, out AttackState __state) => Begin(__instance, out __state);
             private static void Postfix(AttackState __state) => Finish(__state);
             private static Exception Finalizer(Exception __exception) { s_inAction = false; return __exception; }
         }
-        [HarmonyPatch(typeof(Attack), "DoAreaAttack")]
-        private static class Area
+    }
+
+    // The attacks a patch covers, as far as this game version has them.
+    internal static class AttackMethods
+    {
+        internal static IEnumerable<MethodBase> Of(params string[] names)
         {
-            private static void Prefix(Attack __instance, out AttackState __state) => Begin(__instance, out __state);
-            private static void Postfix(AttackState __state) => Finish(__state);
-            private static Exception Finalizer(Exception __exception) { s_inAction = false; return __exception; }
-        }
-        [HarmonyPatch(typeof(Attack), "ProjectileAttackTriggered")]
-        private static class Projectile
-        {
-            private static void Prefix(Attack __instance, out AttackState __state) => Begin(__instance, out __state);
-            private static void Postfix(AttackState __state) => Finish(__state);
-            private static Exception Finalizer(Exception __exception) { s_inAction = false; return __exception; }
-        }
-        [HarmonyPatch(typeof(Attack), "DoNonAttack")]
-        private static class NonAttack
-        {
-            private static void Prefix(Attack __instance, out AttackState __state) => Begin(__instance, out __state);
-            private static void Postfix(AttackState __state) => Finish(__state);
-            private static Exception Finalizer(Exception __exception) { s_inAction = false; return __exception; }
+            foreach (string name in names)
+            {
+                MethodBase method = AccessTools.Method(typeof(Attack), name);
+                if (method != null) yield return method;
+            }
         }
     }
 }

@@ -58,9 +58,9 @@ namespace WiresAldr
         private static readonly float[] TierPace = { 0.8f, 0.8f, 0.9f, 1f, 1.1f, 1.2f, 1.3f, 1.4f, 1.5f, 1.6f };
         private static float Pace => TierPace[Mathf.Clamp(biomeTier, 0, TierPace.Length - 1)];
 
-        private static float PerMinute => Plugin.VenturePerKm != null ? Plugin.VenturePerKm.Value : 0f;
-        internal static bool Enabled => Plugin.ExpeditionEnabled != null && Plugin.ExpeditionEnabled.Value &&
-            Plugin.Enabled != null && Plugin.Enabled.Value && Plugin.XpEnabled.Value;
+        private static float PerMinute => Plugin.VenturePerKm.Value;
+        internal static bool Enabled => Plugin.ExpeditionEnabled.Value &&
+            Plugin.XpOn;
         internal static bool AtBase => atBase;
         internal static float Minutes => clock;
         // Bonus % = linear x T + curve x T^1.5.

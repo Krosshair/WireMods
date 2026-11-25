@@ -37,6 +37,7 @@ namespace WiresAldr
             CheckOne("Area durability", AccessTools.Method(typeof(Attack), "DoAreaAttack"), "ImpactDurability+");
             CheckOne("Projectile durability", AccessTools.Method(typeof(Attack), "ProjectileAttackTriggered"), "ImpactDurability+");
             CheckOne("Non-attack durability", AccessTools.Method(typeof(Attack), "DoNonAttack"), "ImpactDurability+");
+            CheckOne("Knockback", AccessTools.Method(typeof(Character), "RPC_Damage"), "Knockback+");
             int installed = 0;
             foreach (MethodBase method in Harmony.GetAllPatchedMethods())
             {

@@ -38,8 +38,7 @@ namespace WiresAldr
 
                 double added = boss == tier
                     ? baseBonus
-                    : baseBonus * Math.Pow(laterFraction, boss - tier)
-                        * (ownDefeated ? 1 : skippedFraction);
+                    : baseBonus * Math.Pow(laterFraction, boss - tier) * (ownDefeated ? 1 : skippedFraction);
                 if (added > 0)
                     parts.Add(new Portion(boss, added));
             }
@@ -78,10 +77,8 @@ namespace WiresAldr
             {
                 double shownParts = 0;
                 foreach (Portion part in parts)
-                    shownParts += Math.Round(part.Percent, decimals,
-                        MidpointRounding.AwayFromZero);
-                double shownTotal = Math.Round(total, decimals,
-                    MidpointRounding.AwayFromZero);
+                    shownParts += Math.Round(part.Percent, decimals, MidpointRounding.AwayFromZero);
+                double shownTotal = Math.Round(total, decimals, MidpointRounding.AwayFromZero);
                 if (Math.Abs(shownParts - shownTotal) < 0.00000001)
                     return decimals;
             }

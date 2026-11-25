@@ -17,16 +17,14 @@ namespace WiresAldr
             double total = own ? ownBonus : 0;
             for (int i = tier + 1; i < BiomeCount; ++i)
                 if (defeated[i])
-                    total += ownBonus * Math.Pow(laterFraction, i - tier)
-                        * (own ? 1 : skippedFraction);
+                    total += ownBonus * Math.Pow(laterFraction, i - tier) * (own ? 1 : skippedFraction);
             return total;
         }
 
         internal static double HarvestChance(double nativeChance, double extraPP, double capPP)
         {
             nativeChance = Clamp(nativeChance, 0, 1);
-            return Math.Min(Clamp(capPP / 100.0, 0, 1),
-                nativeChance + Math.Max(0, extraPP / 100.0));
+            return Math.Min(Clamp(capPP / 100.0, 0, 1), nativeChance + Math.Max(0, extraPP / 100.0));
         }
 
         internal static int ExtraCount(int baseCount, double percent, double random)

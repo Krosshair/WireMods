@@ -72,8 +72,7 @@ namespace WiresAldr
 
         private static bool IsNaturalObject(object value)
         {
-            if (value is MineRock5 || value is MineRock ||
-                value is TreeBase || value is TreeLog)
+            if (value is MineRock5 || value is MineRock || value is TreeBase || value is TreeLog)
                 return true;
 
             DropOnDestroyed destroyed = value as DropOnDestroyed;
@@ -81,8 +80,7 @@ namespace WiresAldr
                 return false;
 
             GameObject source = destroyed.gameObject;
-            if (source == null ||
-                source.GetComponent<Piece>() != null ||
+            if (source == null || source.GetComponent<Piece>() != null ||
                 source.GetComponent<Character>() != null ||
                 source.GetComponent<Container>() != null)
                 return false;

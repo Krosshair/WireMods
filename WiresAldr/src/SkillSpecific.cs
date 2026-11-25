@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
@@ -77,7 +78,7 @@ namespace WiresAldr
                    s == Skills.SkillType.Bows || s == Skills.SkillType.Crossbows ||
                    s == Skills.SkillType.Unarmed || s == Skills.SkillType.ElementalMagic;
         }
-        private static float ProductionModifier(Player player, Skills.SkillType skill)
+        private static float ProductionModifier(Skills.SkillType skill)
         {
             // Recipe complexity: +2.5% per ingredient type (max 12%), +3.5% for
             // upgrades. First crafts are rewarded by CraftingProgression.
@@ -90,7 +91,7 @@ namespace WiresAldr
         }
         internal static float Multiplier(Player player, Skills.SkillType skill)
         {
-            float bonus = ProductionModifier(player, skill);
+            float bonus = ProductionModifier(skill);
             if (skill == Skills.SkillType.Sneak)
             {
                 // Vanilla awards factor 1 when sneaking in range of unaware hostiles
@@ -153,7 +154,6 @@ namespace WiresAldr
                     }
                 }
             }
-            private static void Postfix(float __state) { cookingFood = __state; }
             private static Exception Finalizer(Exception __exception, float __state) { cookingFood = __state; return __exception; }
         }
 
@@ -235,30 +235,12 @@ namespace WiresAldr
             DodgeAttacker = state.PreviousDodgeAttacker;
         }
 
-        [HarmonyPatch(typeof(Attack), "DoMeleeAttack")]
-        private static class MeleeScope
+        [HarmonyPatch]
+        private static class AttackScope
         {
-            [HarmonyPrefix]
-            private static void Prefix(Attack __instance, out AttackState __state)
-                => __state = EnterAttack(__instance);
-            [HarmonyPostfix]
-            private static void Postfix(AttackState __state) => LeaveAttack(__state);
-            [HarmonyFinalizer]
-            private static Exception Finalizer(Exception __exception, AttackState __state)
-            { LeaveAttack(__state); return __exception; }
-        }
-
-        [HarmonyPatch(typeof(Attack), "DoAreaAttack")]
-        private static class AreaScope
-        {
-            [HarmonyPrefix]
-            private static void Prefix(Attack __instance, out AttackState __state)
-                => __state = EnterAttack(__instance);
-            [HarmonyPostfix]
-            private static void Postfix(AttackState __state) => LeaveAttack(__state);
-            [HarmonyFinalizer]
-            private static Exception Finalizer(Exception __exception, AttackState __state)
-            { LeaveAttack(__state); return __exception; }
+            private static IEnumerable<MethodBase> TargetMethods() => AttackMethods.Of("DoMeleeAttack", "DoAreaAttack");
+            private static void Prefix(Attack __instance, out AttackState __state) => __state = EnterAttack(__instance);
+            private static Exception Finalizer(Exception __exception, AttackState __state) { LeaveAttack(__state); return __exception; }
         }
         [HarmonyPatch(typeof(InventoryGui), "DoCrafting")]
         private static class CraftingScope
@@ -272,11 +254,9 @@ namespace WiresAldr
                     ? FoodValue(activeRecipe.m_item.m_itemData.m_shared) : 0f;
                 craftModifier = activeRecipe == null ? 0f :
                     Mathf.Clamp(IngredientTypes(activeRecipe.m_resources) * Plugin.XpRecipeIngredient.Value / 100f, 0f, 0.12f);
-                if (activeRecipe != null &&
-                    UpgradeItem(__instance) != null)
+                if (activeRecipe != null && UpgradeItem(__instance) != null)
                     craftModifier += 0.035f;
             }
-            private static void Postfix(Prev __state) { activeRecipe = __state.Recipe; craftModifier = __state.Modifier; cookingFood = __state.Food; }
             private static Exception Finalizer(Exception __exception, Prev __state)
             { activeRecipe = __state.Recipe; craftModifier = __state.Modifier; cookingFood = __state.Food; return __exception; }
         }
@@ -292,7 +272,6 @@ namespace WiresAldr
                 if (tier >= 0 && biome >= tier)
                     forageModifier = Math.Min(0.10f, tier * 0.015f + (biome > tier ? 0.025f : 0f));
             }
-            private static void Postfix(float __state) { forageModifier = __state; }
             private static Exception Finalizer(Exception __exception, float __state)
             { forageModifier = __state; return __exception; }
         }
@@ -301,7 +280,7 @@ namespace WiresAldr
         {
             private static void Postfix(Player __instance, Piece piece, bool __result)
             {
-                if (__instance != Player.m_localPlayer || !__result || piece == null || Plugin.Enabled == null || !Plugin.Enabled.Value || !Plugin.XpEnabled.Value || !Plugin.XpChallenge.Value) return;
+                if (__instance != Player.m_localPlayer || !__result || piece == null || !Plugin.ChallengeOn) return;
                 // Consumed only on the immediately following skill award.
                 building = true; buildTime = Time.time;
                 buildModifier = Mathf.Min(0.12f, IngredientTypes(piece.m_resources) * Plugin.XpRecipeIngredient.Value / 100f);

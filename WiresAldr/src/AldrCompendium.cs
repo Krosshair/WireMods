@@ -14,8 +14,7 @@ namespace WiresAldr
     {
         private static readonly AccessTools.FieldRef<TextsDialog,
             List<TextsDialog.TextInfo>> TextEntries =
-            AccessTools.FieldRefAccess<TextsDialog,
-                List<TextsDialog.TextInfo>>("m_texts");
+            AccessTools.FieldRefAccess<TextsDialog, List<TextsDialog.TextInfo>>("m_texts");
 
         private static readonly string[] Biomes =
         {
@@ -64,19 +63,17 @@ namespace WiresAldr
         [HarmonyPostfix]
         private static void Postfix(TextsDialog __instance)
         {
-            if (__instance == null || Plugin.Enabled == null)
+            if (__instance == null)
                 return;
             try
             {
                 List<TextsDialog.TextInfo> entries = TextEntries(__instance);
                 if (entries != null)
-                    entries.Insert(0, new TextsDialog.TextInfo(
-                        "Aldr", BuildText()));
+                    entries.Insert(0, new TextsDialog.TextInfo("Aldr", BuildText()));
             }
             catch (Exception e)
             {
-                UnityEngine.Debug.LogWarning(
-                    "[Aldr] Compendium unavailable: " + e);
+                UnityEngine.Debug.LogWarning("[Aldr] Compendium unavailable: " + e);
             }
         }
 
@@ -98,7 +95,8 @@ namespace WiresAldr
             Status(result, "Natural material yields", materials);
             Status(result, "Wild fishing", fishing);
             Status(result, "Dynamic experience", experience);
-
+            Status(result, "Durability", ImpactDurability.On);
+            Status(result, "Knockback", enabled && Plugin.KnockbackOn.Value);
 
             if (materials)
             {
@@ -122,11 +120,9 @@ namespace WiresAldr
                 if (creatures && StarRules.Enabled && KnownBiome(tier, defeated))
                 {
                     int dayStars = 2 + MaxStars.Extra(tier);
-                    section.Append("Maximum creature stars: ")
-                        .Append(Value(dayStars + " ★"))
-                        .Append(Sub((dayStars + 1) + " ★ at night"));
-
-                    section.Append(Sub("group leaders +1 ★"));
+                    section.Append("Maximum creature stars: ").Append(Value(dayStars + " ★"));
+                    if (Plugin.NightStar.Value) section.Append(Sub((dayStars + 1) + " ★ at night"));
+                    if (Plugin.GroupLeaders.Value) section.Append(Sub("group leaders +1 ★"));
                     section.AppendLine();
                 }
                 if (defeated[tier] && creatures)
@@ -194,7 +190,7 @@ namespace WiresAldr
             }
 
             if (experience && Player.m_localPlayer != null)
-                Section(result, "Experience", ExperienceInfo(Player.m_localPlayer, defeated));
+                Section(result, "Experience", ExperienceInfo(Player.m_localPlayer));
 
             return result.ToString();
         }
@@ -206,7 +202,7 @@ namespace WiresAldr
 
         // XP rules that apply to several skills, for the player right now.
         // Everything adds to the location bonus; only raids multiply.
-        private static StringBuilder ExperienceInfo(Player p, bool[] defeated)
+        private static StringBuilder ExperienceInfo(Player p)
         {
             var sb = new StringBuilder();
             double location, history;
@@ -321,18 +317,15 @@ namespace WiresAldr
 
         private static void Header(StringBuilder sb, string heading)
         {
-            sb.Append("<color=orange>")
-                .Append(heading).AppendLine("</color>");
+            sb.Append("<color=orange>").Append(heading).AppendLine("</color>");
         }
 
         private static void Status(StringBuilder sb, string label, bool on)
         {
-            sb.Append(label).Append(": ")
-                .AppendLine(Value(on ? "Enabled" : "Disabled"));
+            sb.Append(label).Append(": ").AppendLine(Value(on ? "Enabled" : "Disabled"));
         }
 
-        private static void Section(StringBuilder sb, string heading,
-            StringBuilder content)
+        private static void Section(StringBuilder sb, string heading, StringBuilder content)
         {
             if (content.Length == 0) return;
             sb.AppendLine();
@@ -340,8 +333,7 @@ namespace WiresAldr
             sb.Append(content);
         }
 
-        private static void Add(StringBuilder sb, string resource,
-            List<BonusBreakdown.Portion> parts)
+        private static void Add(StringBuilder sb, string resource, List<BonusBreakdown.Portion> parts)
         {
             if (parts == null || parts.Count == 0) return;
             double total = 0;
@@ -350,8 +342,7 @@ namespace WiresAldr
             if (total <= 0) return;
 
             int decimals = BonusBreakdown.Precision(total, parts);
-            sb.Append(resource).Append(": <color=orange>+")
-                .Append(Num(total, decimals)).Append("%</color>");
+            sb.Append(resource).Append(": <color=orange>+").Append(Num(total, decimals)).Append("%</color>");
 
             // One source is self-explanatory. Show short calculations
             // inline; only wrap longer calculations onto their own row.
@@ -368,8 +359,7 @@ namespace WiresAldr
             for (int i = 0; i < parts.Count; i++)
             {
                 if (i != 0) sb.Append(" + ");
-                sb.Append(Num(parts[i].Percent, decimals))
-                    .Append("% ")
+                sb.Append(Num(parts[i].Percent, decimals)).Append("% ")
                     .Append(Contributors[parts[i].BossTier]);
             }
             sb.AppendLine("</i></size></color>");
@@ -384,8 +374,7 @@ namespace WiresAldr
 
         private static string Num(double n, int precision)
         {
-            return n.ToString("0." + new string('#', precision),
-                CultureInfo.InvariantCulture);
+            return n.ToString("0." + new string('#', precision), CultureInfo.InvariantCulture);
         }
     }
 }

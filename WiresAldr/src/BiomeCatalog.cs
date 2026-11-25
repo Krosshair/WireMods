@@ -60,8 +60,7 @@ namespace WiresAldr
             return false;
         }
 
-        internal static int NaturalBiome(GameObject prefab,
-            Heightmap.Biome spawnBiome)
+        internal static int NaturalBiome(GameObject prefab, Heightmap.Biome spawnBiome)
         {
             int native = NativeCreature(prefab);
             if (native >= 0) return native;

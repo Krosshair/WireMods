@@ -1,30 +1,89 @@
 # Wire's Aldr
 
-*Aldr* is Old Norse for age or lifetime. Your character and your world grow older together: every Forsaken you defeat makes its biome richer, and risk is highly rewarded.
+**Every Forsaken you defeat changes the world, and bold play levels you faster.**
 
-Every bonus is shown in the Compendium under **Aldr**, with where it comes from.
+*Aldr* is Old Norse for age or lifetime: your character and your world grow older together.
 
-### World
+In short:
 
-Each Forsaken defeated improves its own biome. For stars, harvest chance, fishing and later-Forsaken yields, later boss kills add 50% of the previous step each, and a biome whose Forsaken is still alive gets 15% of what later Forsaken would give.
+* **Conquered biomes get richer.** More berries, more ore, more fish, and more starred creatures to fight for it. Old biomes stay worth visiting.
+* **Stars keep climbing.** Creatures go past 2 stars as you conquer the world, and look the part: bigger and in new colours.
+* **You level for how you play, not for how long.** Tougher enemies, parries, combos, long shots, critical hits and adventures far from home all teach you more.
+* **Trying a new weapon isn't punishment.** A skill that lags behind your best one catches up fast.
+* **Hits feel like what they did.** A scratch barely nudges you, a blow for most of your health sends you flying. The same goes for what you hit.
 
-- **Creature stars:** +8 percentage points star chance for the biome's native creatures, scaled with world difficulty (relative to the 10% base). Max 95%.
-- **Wild foraging:** +25 percentage points bonus harvest chance for the biome's wild plants (total capped at 80%). Later Forsaken add items per pick: +20%, then half the previous step each (max about +40%).
-  - Black Forest mushrooms: +8 after the Elder. Swamp thistle: +10 after the Elder, +7.5 after Bonemass.
-- **Natural materials:** extra drops from trees, rocks and deposits.
-  - Wood: +10% Eikthyr, +10% Elder, +5% each later Forsaken.
-  - Stone: +20% Elder, +5% each later Forsaken.
-  - Core wood +20% Elder. Fine wood +10% Elder, +20% Yagluth. Ashwood +10% Fader.
-  - Regional materials (copper, tin, iron, silver, obsidian, tar, ...): +10% after their biome's Forsaken; later Forsaken add +25%, then half the previous step each (max about +50%).
-- **Wild fishing:** +15% chance of an extra fish per rod catch of the biome's fish. Their spawn chance, spawn rate and population rise by the same share, and quality rolls by 0.35 x that in percentage points.
+Every bonus you have right now is in the Compendium under **Aldr**, with where it comes from, and on the skills page.
 
-### Experience
+The Black Forest at night: a high-star brute towers over the rest of its group.
 
-All skills. Bonuses are additive; only raids multiply.
+![Wire's Aldr](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresAldr/images/brute.jpg)
 
-**XP = base XP x (1 + location + catch-up + Expedition + stars + extras) x raid**
+## World
 
-## Location
+Each Forsaken defeated improves its biome. For stars, harvest chance, fishing and later-Forsaken yields, later Forsaken add 50% of the previous step each, and a biome whose Forsaken is still alive gets 15% of what later Forsaken would give.
+
+### Creatures
+
+Places you outgrew stay dangerous, and worth the danger.
+
+* **Star chance:** +8 percentage points for the biome's native creatures, scaled with world difficulty (relative to the 10% base). Max 95%.
+* **Higher star limits:** a biome's creatures can roll one more star for its Forsaken and for every later one. The Black Forest goes up to 3 stars after the Elder and 4 after Bonemass. Every star needs its roll, so high ones stay rare.
+* **Night:** one more star can roll.
+* **Group leaders:** the leader of a group of two or more has one star more. With Wire's AI that's the leader of the pack.
+* **Looks:** each star past Valheim's last look makes a creature as much bigger as that last star did, and every star from 3 to 10 has its colour, hand-picked for each creature. Bodies are as big as the creature was.
+
+Look at the boars: the same creature with different stars, and every one has its size and colour. You can tell from far away which one is trouble.
+
+![Star colours and sizes](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresAldr/images/boars.jpg)
+
+A 7-star boar, far bigger than a normal one. (The star number is from Wire's Enemy HUD.)
+
+![A 7-star boar](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresAldr/images/highstarboar.jpg)
+
+### Gathering
+
+Conquered biomes keep paying off, so there's always a reason to go back.
+
+![Copper](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresAldr/images/copper.jpg)
+
+* **Wild foraging:** +25 percentage points bonus harvest chance for the biome's wild plants (total capped at 80%). Later Forsaken add items per pick: +20%, then half the previous step each (max about +40%). Black Forest mushrooms: +8 after the Elder. Swamp thistle: +10 after the Elder, +7.5 after Bonemass.
+* **Wood:** +10% Eikthyr, +10% Elder, +5% each later Forsaken. Core wood +20% Elder. Fine wood +10% Elder, +20% Yagluth. Ashwood +10% Fader.
+* **Stone:** +20% Elder, +5% each later Forsaken.
+* **Regional materials** (copper, tin, iron, silver, obsidian, tar, ...): +10% after their biome's Forsaken; later Forsaken add +25%, then half the previous step each (max about +50%).
+* **Wild fishing:** +15% chance of an extra fish per rod catch of the biome's fish. Their spawn chance, spawn rate and population rise by the same share, and quality rolls by 0.35 x that in percentage points.
+
+The Swamp with everything up to the Queen defeated: more of everything, and under each line which Forsaken gave how much. What your character hasn't found yet shows as ???.
+
+![The Swamp in the Compendium](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresAldr/images/swamp.jpg)
+
+## Combat
+
+### Knockback
+
+How far a hit pushes depends on how much of the target's maximum health it takes. **50% pushes as in vanilla**, 25% half as far, everything at once twice as far. So small hits stop throwing you around, big ones really hit, and a troll doesn't slide away from a knife. It works for hits on you and on creatures. A hit that's fully blocked or absorbed doesn't push at all; the shove a block gives the attacker stays.
+
+### Durability
+
+Gear wears by how hard you were hit.
+
+* **Armor:** a hit for half your health costs about 50 durability (max 65 per hit), shared at random between the pieces. Capes take very little.
+* **Shields and weapons you block with:** a blocked hit worth half your health costs about 22.
+* **Weapons and tools:** as usual, give or take 5%.
+
+## Experience
+
+All skills. Bonuses add up; only raids multiply, and what a hit itself is worth.
+
+**XP = base XP x (1 + location + catch-up + Expedition + stars + extras) x raid x hit**
+
+All of it is in the Compendium too, with the numbers you have right now:
+
+![Experience in the Compendium](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresAldr/images/experience.jpg)
+
+### Location
+
+The harder the biome, the more you learn.
+
 | Biome | Bonus |
 |---|---|
 | Meadows | +0% |
@@ -38,36 +97,54 @@ All skills. Bonuses are additive; only raids multiply.
 Plus 20% of the bonus of your **progress biome** (the biome after the last Forsaken you defeated), wherever you are.
 Fighting a hostile creature from a later biome counts as its biome. Fish count as their native biome.
 
-## Catch-up
-- **Any skill** below 8 + 6 x your tier: up to **+15%**, as 15% x (threshold - skill) / threshold. Tier = the higher of your progress biome and your current biome (Meadows 1, Black Forest 2, ...).
-- **Combat skills** (weapons, unarmed and magic) below 3/4 of your best one (once it's 20+): up to **+100%**, same formula. Not for rewards.
-- Only the larger of the two applies.
+### Catch-up
 
-## Expedition
-A bonus that grows while you adventure away from base.
-- **Bonus = 0.3% x T + 0.067% x T^1.5**, T = expedition minutes. About +20% after 30 minutes in the Swamp.
-- Each XP gain adds the time since the previous one (max 30 s), at a biome pace: Meadows x0.8, Black Forest x0.9, Swamp x1.0, then +0.1 per biome.
-- Only grows while you keep moving (20 m within 6 minutes). Riding counts; sailing at 2 m/s or more grows it at 1/5 pace.
-- **Paused at a base**, decaying 0.1 minutes per minute at first, doubling every 45 s you stay, so quick trips home cost almost nothing. Away from a base it decays 0.5 minutes per minute after 90 s without XP. Resting doubles both. Sailing and riding hold it.
-- Saved on your character. Death halves it and freezes it until you recover your gravestone.
+Pick up a new weapon without starting over.
 
-## Challenge
-- **Stars:** +25% combat and dodge XP per star.
-- **Raids:** x1.5 combat XP against raiders while you're inside the raid.
-- **Extras**, shared cap +60% (+75% ranged):
-  - **Danger:** same biome as your last conquered one +10%, +4% per biome beyond (max 18%), one older 4.5%, older 1.2%. Up to 1.4x more at skill 90 against current threats.
-  - **Aim:** ranged hits +3% (moving target +8%) + 0.3% per meter (max 12%). Melee hits on moving targets past 12 m: 0.2% per meter beyond, max 7%. Unaware targets +7%. Max 25% ranged, 12% melee. +3% per extra target hit at once.
-  - **Combos:** +12% per landed chain step, max +36%. **Counters:** +6% on the first hit within 2.25 s of a parry or perfect dodge.
-  - **Blocking:** danger + 40% x the share of your stagger bar the hit filled.
-  - **Perfect dodges:** danger + up to 25% for attackers with 4x your health.
-  - **Travel:** Run, Swim and Ride up to +40% for steady straight-line progress.
-  - **Sneak:** +35% near unaware enemies.
-  - **Crafting, cooking and placing pieces:** +2.5% per ingredient type (max 12%), upgrades +3.5%.
-  - **Cooking:** 50% x (health + stamina + eitr of the dish - 40) / 120, max +50%.
-  - **Farming:** up to +10% for crops of later biomes.
+Look at the orange numbers on the skills page: next to the title what every skill gets, next to each level its extra. Fists at 12 learn 82% faster because Clubs is at 91. (The levels in brackets and the red bars are from Fortify Skills Redux.)
 
-## Rewards
+![The skills page](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresAldr/images/skills.jpg)
+
+* **Any skill** below 8 + 6 x your tier: up to **+15%**, as 15% x (threshold - skill) / threshold. Tier = the higher of your progress biome and your current biome (Meadows 1, Black Forest 2, ...).
+* **Combat skills** (weapons, unarmed and magic) below 3/4 of your best one (once it's 20+): up to **+100%**, same formula. Not for rewards.
+* Only the larger of the two applies.
+
+### Expedition
+
+A bonus that grows while you adventure away from base. The longer you dare to stay out, the better.
+
+* **Bonus = 0.3% x T + 0.067% x T^1.5**, T = expedition minutes. About +20% after 30 minutes in the Swamp.
+* Each XP gain adds the time since the previous one (max 30 s), at a biome pace: Meadows x0.8, Black Forest x0.9, Swamp x1.0, then +0.1 per biome.
+* Only grows while you keep moving (20 m within 6 minutes). Riding counts; sailing at 2 m/s or more grows it at 1/5 pace.
+* **Paused at a base**, decaying 0.1 minutes per minute at first, doubling every 45 s you stay, so quick trips home cost almost nothing. Away from a base it decays 0.5 minutes per minute after 90 s without XP. Resting doubles both. Sailing and riding hold it.
+* Saved on your character. Death halves it and freezes it until you recover your gravestone.
+
+### Challenge
+
+* **Stars:** +25% combat and dodge XP per star.
+* **Raids:** x1.5 combat XP against raiders while you're inside the raid.
+
+Extras share one cap of +60% (+75% ranged):
+
+* **Danger:** same biome as your last conquered one +10%, +4% per biome beyond (max 18%), one older 4.5%, older 1.2%. Up to 1.4x more at skill 90 against current threats.
+* **Aim:** ranged hits +3% (moving target +8%) + 0.3% per meter (max 12%). Melee hits on moving targets past 12 m: 0.2% per meter beyond, max 7%. Unaware targets +7%. Max 25% ranged, 12% melee.
+* **Combos:** +12% per landed chain step, max +36%. **Counters:** +6% on the first hit within 2.25 s of a parry or perfect dodge.
+* **Blocking:** danger + 40% x the share of your stagger bar the hit filled.
+* **Perfect dodges:** danger + up to 25% for attackers with 4x your health.
+* **Travel:** Run, Swim and Ride up to +40% for steady straight-line progress.
+* **Sneak:** +35% near unaware enemies.
+* **Crafting, cooking and placing pieces:** +2.5% per ingredient type (max 12%), upgrades +3.5%.
+* **Cooking:** 50% x (health + stamina + eitr of the dish - 40) / 120, max +50%.
+* **Farming:** up to +10% for crops of later biomes.
+
+### Hits
+
+Every enemy a swing hits gives XP (a share of it where the swing splits its damage). A critical hit on a staggered enemy gives twice as much, and a hit on a weakness as much more as it hurt: 1.5x on weak, 2x on very weak. Both multiply.
+
+### Rewards
+
 Flat XP for accomplishments. They get half the location bonus.
+
 | Action | XP |
 |---|---|
 | Kill, creature of your last conquered biome | 2.5, +1 per biome beyond (max +3) |
@@ -89,13 +166,28 @@ Flat XP for accomplishments. They get half the location bonus.
 
 Bosses never give challenge bonuses or rewards.
 
-## Multiplayer
-Required on the server and every client, same version. The server's settings apply to everyone (lockable). Raids in player-based mode follow each player's own Forsaken.
+### Sleep
 
-## Configuration
-Every number above is a setting, and every part has its own toggle, server-synced. `12 - Diagnostics` writes `BepInEx/Aldr-Diagnostics.log` for bug reports; it's local and off by default.
+Sleeping on it helps. Waking up adds 20% of the XP each skill earned in the last day, then starts over. Older XP counts for quickly less. The skill's final XP counts, so other mods' bonuses are included.
+
+## Settings
+
+Section 01 has a switch and a strength for every feature: that's all most people need. 100% is the default, 0% is nothing, 200% is twice as much.
+
+The numbers behind each feature are in the sections after it. They're marked advanced, so turn on advanced settings in your config menu (such as Shudnal's Configuration Manager) to see them.
+
+Everything except the skills page display and the diagnostics is synced from the server.
+
+## Multiplayer
+
+Required on the server and every client, same version. The server's settings apply to everyone (lockable). With player-based raids, progress follows each player's defeated Forsaken.
+
+For bug reports, `12 - Diagnostics` writes `BepInEx/Aldr-Diagnostics.log`. It's local and off by default.
 
 ServerSync by Tykea (MIT license included).
 
 Disclaimer: development is AI assisted. Not fully human or AI.
-Donations: ko-fi.com/krosshair
+
+Donations: [ko-fi.com/krosshair](https://ko-fi.com/krosshair)
+
+![Wire's Aldr](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresAldr/images/footer.jpg)

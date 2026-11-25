@@ -20,11 +20,9 @@ namespace WiresAldr
 
         internal static double Bonus(GlobalResource resource, bool[] defeated)
         {
-            if (Plugin.Enabled == null || !Plugin.Enabled.Value ||
-                !Plugin.Materials.Value)
+            if (!Plugin.On || !Plugin.Materials.Value)
                 return 0;
-            return GlobalYieldRules.Total(
-                GlobalYieldRules.Parts(resource, defeated, Settings()));
+            return GlobalYieldRules.Total(GlobalYieldRules.Parts(resource, defeated, Settings()));
         }
     }
 }

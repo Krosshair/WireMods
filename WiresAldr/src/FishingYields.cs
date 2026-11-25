@@ -42,18 +42,17 @@ namespace WiresAldr
             // original fish-prefab progression when that mapping exists.
             string name = fish.gameObject.name.Replace("(Clone)", "").Trim();
             int mapped;
-            return TierData.Enemies.TryGetValue(name, out mapped)
-                ? Mathf.Clamp(mapped - 1, 0, 7) : -1;
+            return TierData.Enemies.TryGetValue(name, out mapped) ? Mathf.Clamp(mapped - 1, 0, 7) : -1;
         }
 
         internal static void Register(Fish fish, Character catcher)
         {
             if (!fish || !fish.IsHooked() ||
-                Plugin.Enabled == null || !Plugin.Enabled.Value || !WorldProgress.Ready)
+                !Plugin.On || !WorldProgress.Ready)
                 return;
             // Extra fish (Wild fishing) and catch XP (Rewards) are separate.
             bool yields = Plugin.FishYields.Value;
-            if (!yields && !(Plugin.XpEnabled.Value && Plugin.Rewards.Value)) return;
+            if (!yields && !Plugin.RewardsOn) return;
             Player player = catcher as Player;
             if (!player || player != Player.m_localPlayer) return;
 

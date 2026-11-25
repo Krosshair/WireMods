@@ -33,8 +33,8 @@ namespace WiresAldr
             AccessTools.FieldRefAccess<Skills, Dictionary<Skills.SkillType, Skills.Skill>>("m_skillData");
 
         internal static bool Enabled =>
-            Plugin.Enabled != null && Plugin.Enabled.Value && Plugin.XpEnabled.Value &&
-            Plugin.SleepXpShare != null && Plugin.SleepXpShare.Value > 0f;
+            Plugin.XpOn &&
+            Plugin.SleepXpShare.Value > 0f;
 
         private static double HourSeconds =>
             (EnvMan.instance != null && EnvMan.instance.m_dayLengthSec > 0 ? EnvMan.instance.m_dayLengthSec : 1800) / 24.0;
