@@ -1,8 +1,17 @@
 # Wire's Shadows
 
-Better lighting for Valheim: real shadows for every light you place, more natural shading on every surface and improved ambient occlusion, with optional smooth shading instead of the toon steps, and it runs faster than vanilla.
+**In Valheim, torches shine straight through walls. Here every light you place casts real shadows, and your base runs faster for it.**
 
-In vanilla Valheim only the few lights nearest you get shadows, and the game redraws those every frame. Every other sconce and torch shines straight through walls, floors and roofs. Wire's Shadows gives every placed light cached shadows instead, so your base looks far better and runs faster. On top, every surface is shaded more naturally, and corners and creases look richer because light bounces between surfaces.
+In short:
+
+* **Lights respect your walls.** Every room gets its light and its dark corners, so what you build looks solid and cozy.
+* **Surfaces feel like what they're made of.** Wood, stone and earth catch the light differently, and from every angle. You won't notice it right away, but vanilla will look like cardboard once you go back.
+* **Corners stay colourful.** They used to be dirty grey smudges; now they give shapes weight.
+* **The sun reaches the small things.** Every blade of grass, pebble and plank edge casts a shadow, and so do far things that Valheim leaves without one. It barely costs anything.
+
+Still Valheim, only prettier.
+
+In vanilla Valheim only the few lights nearest you get shadows, and the game redraws those every frame. Every other sconce and torch shines straight through walls, floors and roofs. Wire's Shadows gives every placed light cached shadows instead, so your base gets the mood it deserves and runs faster.
 
 Look at the back wall and under the tables: each light only lights what it can reach and the rest stays dark, so the room gets depth and a much better mood. Vanilla lights it almost evenly and looks flat.
 
@@ -13,7 +22,7 @@ Look at the back wall and under the tables: each light only lights what it can r
 ### Shadows for every light
 
 * **Every placed light casts shadows:** sconces, torches, braziers, hearths, lanterns, forges and the rest. No more light leaking through walls, floors and roofs.
-* **Cached:** a light's shadow is drawn once and again only when something near it changes (building, a door opening).
+* **Cached:** a light's shadow is drawn once and again only when something near it changes (building, a door opening, a felled tree). That's why it's faster.
 * **Moving shadows** for players, creatures, doors, dropped items and moving machine parts. Only the changed part is redrawn, only where it can be seen.
 * **Items on stands, food and meads** cast shadows, and so do glowing ones with their light.
 * **Ready before the loading screen fades,** so nothing pops in after loading or teleporting.
@@ -26,17 +35,23 @@ Look at the floor: the counter, the benches and the railing throw clear shadows,
 
 #### Enhanced shading: Burley's diffuse
 
+Softer and more believable light on every surface, above all outdoors.
+
 Valheim lights every surface with Lambert's model ([Lambert, 1760](https://en.wikipedia.org/wiki/Lambertian_reflectance)): how bright a surface is depends only on the angle of the light, and it looks the same from every side. Real surfaces don't. A rough one (ground, rock, bark, leaves) looks brighter and flatter when the light is behind you, and a smooth one darkens toward its edges.
 
-The mod uses Burley's diffuse instead ([Burley, Disney, 2012](https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf)), which does both from each surface's roughness and was built to match measured real materials. Unity's Standard shader uses it too. The result is softer and more believable, above all outdoors.
+The mod uses Burley's diffuse instead ([Burley, Disney, 2012](https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf)), which does both from each surface's roughness and was built to match measured real materials. Unity's Standard shader uses it too.
 
 #### Improved ambient occlusion: multi-bounce
 
-Valheim's ambient occlusion (Amplify Occlusion, GTAO) darkens corners and creases the same grey everywhere. In reality light bounces around inside a corner and picks up the surface's colour, so bright corners stay lighter and coloured ones keep their colour. The mod adds that bounce, per colour channel from the surface's colour, with the fit from [Jimenez et al., Activision, 2016](https://blog.selfshadow.com/publications/s2016-shading-course/activision/s2016_pbs_activision_occlusion.pdf). Corners look warmer and less dirty, and it stays steady from frame to frame.
+Corners and creases look warm and rich instead of dirty grey.
+
+Valheim's ambient occlusion (Amplify Occlusion, GTAO) darkens corners and creases the same grey everywhere. In reality light bounces around inside a corner and picks up the surface's colour, so bright corners stay lighter and coloured ones keep their colour. The mod adds that bounce, per colour channel from the surface's colour, with the fit from [Jimenez et al., Activision, 2016](https://blog.selfshadow.com/publications/s2016-shading-course/activision/s2016_pbs_activision_occlusion.pdf). It also stays steady from frame to frame.
 
 #### Contact shadows
 
-Short, sharp sun and moon shadows where the shadow map is too coarse: stones on the ground, plank edges, the foot of a post. Traced on screen toward the sun with Bend Studio's screen-space shadows ([Aldridge, Sony Interactive Entertainment, 2023](https://www.bendstudio.com/blog/inside-bend-screen-space-shadows/)). They get longer as the sun or moon gets low. Pixels the sun can't shadow anyway (sky, beyond its shadow distance, surfaces facing away) are skipped, so it costs very little.
+Crisp little sun and moon shadows on grass, stones, plank edges and the foot of a post, longer at dawn and dusk. They cover everything on screen out to Valheim's sun shadow distance (150 m on High), including grass and far models that cast no shadow in vanilla.
+
+The shadow map is too coarse for these, so they're traced on screen toward the sun with Bend Studio's screen-space shadows ([Aldridge, Sony Interactive Entertainment, 2023](https://www.bendstudio.com/blog/inside-bend-screen-space-shadows/)). Pixels the sun can't shadow anyway (sky, beyond its shadow distance, surfaces facing away) are skipped, so it costs very little.
 
 Look at the grass, the small plants and the stumps: every blade and leaf throws a small, crisp shadow (Contact shadows), so the meadow looks lush and detailed. In vanilla the grass close to you looks nearly flat.
 
@@ -48,7 +63,7 @@ Look at the deck boards and the stones by the lights (Enhanced shading: rough wo
 
 #### Weather catches light
 
-Rain and snow are lit by which way each flake faces the light, so they catch firelight and moonlight instead of being flat white specks.
+Rain and snow sparkle in firelight and moonlight instead of being flat white specks: they're lit by which way each flake faces the light.
 
 #### Smooth shading (optional)
 
@@ -100,6 +115,8 @@ With the Look settings off, the shading is exactly that of Valheim.
 Faster than vanilla with point lights maxed out, while looking much better.
 
 On my PC (RTX 4090, i5-13600KF, 128 GB RAM), in my base of about 6,000 pieces, the latest benchmark (0.2.1) gave 16.26 ms a frame (62 fps) with the mod and 20.26 ms (49 fps) in vanilla, 4 ms a frame faster. Earlier ones there: 15.35 ms (65 fps) against 19.95 ms (50 fps), and 20.17 ms (50 fps) against 24.85 ms (40 fps). It depends on what's happening, so I can't guarantee it's always faster.
+
+Who gets it: nearly everyone in some form, because Valheim is almost always held back by the processor, and that's where this mod saves. The gap is widest in a big base against vanilla on its highest settings, and shrinks the lower you set vanilla. A PC held back by its graphics card gains little or nothing, and a weak one can even lose a bit to Enhanced shading, Improved AO and Contact shadows. I don't expect many of you to be in that spot, but if you are, turn those three off.
 
 Measure it yourself: turn on Benchmark in an in-game config menu (such as Shudnal's Configuration Manager).
 

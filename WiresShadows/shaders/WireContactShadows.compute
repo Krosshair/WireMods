@@ -33,7 +33,7 @@
 //  - The debug views are left out. The visual settings are fixed at the original's recommended
 //    starting values (SetDefaults): SurfaceThickness .005, BilinearThreshold .01 (.02 recommended), ShadowContrast 4,
 //    BilinearSamplingOffsetMode off, no precision offset; except IgnoreEdgePixels on (trees striped themselves
-//    with their own shadow without it); the fade-out at the
+//    with their own shadow without it), with edges looked for on both axes; the fade-out at the
 //    end of the trace longer (FADE_PART, 40% of it, instead of 8 samples).
 //  - The trace gets longer as the sun or moon gets low, as shadows do (_WireContactLength, from the
 //    CPU): up to 60 samples in CSMain, 124 in CSMid, 188 in CSLong. Which of them runs changes
@@ -147,6 +147,9 @@ void Trace(uint3 inGroupID, uint3 inGroupThreadID)
 
     int i;
     float2 write_xy = floor(pixel_xy);
+    // the neighbor along the ray, toward the sun (the edge check below)
+    float2 ray_step = xy_delta * direction;
+    int2 along = x_axis_major ? int2(ray_step.x > 0 ? 1 : -1, 0) : int2(0, ray_step.y > 0 ? 1 : -1);
 
     [unroll] for (i = 0; i < READ_COUNT; i++)
     {
@@ -162,7 +165,12 @@ void Trace(uint3 inGroupID, uint3 inGroupThreadID)
         depths.y = DepthAt(read_xy + offset_xy);
 
         depth_thickness_scale[i] = abs(far_depth - depths.x);
-        bool use_point_filter = abs(depths.x - depths.y) > depth_thickness_scale[i] * BILINEAR_THRESHOLD;
+        float edge_step = depth_thickness_scale[i] * BILINEAR_THRESHOLD;
+        // The original checks only the neighbor across the ray. Rays step along x or y, whichever they
+        // are closer to, so that neighbor was beside the pixel on one side of the diagonals through the
+        // sun and above or below it on the other: upright grass was cut differently on each, and the
+        // seam swept over it as the camera turned. Now a jump to either counts as an edge.
+        bool use_point_filter = abs(depths.x - depths.y) > edge_step || abs(depths.x - DepthAt(read_xy + along)) > edge_step;
 
         // the pixel starts sampling at this depth; it shadows from one further away, by the
         // difference across its bilinear sample (BilinearSamplingOffsetMode off)

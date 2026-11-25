@@ -1,7 +1,7 @@
 {
     "name": "WiresShadows",
-    "description": "Better lighting: shadows for every light, more natural shading, improved ambient occlusion and optional smooth shading, faster than vanilla.",
-    "version_number": "0.5.1",
+    "description": "Better lighting: torches no longer shine through walls, with real shadows for every light you place, more natural shading, richer corners and crisp contact shadows. Faster than vanilla.",
+    "version_number": "0.5.2",
     "website_url": "",
     "dependencies": []
 }

@@ -1,3 +1,8 @@
+## 0.5.2
+
+* Fixed: a faint diagonal line swept across the grass as you turned the camera, with Contact shadows on. Depth edges are now looked for on both axes instead of one, so grass is shaded the same on both sides of it. Grass casts slightly less contact shadow. One more depth read per step on the graphics card, not measured.
+* README and store description rewritten.
+
 ## 0.5.1
 
 * Contact shadows get longer as the sun or moon gets low, as shadows do, up to about three times as long at dawn and dusk.
