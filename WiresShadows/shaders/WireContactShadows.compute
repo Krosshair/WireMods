@@ -1,0 +1,264 @@
+// Wire's Shadows: contact shadows for the sun. Short shadows the sun's shadow map is too coarse
+// for (stones on the ground, plank edges, the foot of a post), traced along the depth buffer
+// toward the sun, one ray shared by each line of 64 pixels.
+//
+// This is a port of Bend Studio's screen-space shadows (bend_sss_gpu.h, Graham Aldridge,
+// SIGGRAPH 2023), from https://www.bendstudio.com/blog/inside-bend-screen-space-shadows/
+//
+//   Copyright 2023 Sony Interactive Entertainment.
+//
+//   Licensed under the Apache License, Version 2.0 (the "License");
+//   you may not use this file except in compliance with the License.
+//   You may obtain a copy of the License at
+//
+//       http://www.apache.org/licenses/LICENSE-2.0
+//
+//   Unless required by applicable law or agreed to in writing, software
+//   distributed under the License is distributed on an "AS IS" BASIS,
+//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//   See the License for the specific language governing permissions and
+//   limitations under the License.
+//
+// Changes from the original (Wire's Shadows, 2026):
+//  - Built for Direct3D 11 (FXC): the parameters are plain shader globals instead of a struct
+//    holding textures. The early-out uses the original's group-shared path (the one it takes when
+//    a hardware wave is smaller than WAVE_SIZE), which needs no wave intrinsics.
+//  - EarlyOutPixel customised, as the original invites: a pixel is skipped where the sun can't
+//    light it anyway or has no shadows: the sky, past the game's sun shadow distance, and
+//    surfaces facing away from the sun (the G-buffer normal, the same one the lighting uses: the
+//    sun gives them nothing either way). A line of 64 pixels that are all skipped stops before
+//    its 60 samples.
+//  - Depth is read with Load and an explicit bounds check standing in for the clamp-to-border
+//    sampler (off screen reads the far depth).
+//  - The debug views are left out. The visual settings are fixed at the original's recommended
+//    starting values (SetDefaults): SurfaceThickness .005, BilinearThreshold .01 (.02 recommended), ShadowContrast 4,
+//    BilinearSamplingOffsetMode off, no precision offset; except IgnoreEdgePixels on (trees striped themselves
+//    with their own shadow without it); the fade-out at the
+//    end of the trace longer (FADE_PART, 40% of it, instead of 8 samples).
+//  - The trace gets longer as the sun or moon gets low, as shadows do (_WireContactLength, from the
+//    CPU): up to 60 samples in CSMain, 124 in CSMid, 188 in CSLong. Which of them runs changes
+//    nothing in the picture, only how much is read: the length alone decides what counts.
+
+#pragma kernel CSMain SAMPLE_COUNT=60 FIXED_LENGTH=60
+#pragma kernel CSMid SAMPLE_COUNT=124
+#pragma kernel CSLong SAMPLE_COUNT=188
+#pragma kernel Clear SAMPLE_COUNT=60
+
+#define WAVE_SIZE 64
+#define HARD_SHADOW_SAMPLES 4
+// The original fades over the last 8 of 60 samples (13%); the last 40% (picked) lets the shadow thin
+// out, so where it runs out reads as a taper, not an edge.
+#define FADE_PART 0.4
+
+#define SURFACE_THICKNESS 0.005
+// The original recommends .02; .01 (picked, a test) counts gentler depth steps as edges too, so branch
+// cards seen almost edge-on stop casting on the rest of their tree.
+#define BILINEAR_THRESHOLD 0.01
+#define SHADOW_CONTRAST 4.0
+
+Texture2D<float> _WireContactDepth;     // the camera's depth (non-linear)
+RWTexture2D<float> _WireContactOut;     // 1 lit, 0 in shadow
+float4 _WireContactLight;               // the sun's screen position, from the CPU (BuildDispatchList)
+int4 _WireContactWave;                  // xy: this dispatch's wave offset; zw: depth texture size
+float4 _WireContactDepthValues;         // x: far depth value, y: near depth value
+Texture2D<half4> _WireContactNormal;    // the G-buffer's world normal (rgb * 2 - 1)
+float4 _WireContactSun;                 // xyz: toward the sun (world), w: the game's sun shadow distance (m)
+float4 _WireContactEye;                 // raw depth to eye depth: 1 / (x * raw + y), as Unity's _ZBufferParams z, w
+float _WireContactLength;               // how far the trace goes (samples, at most SAMPLE_COUNT)
+
+// Nothing for the sun to shadow here (Bend's EarlyOutPixel, customised).
+bool EarlyOutPixel(int2 p, float depth)
+{
+    if (depth == _WireContactDepthValues.x) return true;                          // the sky
+    if (1.0 / (_WireContactEye.x * depth + _WireContactEye.y) > _WireContactSun.w) return true; // past the sun's shadows
+    if (p.x < 0 || p.y < 0 || p.x >= _WireContactWave.z || p.y >= _WireContactWave.w) return true;
+    float3 n = _WireContactNormal.Load(int3(p, 0)).rgb * 2 - 1;
+    return dot(n, _WireContactSun.xyz) <= 0;                                       // facing away from the sun
+}
+
+float DepthAt(int2 p)
+{
+    if (p.x < 0 || p.y < 0 || p.x >= _WireContactWave.z || p.y >= _WireContactWave.w)
+        return _WireContactDepthValues.x;
+    return _WireContactDepth.Load(int3(p, 0));
+}
+
+void ComputeWavefrontExtents(int3 inGroupID, uint inGroupThreadID, out float2 outDeltaXY, out float2 outPixelXY, out float outPixelDistance, out bool outMajorAxisX)
+{
+    int2 xy = inGroupID.yz * WAVE_SIZE + _WireContactWave.xy;
+
+    float2 light_xy = floor(_WireContactLight.xy) + 0.5;
+    float2 light_xy_fraction = _WireContactLight.xy - light_xy;
+    bool reverse_direction = _WireContactLight.w > 0.0f;
+
+    int2 sign_xy = sign(xy);
+    bool horizontal = abs(xy.x + sign_xy.y) < abs(xy.y - sign_xy.x);
+
+    int2 axis;
+    axis.x = horizontal ? (+sign_xy.y) : (0);
+    axis.y = horizontal ? (0) : (-sign_xy.x);
+
+    xy = axis * (int)inGroupID.x + xy;
+    float2 xy_f = (float2)xy;
+
+    bool x_axis_major = abs(xy_f.x) > abs(xy_f.y);
+    float major_axis = x_axis_major ? xy_f.x : xy_f.y;
+
+    float major_axis_start = abs(major_axis);
+    float major_axis_end = abs(major_axis) - (float)WAVE_SIZE;
+
+    float ma_light_frac = x_axis_major ? light_xy_fraction.x : light_xy_fraction.y;
+    ma_light_frac = major_axis > 0 ? -ma_light_frac : ma_light_frac;
+
+    float2 start_xy = xy_f + light_xy;
+    float2 end_xy = lerp(_WireContactLight.xy, start_xy, (major_axis_end + ma_light_frac) / (major_axis_start + ma_light_frac));
+    float2 xy_delta = (start_xy - end_xy);
+
+    float thread_step = (float)(inGroupThreadID ^ (reverse_direction ? 0 : (WAVE_SIZE - 1)));
+
+    outPixelXY = lerp(start_xy, end_xy, thread_step / (float)WAVE_SIZE);
+    outPixelDistance = major_axis_start - thread_step + ma_light_frac;
+    outDeltaXY = xy_delta;
+    outMajorAxisX = x_axis_major;
+}
+
+#define READ_COUNT (SAMPLE_COUNT / WAVE_SIZE + 2)
+
+groupshared float DepthData[READ_COUNT * WAVE_SIZE];
+groupshared uint LdsEarlyOut;
+
+void Trace(uint3 inGroupID, uint3 inGroupThreadID)
+{
+    float2 xy_delta;
+    float2 pixel_xy;
+    float pixel_distance;
+    bool x_axis_major;
+
+    ComputeWavefrontExtents((int3)inGroupID, inGroupThreadID.x, xy_delta, pixel_xy, pixel_distance, x_axis_major);
+
+    float sampling_depth[READ_COUNT];
+    float shadowing_depth[READ_COUNT];
+    float depth_thickness_scale[READ_COUNT];
+    float sample_distance[READ_COUNT];
+
+    const float direction = -_WireContactLight.w;
+    const float far_depth = _WireContactDepthValues.x;
+    const float z_sign = _WireContactDepthValues.y > far_depth ? -1 : +1;
+
+    int i;
+    float2 write_xy = floor(pixel_xy);
+
+    [unroll] for (i = 0; i < READ_COUNT; i++)
+    {
+        // depth twice per pixel per sample, interpolated with an edge detect filter (minor axis only)
+        int2 read_xy = (int2)floor(pixel_xy);
+        float minor_axis = x_axis_major ? pixel_xy.y : pixel_xy.x;
+        float bilinear = frac(minor_axis) - 0.5;
+        int bias = bilinear > 0 ? 1 : -1;
+        int2 offset_xy = int2(x_axis_major ? 0 : bias, x_axis_major ? bias : 0);
+
+        float2 depths;
+        depths.x = DepthAt(read_xy);
+        depths.y = DepthAt(read_xy + offset_xy);
+
+        depth_thickness_scale[i] = abs(far_depth - depths.x);
+        bool use_point_filter = abs(depths.x - depths.y) > depth_thickness_scale[i] * BILINEAR_THRESHOLD;
+
+        // the pixel starts sampling at this depth; it shadows from one further away, by the
+        // difference across its bilinear sample (BilinearSamplingOffsetMode off)
+        sampling_depth[i] = depths.x;
+        float shadow_depth = depths.x + abs(depths.x - depths.y) * z_sign;
+        // IgnoreEdgePixels on: a pixel on a depth edge (a needle's or leaf's outline, a stone's facet
+        // seen edge-on) casts nothing, pushed out of range as the original does. Those edges are what
+        // striped trees with their own shadow; the original notes it can thin shadows on foliage edges.
+        shadowing_depth[i] = use_point_filter ? 1e20 : shadow_depth;
+
+        sample_distance[i] = pixel_distance + (WAVE_SIZE * i) * direction;
+        pixel_xy += xy_delta * direction;
+    }
+
+    // Early out (the original's group-shared path): every pixel of this line skipped, it stops here.
+    bool skip_pixel = EarlyOutPixel((int2)write_xy, sampling_depth[0]);
+    if (inGroupThreadID.x == 0) LdsEarlyOut = 1;
+    GroupMemoryBarrierWithGroupSync();
+    [branch] if (!skip_pixel) LdsEarlyOut = 0;
+    GroupMemoryBarrierWithGroupSync();
+    [branch] if (LdsEarlyOut != 0)
+        return;
+
+    // the shadowing depths, perspective corrected so all light rays are parallel
+    [unroll] for (i = 0; i < READ_COUNT; i++)
+    {
+        float stored_depth = (shadowing_depth[i] - _WireContactLight.z) / sample_distance[i];
+        if (i != 0)
+            stored_depth = sample_distance[i] > 0 ? stored_depth : 1e10;
+        DepthData[(i * WAVE_SIZE) + inGroupThreadID.x] = stored_depth;
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    // a skipped pixel keeps the cleared 1 (lit)
+    if (skip_pixel)
+        return;
+
+    float start_depth = sampling_depth[0];
+    start_depth = (start_depth - _WireContactLight.z) / sample_distance[0];
+
+    int sample_index = inGroupThreadID.x + 1;
+
+    float4 shadow_value = 1;
+    float hard_shadow = 1;
+
+    float depth_scale = min(sample_distance[0] + direction, 1.0 / SURFACE_THICKNESS) * sample_distance[0] / depth_thickness_scale[0];
+    start_depth = start_depth * depth_scale - z_sign;
+
+    [unroll] for (i = 0; i < HARD_SHADOW_SAMPLES; i++)
+    {
+        float depth_delta = abs(start_depth - DepthData[sample_index + i] * depth_scale);
+        hard_shadow = min(hard_shadow, depth_delta);
+    }
+
+    // fading out over the last part of the length; past it nothing counts (4: more than any depth
+    // difference that could still shade)
+    // CSMain only runs at its full length: fixed, so the compiler works the fades out beforehand
+    #ifdef FIXED_LENGTH
+    const float reach = FIXED_LENGTH;
+    #else
+    const float reach = _WireContactLength;
+    #endif
+    const float fade_from = reach * (1 - FADE_PART);
+    const float fade_over = reach - fade_from + 1;
+    [unroll] for (i = HARD_SHADOW_SAMPLES; i < SAMPLE_COUNT; i++)
+    {
+        float depth_delta = abs(start_depth - DepthData[sample_index + i] * depth_scale);
+        float fade_out = i < reach ? saturate((i + 1 - fade_from) / fade_over) * 0.75 : 4;
+        shadow_value[i & 3] = min(shadow_value[i & 3], depth_delta + fade_out);
+    }
+
+    shadow_value = saturate(shadow_value * SHADOW_CONTRAST + (1 - SHADOW_CONTRAST));
+    hard_shadow = saturate(hard_shadow * SHADOW_CONTRAST + (1 - SHADOW_CONTRAST));
+
+    float result = dot(shadow_value, 0.25);
+    result = min(hard_shadow, result);
+
+    int2 w = (int2)write_xy;
+    if (w.x >= 0 && w.y >= 0 && w.x < _WireContactWave.z && w.y < _WireContactWave.w)
+        _WireContactOut[w] = result;
+}
+
+[numthreads(WAVE_SIZE, 1, 1)]
+void CSMain(uint3 g : SV_GroupID, uint3 t : SV_GroupThreadID) { Trace(g, t); }
+
+[numthreads(WAVE_SIZE, 1, 1)]
+void CSMid(uint3 g : SV_GroupID, uint3 t : SV_GroupThreadID) { Trace(g, t); }
+
+[numthreads(WAVE_SIZE, 1, 1)]
+void CSLong(uint3 g : SV_GroupID, uint3 t : SV_GroupThreadID) { Trace(g, t); }
+
+// Every pixel lit first, so none keeps last frame's value (Wire's Shadows addition).
+[numthreads(8, 8, 1)]
+void Clear(uint3 id : SV_DispatchThreadID)
+{
+    if ((int)id.x < _WireContactWave.z && (int)id.y < _WireContactWave.w)
+        _WireContactOut[id.xy] = 1;
+}

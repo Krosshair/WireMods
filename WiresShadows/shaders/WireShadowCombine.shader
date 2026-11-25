@@ -84,5 +84,68 @@ Shader "Hidden/WireShadowCombine"
             float4 frag() : SV_Target { return float4(60000, 60000, 0, 0); }
             ENDCG
         }
+        // Pass 3: pass 0's midpoint written straight into the native comparison depth (the same
+        // conversion as WireShadowNativeDepthCopy pass 0), so no 16-bit colour copy is kept.
+        Pass
+        {
+            ZTest Always ZWrite On Cull Off ColorMask 0
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma target 4.5
+            #include "UnityCG.cginc"
+            Texture2D<float> _WireFront;
+            Texture2D<float> _WireBack;
+            float _WireNativeInvRange;
+            float4 vert(uint id : SV_VertexID) : SV_POSITION
+            {
+                float2 p = float2((id << 1) & 2, id & 2);
+                return float4(p * 2 - 1, 0, 1);
+            }
+            float frag(float4 pos : SV_POSITION) : SV_Depth
+            {
+                int3 px = int3(pos.xy, 0);
+                float f = _WireFront.Load(px);
+                float b = _WireBack.Load(px);
+                float d = b < f ? b : min(0.5 * (f + b), f + 0.35);
+                float depth01 = saturate(d * _WireNativeInvRange);
+                #if defined(UNITY_REVERSED_Z)
+                    return 1.0 - depth01;
+                #else
+                    return depth01;
+                #endif
+            }
+            ENDCG
+        }
+        // Pass 4: as pass 3, front and back from the one-render face (WireShadowFrontBack:
+        // red front, green back).
+        Pass
+        {
+            ZTest Always ZWrite On Cull Off ColorMask 0
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma target 4.5
+            #include "UnityCG.cginc"
+            Texture2D<float2> _WireFrontBack;
+            float _WireNativeInvRange;
+            float4 vert(uint id : SV_VertexID) : SV_POSITION
+            {
+                float2 p = float2((id << 1) & 2, id & 2);
+                return float4(p * 2 - 1, 0, 1);
+            }
+            float frag(float4 pos : SV_POSITION) : SV_Depth
+            {
+                float2 fb = _WireFrontBack.Load(int3(pos.xy, 0));
+                float d = fb.y < fb.x ? fb.y : min(0.5 * (fb.x + fb.y), fb.x + 0.35);
+                float depth01 = saturate(d * _WireNativeInvRange);
+                #if defined(UNITY_REVERSED_Z)
+                    return 1.0 - depth01;
+                #else
+                    return depth01;
+                #endif
+            }
+            ENDCG
+        }
     }
 }

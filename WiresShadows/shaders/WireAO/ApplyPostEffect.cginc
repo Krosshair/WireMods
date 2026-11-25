@@ -1,5 +1,6 @@
 // Amplify Occlusion 2 - Robust Ambient Occlusion for Unity
-// Copyright (c) Amplify Creations, Lda <info@amplify.pt>
+// Copyright (c) Amplify Creations, Lda <info@amplify.pt> (MIT, see LICENSE_AmplifyOcclusion.txt)
+// Wire's Shadows: one change, marked below.
 
 #ifndef AMPLIFY_AO_APPLY_POSTEFFECT
 #define AMPLIFY_AO_APPLY_POSTEFFECT
@@ -57,7 +58,8 @@ half4 ApplyCombineFromTemporal( const v2f_in IN )
 
 	const half4 occlusionRGBA = CalcOcclusion( occlusionLinearEyeDepth.x, occlusionLinearEyeDepth.y );
 
-	return half4( ( occlusionLinearEyeDepth.y < HALF_MAX )?occlusionRGBA.rgb:(1).xxx, 1 );
+	// Wire's Shadows: coloured by the surface (WireBounce, in WireAOApply.shader)
+	return half4( ( occlusionLinearEyeDepth.y < HALF_MAX )?WireBounce( occlusionRGBA.rgb, screenPos ):(1).xxx, 1 );
 }
 
 

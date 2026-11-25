@@ -2,12 +2,11 @@
 // Copyright (c) Amplify Creations, Lda <info@amplify.pt> (MIT, see LICENSE_AmplifyOcclusion.txt)
 //
 // Wire's Shadows: Amplify's apply shader, the same passes in the same order, swapped in for
-// the game's. Only change: in the deferred passes the occlusion is coloured by the surface it
-// lands on (GTAO multi-bounce: Jimenez et al. 2016, "Practical Real-Time Strategies for
-// Accurate Indirect Occlusion"). Light bounces around inside a bright corner, so a bright
-// surface is darkened less, a dark one about as much as before, and a coloured one keeps its
-// hue instead of going grey. The surface colour comes from a copy of the G-buffer's albedo the
-// mod makes just before (_WireAOAlbedo), or Amplify's own copy on the LDR path.
+// the game's. Only change: where the occlusion is laid over the image (the game's way), it's
+// coloured by the surface it lands on (GTAO multi-bounce: Jimenez et al. 2016, "Practical
+// Real-Time Strategies for Accurate Indirect Occlusion"). Light bounces around inside a bright
+// corner, so a bright surface is darkened less, a dark one about as much as before, and a
+// coloured one keeps its hue instead of going grey. The surface colour is the G-buffer's albedo.
 
 Shader "Hidden/WireAOApply"
 {
@@ -24,23 +23,17 @@ Shader "Hidden/WireAOApply"
 		UNITY_DECLARE_SCREENSPACE_TEXTURE( _AO_GBufferAlbedo );
 		UNITY_DECLARE_SCREENSPACE_TEXTURE( _AO_GBufferEmission );
 		UNITY_DECLARE_SCREENSPACE_TEXTURE( _AO_ApplyOcclusionTexture );
-		UNITY_DECLARE_SCREENSPACE_TEXTURE( _WireAOAlbedo );
+		UNITY_DECLARE_SCREENSPACE_TEXTURE( _CameraGBufferTexture0 );
 
 		// The fitted curve from the paper: visibility after the light's extra bounces, per
 		// colour channel, from the plain visibility v and the surface's albedo.
-		half3 WireBounce( half3 v, half3 albedo )
+		half3 WireBounce( half3 v, const float2 screenPos )
 		{
+			const half3 albedo = UNITY_SAMPLE_SCREENSPACE_TEXTURE( _CameraGBufferTexture0, UnityStereoTransformScreenSpaceTex( screenPos ) ).rgb;
 			const half3 a = 2.0404 * albedo - 0.3324;
 			const half3 b = -4.7951 * albedo + 0.6417;
 			const half3 c = 2.7552 * albedo + 0.6903;
 			return max( v, ( ( v * a + b ) * v + c ) * v );
-		}
-
-		half3 WireSurface( const float2 screenPos, const bool log )
-		{
-			const float2 uv = UnityStereoTransformScreenSpaceTex( screenPos );
-			return log ? UNITY_SAMPLE_SCREENSPACE_TEXTURE( _AO_GBufferAlbedo, uv ).rgb
-			           : UNITY_SAMPLE_SCREENSPACE_TEXTURE( _WireAOAlbedo, uv ).rgb;
 		}
 
 
@@ -81,7 +74,8 @@ Shader "Hidden/WireAOApply"
 				half occlusion;
 				const half4 temporalAcc = TemporalFilter( screenPos, occlusionDepth.x, sampledDepth, linearEyeDepth, linear01Depth, aUseMotionVectors, occlusion );
 
-				const half4 occlusionRGBA = CalcOcclusion( occlusion, linearEyeDepth );
+				half4 occlusionRGBA = CalcOcclusion( occlusion, linearEyeDepth );
+				occlusionRGBA.rgb = WireBounce( occlusionRGBA.rgb, screenPos );
 
 				OUT.occlusionColor = occlusionRGBA;
 				OUT.temporalAcc = temporalAcc;
@@ -109,7 +103,7 @@ Shader "Hidden/WireAOApply"
 
 			const half4 occlusionRGBA = CalcOcclusion( occlusionDepth.x, linearEyeDepth );
 
-			return half4( occlusionRGBA.rgb, 1 );
+			return half4( WireBounce( occlusionRGBA.rgb, screenPos ), 1 );
 		}
 
 
@@ -124,8 +118,7 @@ Shader "Hidden/WireAOApply"
 
 			const half linearEyeDepth = occlusionDepth.y * _AO_BufDepthToLinearEye;
 
-			half4 occlusionRGBA = CalcOcclusion( occlusionDepth.x, linearEyeDepth );
-			occlusionRGBA.rgb = WireBounce( occlusionRGBA.rgb, WireSurface( screenPos, log ) );
+			const half4 occlusionRGBA = CalcOcclusion( occlusionDepth.x, linearEyeDepth );
 
 			half4 emission, albedo;
 
@@ -165,8 +158,7 @@ Shader "Hidden/WireAOApply"
 
 			const half2 occlusionLinearEyeDepth = ComputeCombineDownsampledOcclusionFromTemporal( screenPos, depthSample );
 
-			half4 occlusionRGBA = CalcOcclusion( occlusionLinearEyeDepth.x, occlusionLinearEyeDepth.y );
-			occlusionRGBA.rgb = WireBounce( occlusionRGBA.rgb, WireSurface( screenPos, log ) );
+			const half4 occlusionRGBA = CalcOcclusion( occlusionLinearEyeDepth.x, occlusionLinearEyeDepth.y );
 
 			half4 emission, albedo;
 
@@ -215,8 +207,7 @@ Shader "Hidden/WireAOApply"
 				half occlusion;
 				const half4 temporalAcc = TemporalFilter( screenPos, occlusionDepth.x, sampledDepth, linearEyeDepth, linear01Depth, aUseMotionVectors, occlusion );
 
-				half4 occlusionRGBA = CalcOcclusion( occlusion, linearEyeDepth );
-				occlusionRGBA.rgb = WireBounce( occlusionRGBA.rgb, WireSurface( screenPos, log ) );
+				const half4 occlusionRGBA = CalcOcclusion( occlusion, linearEyeDepth );
 
 				half4 emission, albedo;
 
@@ -279,8 +270,7 @@ Shader "Hidden/WireAOApply"
 			UNITY_SETUP_INSTANCE_ID( IN );
 			UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN );
 
-			half4 occlusionRGBA = UNITY_SAMPLE_SCREENSPACE_TEXTURE( _AO_ApplyOcclusionTexture, UnityStereoTransformScreenSpaceTex( IN.uv.xy ) );
-			occlusionRGBA.rgb = WireBounce( occlusionRGBA.rgb, WireSurface( IN.uv.xy, false ) );
+			const half4 occlusionRGBA = UNITY_SAMPLE_SCREENSPACE_TEXTURE( _AO_ApplyOcclusionTexture, UnityStereoTransformScreenSpaceTex( IN.uv.xy ) );
 
 			DeferredOutput OUT;
 			OUT.albedo = half4( (1.0).xxx, occlusionRGBA.a );

@@ -1,0 +1,134 @@
+// Wire's Shadows: which build pieces can't show on screen at all (Occlusion.cs).
+// Reduce: last level of the depth pyramid to the next, each texel keeping the farthest (x) and the
+// nearest (y) depth of the texels below it. Level 0 is the camera's depth (WireOcclusionMask pass 1)
+// with moving things (characters, ships, carts) painted out, so they never hide anything.
+// Test: each piece's box against the pyramid: hidden when even its nearest corner is behind the
+// farthest depth everywhere it could cover. The covered area is first widened by how far the
+// view can slide over the box before the answer is used (the camera's move during the readback,
+// over the distance to the nearest thing in front: parallax), so it can't open up a gap meanwhile.
+#pragma kernel Reduce
+#pragma kernel Test
+#pragma kernel Clear
+
+Texture2D<float2> _Src;
+RWTexture2D<float2> _Dst;
+uint4 _Size; // source width, height; target width, height
+float _Reversed; // 1: depth 1 near, 0 far (D3D); 0: the other way
+
+float Farther(float a, float b) { return _Reversed > 0.5 ? min(a, b) : max(a, b); }
+float Nearer(float a, float b) { return _Reversed > 0.5 ? max(a, b) : min(a, b); }
+
+[numthreads(8, 8, 1)]
+void Reduce(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _Size.z || id.y >= _Size.w) return;
+    // the last texel of an odd row also takes the one left over
+    uint x0 = id.x * 2, y0 = id.y * 2;
+    uint x1 = id.x == _Size.z - 1 ? _Size.x - 1 : x0 + 1;
+    uint y1 = id.y == _Size.w - 1 ? _Size.y - 1 : y0 + 1;
+    float2 r = _Src[uint2(x0, y0)];
+    for (uint y = y0; y <= y1; y++)
+        for (uint x = x0; x <= x1; x++)
+        {
+            float2 s = _Src[uint2(x, y)];
+            r = float2(Farther(r.x, s.x), Nearer(r.y, s.y));
+        }
+    _Dst[id.xy] = r;
+}
+
+Texture2D<float2> _HiZ;            // all levels as mips
+StructuredBuffer<float4> _Boxes;   // per piece: min (w: 1 when the slot is empty), max
+RWStructuredBuffer<uint> _Result;  // see _State below
+float4x4 _VP;                      // the camera's view-projection, y up, as its depth was drawn
+float4 _Cam;                       // P[0][0], P[1][1], how far the camera may move meanwhile (m), pieces
+float4 _ZB;                        // Unity's _ZBufferParams for this camera
+uint4 _HiZInfo;                    // level 0 width, height, levels, frame
+
+float Linear(float raw) { return 1.0 / (_ZB.z * raw + _ZB.w); }
+
+// The farthest (x) and nearest (y) depth over a screen rect (uv), from the level where it spans
+// a couple of texels, one texel more round it (the coarser levels' texels don't line up exactly).
+float2 Region(float2 a, float2 b)
+{
+    float2 span = (b - a) * float2(_HiZInfo.xy);
+    uint m = (uint)clamp(ceil(log2(max(max(span.x, span.y), 1.0))), 0.0, (float)(_HiZInfo.z - 1));
+    int w = max(1, (int)(_HiZInfo.x >> m)), h = max(1, (int)(_HiZInfo.y >> m));
+    int x0 = max(0, (int)floor(a.x * w) - 1), x1 = min(w - 1, (int)floor(b.x * w) + 1);
+    int y0 = max(0, (int)floor(a.y * h) - 1), y1 = min(h - 1, (int)floor(b.y * h) + 1);
+    float2 r = _HiZ.Load(int3(x0, y0, m));
+    [loop] for (int y = y0; y <= y1; y++)
+        [loop] for (int x = x0; x <= x1; x++)
+        {
+            float2 s = _HiZ.Load(int3(x, y, m));
+            r = float2(Farther(r.x, s.x), Nearer(r.y, s.y));
+        }
+    return r;
+}
+
+// Each piece's state stays here between tests (x: answers in a row saying hidden, bit 8: hidden), so
+// only the pieces that change are sent back: [0] the frame, [1] how many, then each one's index
+// (top bit: now hidden). _Reset: everything was just shown, start over.
+RWStructuredBuffer<uint> _State;
+uint _Reset;
+#define HIDE_AFTER 2u // answers in a row before a piece is hidden (picked)
+
+[numthreads(1, 1, 1)]
+void Clear(uint3 id : SV_DispatchThreadID)
+{
+    _Result[0] = _HiZInfo.w;
+    _Result[1] = 0;
+}
+
+// 0 shown, 1 hidden, 2 off screen
+uint Answer(uint i)
+{
+    float4 mn = _Boxes[i * 2], mx = _Boxes[i * 2 + 1];
+    if (mn.w > 0.5) return 0;
+
+    float2 lo = 1e9, hi = -1e9;
+    float boxNear = _Reversed > 0.5 ? 0.0 : 1.0;
+    [unroll] for (uint k = 0; k < 8; k++)
+    {
+        float3 p = float3(k & 1 ? mx.x : mn.x, k & 2 ? mx.y : mn.y, k & 4 ? mx.z : mn.z);
+        float4 c = mul(_VP, float4(p, 1));
+        if (c.w < 0.0001) { return 0; } // reaches past the camera
+        float2 ndc = c.xy / c.w;
+        lo = min(lo, ndc); hi = max(hi, ndc);
+        boxNear = Nearer(boxNear, c.z / c.w);
+    }
+    lo = lo * 0.5 + 0.5; hi = hi * 0.5 + 0.5;
+    if (hi.x < 0 || hi.y < 0 || lo.x > 1 || lo.y > 1) { return 2; }
+    if (lo.x < 0 || lo.y < 0 || hi.x > 1 || hi.y > 1) { return 0; } // partly off screen: can't tell
+
+    // widened twice: by the nearest thing in front over the box, then over the wider rect
+    float2 a = lo, b = hi, r = 0;
+    [unroll] for (uint n = 0; n < 3; n++)
+    {
+        r = Region(a, b);
+        if (n == 2) break;
+        float2 e = _Cam.z / max(Linear(r.y), 0.05) * 0.5 * _Cam.xy;
+        a = lo - e; b = hi + e;
+        if (a.x < 0 || a.y < 0 || b.x > 1 || b.y > 1) { return 0; }
+    }
+    bool behind = _Reversed > 0.5 ? boxNear < r.x : boxNear > r.x;
+    return behind ? 1 : 0;
+}
+
+[numthreads(64, 1, 1)]
+void Test(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= (uint)_Cam.w) return;
+    uint a = Answer(i);
+    uint st = _Reset ? 0u : _State[i];
+    uint streak = a == 1 ? min((st & 255u) + 1u, HIDE_AFTER) : 0u;
+    bool was = (st & 256u) != 0, hide = streak >= HIDE_AFTER;
+    if (hide != was)
+    {
+        uint k;
+        InterlockedAdd(_Result[1], 1u, k);
+        _Result[2 + k] = i | (hide ? 0x80000000u : 0u);
+    }
+    _State[i] = streak | (hide ? 256u : 0u);
+}
+

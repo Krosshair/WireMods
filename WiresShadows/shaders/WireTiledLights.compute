@@ -1,0 +1,41 @@
+// Wire's Shadows: which point lights reach which part of the screen, for the tiled lighting pass
+// (WireTiledLights.shader). The screen in 16 x 16 pixel tiles; for each tile, every light whose box
+// on screen (worked out on the CPU) overlaps it. Up to 63 lights a tile; a tile's list is its
+// count, then the lights' indices. By the box alone: the camera's depth can't be had here (bound by
+// name or as Unity's camera depth, a compute shader got a 1 x 1 placeholder), and the lighting
+// pass reads each pixel's real depth and skips a light whose reach that pixel is outside of.
+#pragma kernel Cull
+
+#define TILE 16
+#define PER_TILE 64
+
+float4 _WireScreen;                        // width, height, tiles across, light count
+StructuredBuffer<float4> _WireTiledRect;   // each light's box on screen, pixels: min x, min y, max x, max y
+RWStructuredBuffer<uint> _WireTileLights;
+
+groupshared uint g_count;
+groupshared uint g_list[PER_TILE - 1];
+
+[numthreads(TILE, TILE, 1)]
+void Cull(uint3 gid : SV_GroupID, uint gi : SV_GroupIndex)
+{
+    if (gi == 0) g_count = 0;
+    GroupMemoryBarrierWithGroupSync();
+
+    float2 lo = gid.xy * TILE, hi = lo + TILE;
+    uint count = (uint)_WireScreen.w;
+    for (uint i = gi; i < count; i += TILE * TILE)
+    {
+        float4 r = _WireTiledRect[i];
+        if (r.z < lo.x || r.x > hi.x || r.w < lo.y || r.y > hi.y) continue;
+        uint at;
+        InterlockedAdd(g_count, 1, at);
+        if (at < PER_TILE - 1) g_list[at] = i;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    uint tile = (gid.y * (uint)_WireScreen.z + gid.x) * PER_TILE;
+    uint n = min(g_count, PER_TILE - 1);
+    if (gi == 0) _WireTileLights[tile] = n;
+    if (gi < n) _WireTileLights[tile + 1 + gi] = g_list[gi];
+}
