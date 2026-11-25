@@ -12,7 +12,7 @@ namespace WiresAI
     public sealed partial class WiresAIPlugin : BaseUnityPlugin
     {
         public const string Guid = "kajetan.valheim.wiresai";
-        public const string Version = "0.3.2";
+        public const string Version = "0.3.3";
         // Required on server and clients, gameplay settings follow the server.
         private static readonly ServerSync.ConfigSync Sync = new ServerSync.ConfigSync(Guid)
         {
@@ -179,6 +179,7 @@ namespace WiresAI
         }
 
         private bool Active => _enabled.Value;
+        internal static bool On => Instance != null && Instance.Active;
 
         // Different from GetInstanceID(): ZDO IDs are persistent across unload/reload and host migration.
         private static uint SeedFromZdo(ZDO zdo)

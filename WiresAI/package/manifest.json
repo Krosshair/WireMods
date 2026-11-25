@@ -1,7 +1,7 @@
 {
     "name": "WiresAI",
     "description": "Smarter, more individual creatures: own body, personality and sight, packs that fight together, no long pauses, player-like attack judgement (mistakes included), smarter chasing and searching, and bosses that adapt as they weaken.",
-    "version_number": "0.3.2",
+    "version_number": "0.3.3",
     "website_url": "",
     "dependencies": []
 }

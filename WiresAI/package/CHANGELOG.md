@@ -1,3 +1,6 @@
+## 0.3.3
+- Bodies are as big as the creature was: with its size from Wire's AI, its stars, and young ones (piglets and wolf cubs left full-grown bodies). Draugr and moose bodies were a bit too small even without stars.
+
 ## 0.3.2
 - Fixed: repeated errors in the log from creatures whose target had died or left the area.
 
