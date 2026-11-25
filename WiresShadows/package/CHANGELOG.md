@@ -1,156 +1,197 @@
+## 0.5.1
+
+* Contact shadows get longer as the sun or moon gets low, as shadows do, up to about three times as long at dawn and dusk.
+* Performance: lights of passing effects (a boss's fire, spells, death and summoning effects) no longer get cached shadows. Each drew a whole shadow map the moment it appeared, for something gone in seconds. The Dverger staff's fire keeps Valheim's shadows.
+* Performance: less repeated work each frame. Flicker culling reads the camera and your position once for all lights instead of once for each, lights in one pass drops lights you cannot see before reading the rest of them, and each light position is read once instead of three times. Small, not measured.
+* Fixed: chopped trees and mined or broken rocks left their shadows behind in the light of nearby fires, and a felled log could leave one in mid-air.
+* Fixed: turning Enabled off left rain, snow and mist on the mod's shader, without the light of nearby fires. 
+* Fixed: the Improved AO description said it runs at full resolution. It runs at the resolution Valheim uses.
+* README and setting texts reworded, and the README shows one image per feature with what to look for.
+
 ## 0.5.0
-- New: Contact shadows (Look, on by default). Short, sharp sun and moon shadows where the shadow map is too coarse: stones on the ground, plank edges, the foot of a post. A port of Bend Studio's screen-space shadows; pixels the sun can't shadow anyway are skipped, so it costs very little.
-- New: Weather catches light (Look, on by default). Rain and snow are lit by which way each flake faces the light, so they catch firelight and moonlight instead of being flat white specks.
-- Performance: rain, snow, mist and wind dust are lit by nearby lights at each particle's corners instead of at every pixel. Same look, much less GPU work in heavy weather.
-- Lights in one pass (was Tiled lights) and Skip hidden pieces (was Occlusion culling) are no longer experimental and are now on for everyone.
+
+* New: Contact shadows (Look, on by default). Short, sharp sun and moon shadows where the shadow map is too coarse: stones on the ground, plank edges, the foot of a post. A port of Bend Studio's screen-space shadows; pixels the sun can't shadow anyway are skipped, so it costs very little.
+* New: Weather catches light (Look, on by default). Rain and snow are lit by which way each flake faces the light, so they catch firelight and moonlight instead of being flat white specks.
+* Performance: rain, snow, mist and wind dust are lit by nearby lights at each particle's corners instead of at every pixel. Same look, much less GPU work in heavy weather.
+* Lights in one pass (was Tiled lights) and Skip hidden pieces (was Occlusion culling) are no longer experimental and are now on for everyone.
 
 ## 0.4.1
-- Removed seven internal switches that were always on, and the code paths behind them that could never run. Nothing changes in game.
-- README: the comparison images now sit under the features they show.
+
+* Removed seven internal switches that were always on, and the code paths behind them that could never run. Nothing changes in game.
+* README: the comparison images now sit under the features they show.
 
 ## 0.4.0
-- New: Shadows setting (General). All (default): every placed light, as before. Performance: only the lights the game itself gives shadows (fires, braziers, hearths, lanterns); sconces, standing torches and the like get none. Off: no shadows from placed lights. The game's own Point light shadows setting is no longer used.
-- Enhanced shading (on by default): surfaces are lit with Burley's diffuse, the one in Unity's own Standard shader, instead of the game's Lambert. Rough surfaces such as ground, rock, wood and foliage brighten a little when the light is behind you, and smooth ones darken a little at their edges, which looks softer and more natural. Lit straight on, nothing changes. Off gives back the game's look.
-- Smooth shading (off by default): light fades smoothly from lit to unlit instead of in the game's toon steps, for the sun, moon and every light.
-- Ambient occlusion is now called Improved AO, and the settings are sorted into sections: General, Look, Performance and Testing. Values you already set are kept.
+
+* New: Shadows setting (General). All (default): every placed light, as before. Performance: only the lights the game itself gives shadows (fires, braziers, hearths, lanterns); sconces, standing torches and the like get none. Off: no shadows from placed lights. The game's own Point light shadows setting is no longer used.
+* Enhanced shading (on by default): surfaces are lit with Burley's diffuse, the one in Unity's own Standard shader, instead of the game's Lambert. Rough surfaces such as ground, rock, wood and foliage brighten a little when the light is behind you, and smooth ones darken a little at their edges, which looks softer and more natural. Lit straight on, nothing changes. Off gives back the game's look.
+* Smooth shading (off by default): light fades smoothly from lit to unlit instead of in the game's toon steps, for the sun, moon and every light.
+* Ambient occlusion is now called Improved AO, and the settings are sorted into sections: General, Look, Performance and Testing. Values you already set are kept.
 
 ## 0.3.6
-- Performance: drawing a light's shadow map no longer does the lighting work a normal camera does (the sun's shadows, per-pixel lights) for each of its six faces; none of it was used.
+
+* Performance: drawing a light's shadow map no longer does the lighting work a normal camera does (the sun's shadows, per-pixel lights) for each of its six faces; none of it was used.
 
 ## 0.3.5
-- Performance: moving round a large base no longer makes lights repeatedly rebuild their shadow maps just because they trade places in the shadow slots. A light that loses its slot keeps its finished map for when it comes back, and near-resolution maps wait until a light has stayed near long enough instead of being promoted back and forth while you move.
-- Performance: a light's shadow map doesn't immediately shrink when you step away from it. It waits a few seconds, while higher resolution is still given back right away when needed. A resize that no longer makes sense is cancelled before it draws, and a resize alone reuses the existing list of shadow casters instead of searching the area again.
-- Performance: moving shadows check which parts of each cubemap face a moving object actually covers with less CPU work, without changing which objects cast shadows. The lights used by the tiled pass also need fewer calculations when finding their screen bounds, and their existing slot numbers are used directly instead of rebuilding a lookup table every frame.
-- Performance: when a cached shadow map is reused during a group of light-slot changes, the mod sends the updated shadow data to the GPU once at the end instead of after every reused light.
-- Performance: rain, snow, mist and wind dust can use the existing tiled-light lists to skip point lights that cannot reach that part of the screen. This adds no extra compute pass, and keeps the full light list as a fallback when needed.
+
+* Performance: moving round a large base no longer makes lights repeatedly rebuild their shadow maps just because they trade places in the shadow slots. A light that loses its slot keeps its finished map for when it comes back, and near-resolution maps wait until a light has stayed near long enough instead of being promoted back and forth while you move.
+* Performance: a light's shadow map doesn't immediately shrink when you step away from it. It waits a few seconds, while higher resolution is still given back right away when needed. A resize that no longer makes sense is cancelled before it draws, and a resize alone reuses the existing list of shadow casters instead of searching the area again.
+* Performance: moving shadows check which parts of each cubemap face a moving object actually covers with less CPU work, without changing which objects cast shadows. The lights used by the tiled pass also need fewer calculations when finding their screen bounds, and their existing slot numbers are used directly instead of rebuilding a lookup table every frame.
+* Performance: when a cached shadow map is reused during a group of light-slot changes, the mod sends the updated shadow data to the GPU once at the end instead of after every reused light.
+* Performance: rain, snow, mist and wind dust can use the existing tiled-light lists to skip point lights that cannot reach that part of the screen. This adds no extra compute pass, and keeps the full light list as a fallback when needed.
 
 ## 0.3.1
-- Fixed: digging, raising or levelling the ground near lights kept the old ground's shadows. Their maps are redrawn half a second after you stop.
-- Performance: moving shadows work out which part of each map a moving thing covers with a fraction of the math (same result).
+
+* Fixed: digging, raising or levelling the ground near lights kept the old ground's shadows. Their maps are redrawn half a second after you stop.
+* Performance: moving shadows work out which part of each map a moving thing covers with a fraction of the math (same result).
 
 ## 0.3.0
-- Performance: a base's lights stopped taking turns at the shadow slots while you stand still. They were ranked by their brightness as it flickers, so they kept swapping places, and each one that came back drew its whole shadow map again (around 2.5 ms of the processor every frame at a big base, measured). They're ranked by their steady brightness now, and a light that does lose its slot keeps its map for when it gets one back, unless something round it changed meanwhile.
+
+* Performance: a base's lights stopped taking turns at the shadow slots while you stand still. They were ranked by their brightness as it flickers, so they kept swapping places, and each one that came back drew its whole shadow map again (around 2.5 ms of the processor every frame at a big base, measured). They're ranked by their steady brightness now, and a light that does lose its slot keeps its map for when it gets one back, unless something round it changed meanwhile.
 
 ## 0.2.9
-- Performance: ambient occlusion costs the same as the game's own again: back to the game's resolution, samples, blur and frame averaging. Only the sample directions stay the same every frame, which is what keeps it from shimmering.
+
+* Performance: ambient occlusion costs the same as the game's own again: back to the game's resolution, samples, blur and frame averaging. Only the sample directions stay the same every frame, which is what keeps it from shimmering.
 
 ## 0.2.8
-- Performance: moving shadows cost the graphics card less again. 0.2.7 drew them once per object for every light around (less work for the processor), but in a way graphics cards run slowly; now in smaller steps they handle as fast as before.
+
+* Performance: moving shadows cost the graphics card less again. 0.2.7 drew them once per object for every light around (less work for the processor), but in a way graphics cards run slowly; now in smaller steps they handle as fast as before.
 
 ## 0.2.7
-- Performance: moving shadows (you and other moving things) are drawn once per object for every light around instead of once per light. Next to a dozen lights that was a dozen draws per part of a character every frame, now one.
+
+* Performance: moving shadows (you and other moving things) are drawn once per object for every light around instead of once per light. Next to a dozen lights that was a dozen draws per part of a character every frame, now one.
 
 ## 0.2.6
-- New: Ambient occlusion setting (General, on). Off gives the game's own ambient occlusion while the rest of the mod stays on.
-- Fixed: ambient occlusion shimmering on distant grass and trees moving in the wind, most of all at a lower render scale. With the mod the game's ambient occlusion samples the same directions every frame instead of rotating them and averaging frames (which swaying plants threw off), at full resolution instead of half, with one sample level more. Same look otherwise.
+
+* New: Ambient occlusion setting (General, on). Off gives the game's own ambient occlusion while the rest of the mod stays on.
+* Fixed: ambient occlusion shimmering on distant grass and trees moving in the wind, most of all at a lower render scale. With the mod the game's ambient occlusion samples the same directions every frame instead of rotating them and averaging frames (which swaying plants threw off), at full resolution instead of half, with one sample level more. Same look otherwise.
 
 ## 0.2.5
-- Fixed: thin shadow lines where beams overlap (one beam's edge shading the other right where they meet). Edges sticking out less than a hair past a piece they overlap no longer shade it, and surfaces no longer shade themselves right where pieces meet.
+
+* Fixed: thin shadow lines where beams overlap (one beam's edge shading the other right where they meet). Edges sticking out less than a hair past a piece they overlap no longer shade it, and surfaces no longer shade themselves right where pieces meet.
 
 ## 0.2.4
-- Performance: Occlusion culling costs less to run (its depth test at a quarter of the screen size, every other frame, and only pieces that change are sent back), so it no longer makes things slower outside where little is hidden.
-- Performance: the mod no longer costs anything for moving shadows while nothing moving is in a light's reach (it went through every light each frame), and lights on built pieces are no longer checked for having moved each frame (only lights on items, ships, carts or characters can move).
-- Fixed: thin dark lines where one beam cuts into another (cross beams, snapped beams). The other beam's surface right at the joint no longer shades the first.
-- Performance: a turning machine (windmill, spinning wheel, eitr refinery) is no longer redrawn every frame into the moving shadow of a light whose walls hide it. While a light draws its turning parts, the GPU checks whether any of their pixels reach past that light's walls; if none do over one full turn, that light stops drawing them until its cached shadow changes.
+
+* Performance: Occlusion culling costs less to run (its depth test at a quarter of the screen size, every other frame, and only pieces that change are sent back), so it no longer makes things slower outside where little is hidden.
+* Performance: the mod no longer costs anything for moving shadows while nothing moving is in a light's reach (it went through every light each frame), and lights on built pieces are no longer checked for having moved each frame (only lights on items, ships, carts or characters can move).
+* Fixed: thin dark lines where one beam cuts into another (cross beams, snapped beams). The other beam's surface right at the joint no longer shades the first.
+* Performance: a turning machine (windmill, spinning wheel, eitr refinery) is no longer redrawn every frame into the moving shadow of a light whose walls hide it. While a light draws its turning parts, the GPU checks whether any of their pixels reach past that light's walls; if none do over one full turn, that light stops drawing them until its cached shadow changes.
 
 ## 0.2.3
-- New: Occlusion culling (General, experimental, off by default). Build pieces fully hidden behind others (the rooms above your basement, the inside of a house from outside) aren't drawn. Their sun, moon and point light shadows stay.
+
+* New: Occlusion culling (General, experimental, off by default). Build pieces fully hidden behind others (the rooms above your basement, the inside of a house from outside) aren't drawn. Their sun, moon and point light shadows stay.
 
 ## 0.2.2
-- Performance: rain, snow, mist and wind dust are lit by every nearby point light in one draw instead of being drawn again for each light (the game's way), fewer draw calls in bad weather near a lit base. Setting: Weather lit in one pass (on).
-- Fixed: a placed piece with several lights (a Dvergr lantern) lit up in steps, one light after another. They now come on together and fade in as one.
-- Changed: moving shadows no longer depend on where you look. Every moving thing in a light's reach is drawn into it (shadows came and went as you turned the camera or your character); what's saved instead goes by distance from your character, how often a light's moving shadows are redrawn.
-- Fixed: a cape's moving shadow smeared across the floor as you moved. A shadow face with a character in it is now redrawn whole instead of only around the character's bounds, which a cape's cloth swings outside.
+
+* Performance: rain, snow, mist and wind dust are lit by every nearby point light in one draw instead of being drawn again for each light (the game's way), fewer draw calls in bad weather near a lit base. Setting: Weather lit in one pass (on).
+* Fixed: a placed piece with several lights (a Dvergr lantern) lit up in steps, one light after another. They now come on together and fade in as one.
+* Changed: moving shadows no longer depend on where you look. Every moving thing in a light's reach is drawn into it (shadows came and went as you turned the camera or your character); what's saved instead goes by distance from your character, how often a light's moving shadows are redrawn.
+* Fixed: a cape's moving shadow smeared across the floor as you moved. A shadow face with a character in it is now redrawn whole instead of only around the character's bounds, which a cape's cloth swings outside.
 
 ## 0.2.1
-- Fixed: breaking, taking or eating placed food left its shadow for up to about a second. It now goes as quickly as a building piece's.
-- Performance: physics checks moved off the main thread to Unity's worker threads: whether each light can see a moving thing (every frame), and the search of a light's surroundings before a full shadow map (found a frame ahead; redraws for something you did still search at once).
-- Smoother: shadow map pools grow with room to spare and keep a little spare when packed, instead of being rebuilt one map at a time as you walk about (each rebuild was a hitch). Placing food redraws the nearest light's shadow once instead of twice in the same frame. After placing or breaking something, the brightest light there updates at once and the other lights round it follow over the next frames, a third as fast as before, so the frames right after aren't slower.
-- Smoother: before a full shadow map, the things in a light's reach are sorted a little each frame (half a millisecond at most) instead of all in one frame; the old map stays until the new one is ready. The light ranking no longer searches every fixed light's parents each second.
-- Fixed: building and breaking a lot made each frame gradually slower: every piece placed in the last 10 seconds stayed in the moving shadows while lights off screen waited their turn. Now only lights in view are waited for, for at most 3 seconds. Breaking a lot: a broken piece's falling chunks are one shadow group per piece instead of one per chunk, and once they land they're drawn once instead of every frame.
-- Performance: dropped items that have come to rest are part of the cached shadows, like placed food, instead of being checked and drawn into the moving shadows every frame for as long as they lie there. Kicked or knocked, they move with their shadow again; picked up, their shadow goes at once.
-- Smoother placing and breaking next to several lights: the brightest light redraws only the face the change is in at once, its other faces on the next frames, and no other shadow face is drawn in that frame (it could be two or more). A light whose surroundings were being gathered no longer has to gather them all at once when you build next to it.
+
+* Fixed: breaking, taking or eating placed food left its shadow for up to about a second. It now goes as quickly as a building piece's.
+* Performance: physics checks moved off the main thread to Unity's worker threads: whether each light can see a moving thing (every frame), and the search of a light's surroundings before a full shadow map (found a frame ahead; redraws for something you did still search at once).
+* Smoother: shadow map pools grow with room to spare and keep a little spare when packed, instead of being rebuilt one map at a time as you walk about (each rebuild was a hitch). Placing food redraws the nearest light's shadow once instead of twice in the same frame. After placing or breaking something, the brightest light there updates at once and the other lights round it follow over the next frames, a third as fast as before, so the frames right after aren't slower.
+* Smoother: before a full shadow map, the things in a light's reach are sorted a little each frame (half a millisecond at most) instead of all in one frame; the old map stays until the new one is ready. The light ranking no longer searches every fixed light's parents each second.
+* Fixed: building and breaking a lot made each frame gradually slower: every piece placed in the last 10 seconds stayed in the moving shadows while lights off screen waited their turn. Now only lights in view are waited for, for at most 3 seconds. Breaking a lot: a broken piece's falling chunks are one shadow group per piece instead of one per chunk, and once they land they're drawn once instead of every frame.
+* Performance: dropped items that have come to rest are part of the cached shadows, like placed food, instead of being checked and drawn into the moving shadows every frame for as long as they lie there. Kicked or knocked, they move with their shadow again; picked up, their shadow goes at once.
+* Smoother placing and breaking next to several lights: the brightest light redraws only the face the change is in at once, its other faces on the next frames, and no other shadow face is drawn in that frame (it could be two or more). A light whose surroundings were being gathered no longer has to gather them all at once when you build next to it.
 
 ## 0.2.0
-- Faster moving shadows: something moving is only drawn into a light's shadow when that shadow can show: on screen, and where the light reaches it (not behind a wall from it). Each redraw also skips a copy it used to make.
-- Faster point lights: their lighting pass keeps the GPU's early depth test again (only the experimental Tiled lights need to switch it off).
-- Faster sun lighting: the sun's pass no longer carries the point light shadow code and no longer waits on its own shadow before reading the scene.
-- Shadows load during the loading screen, around where you spawn. Anything left is finished the frame you arrive, before the screen fades, after a world load, a respawn or a teleport. No shadows popping in afterwards.
-- What you do comes first: placing or breaking pieces, doors, items on stands and placing, taking or eating food. The light brightest where it happened updates its shadow at once; the other lights whose shadow of it you can see follow first in line. The world streaming in around you waits behind them.
-- A piece you place casts its shadow at once (as a moving shadow until its lights' cached shadows take it in).
-- Changes next to lights you walk around show right away: a light whose shadow was being resized no longer makes them wait for the whole resize, and a resize that was under way can't bring the old shadow back.
-- A dropped or falling item's shadow follows it every frame until it settles.
-- Placed food is drawn into shadows the same way as building pieces.
-- Fixed: a food building preview (holding food to place it) left a shadow until something else was placed.
-- The building preview casts no shadows, as in vanilla.
-- New: Quick benchmark (General): the mod against vanilla in about 10 seconds. Benchmark now takes the middle frame time of each part (a stutter doesn't skew it) and shows what moving shadows, point lights and the lighting shader each cost.
+
+* Faster moving shadows: something moving is only drawn into a light's shadow when that shadow can show: on screen, and where the light reaches it (not behind a wall from it). Each redraw also skips a copy it used to make.
+* Faster point lights: their lighting pass keeps the GPU's early depth test again (only the experimental Tiled lights need to switch it off).
+* Faster sun lighting: the sun's pass no longer carries the point light shadow code and no longer waits on its own shadow before reading the scene.
+* Shadows load during the loading screen, around where you spawn. Anything left is finished the frame you arrive, before the screen fades, after a world load, a respawn or a teleport. No shadows popping in afterwards.
+* What you do comes first: placing or breaking pieces, doors, items on stands and placing, taking or eating food. The light brightest where it happened updates its shadow at once; the other lights whose shadow of it you can see follow first in line. The world streaming in around you waits behind them.
+* A piece you place casts its shadow at once (as a moving shadow until its lights' cached shadows take it in).
+* Changes next to lights you walk around show right away: a light whose shadow was being resized no longer makes them wait for the whole resize, and a resize that was under way can't bring the old shadow back.
+* A dropped or falling item's shadow follows it every frame until it settles.
+* Placed food is drawn into shadows the same way as building pieces.
+* Fixed: a food building preview (holding food to place it) left a shadow until something else was placed.
+* The building preview casts no shadows, as in vanilla.
+* New: Quick benchmark (General): the mod against vanilla in about 10 seconds. Benchmark now takes the middle frame time of each part (a stutter doesn't skew it) and shows what moving shadows, point lights and the lighting shader each cost.
+
 ## 0.1.11
-- New: Flicker culling (General, on by default). Lights more than 15 metres from you stop flickering, as do lights whose entire reach is out of view. Their brightness holds steady until nearby and visible again; fades and flashing-light accessibility settings remain supported. The distance is adjustable.
-- Fixed: A placed feast or other food could leave its shadow behind briefly after being broken or removed. Visible affected faces now get priority within the existing redraw budget, without scanning all nearby geometry again.
-- Less CPU work around large moving objects: oversized moving shadow casters no longer expand the search around every light. The original shadows are preserved.
-- More reliable cached shadows: a failed cube face is no longer marked finished, and temporary rendering settings are restored even if a render fails.
-- The experimental indirect renderer is not included in this stable release. Tiled lighting remains optional and unchanged.
+
+* New: Flicker culling (General, on by default). Lights more than 15 metres from you stop flickering, as do lights whose entire reach is out of view. Their brightness holds steady until nearby and visible again; fades and flashing-light accessibility settings remain supported. The distance is adjustable.
+* Fixed: A placed feast or other food could leave its shadow behind briefly after being broken or removed. Visible affected faces now get priority within the existing redraw budget, without scanning all nearby geometry again.
+* Less CPU work around large moving objects: oversized moving shadow casters no longer expand the search around every light. The original shadows are preserved.
+* More reliable cached shadows: a failed cube face is no longer marked finished, and temporary rendering settings are restored even if a render fails.
+* The experimental indirect renderer is not included in this stable release. Tiled lighting remains optional and unchanged.
+
 ## 0.1.10
-- Less lag placing and breaking: the shadow updates round a change no longer all run inside that one frame (up to 12 ms seen); a little each frame instead, nearest first. Lights out of view update when they come into view.
-- Fixed: picking up or eating placed food lagged like placing a feast did: every light round it searched everything in its reach again.
-- Less stutter walking round a base: a light's shadow map that only changes size no longer searches its surroundings again, and re-ranking the lights no longer draws a shadow face in the same frame.
-- New, experimental: Tiled lights (General, off by default). Every point light in one pass instead of one pass each.
-- New: Timing log (General, off by default). What the mod's own work costs per frame, in the log every 5 seconds.
+
+* Less lag placing and breaking: the shadow updates round a change no longer all run inside that one frame (up to 12 ms seen); a little each frame instead, nearest first. Lights out of view update when they come into view.
+* Fixed: picking up or eating placed food lagged like placing a feast did: every light round it searched everything in its reach again.
+* Less stutter walking round a base: a light's shadow map that only changes size no longer searches its surroundings again, and re-ranking the lights no longer draws a shadow face in the same frame.
+* New, experimental: Tiled lights (General, off by default). Every point light in one pass instead of one pass each.
+* New: Timing log (General, off by default). What the mod's own work costs per frame, in the log every 5 seconds.
 
 ## 0.1.8
-- Fixed: pieces round you could vanish and pop back in while the game streamed things in, when a light switched on as its piece appeared.
-- The chunks a broken piece falls apart into cast moving shadows while they fall, as they do with the game's own shadows.
-- Effect particles cast moving shadows too: the chips of a broken piece or tree, a stone's rock bits and the like. See-through dust doesn't.
-- Leaner: shadow updates no longer make garbage for every lower-detail model in a light's reach, and leftover code from older versions is gone.
-- Far less video memory: the shadow maps' storage grew to twice what it needed whenever it ran out (1.8 GB seen) and never got smaller. It now grows by what's needed and packs itself back down once lights are done updating.
-- Fixed: placing a spinning wheel, refinery, windmill or ballista lagged: their moving parts made every light round them search everything in its reach again. Now they're just left out of those lights' maps.
-- Maps are no longer kept for lights that unload (for coming back), which held a lot of video memory and popped in. After a portal or a world load the maps are built again over the first moments, as before, and now fade in instead of popping.
+
+* Fixed: pieces round you could vanish and pop back in while the game streamed things in, when a light switched on as its piece appeared.
+* The chunks a broken piece falls apart into cast moving shadows while they fall, as they do with the game's own shadows.
+* Effect particles cast moving shadows too: the chips of a broken piece or tree, a stone's rock bits and the like. See-through dust doesn't.
+* Leaner: shadow updates no longer make garbage for every lower-detail model in a light's reach, and leftover code from older versions is gone.
+* Far less video memory: the shadow maps' storage grew to twice what it needed whenever it ran out (1.8 GB seen) and never got smaller. It now grows by what's needed and packs itself back down once lights are done updating.
+* Fixed: placing a spinning wheel, refinery, windmill or ballista lagged: their moving parts made every light round them search everything in its reach again. Now they're just left out of those lights' maps.
+* Maps are no longer kept for lights that unload (for coming back), which held a lot of video memory and popped in. After a portal or a world load the maps are built again over the first moments, as before, and now fade in instead of popping.
 
 ## 0.1.7
-- Fixed: breaking a piece near a light left shadows of chips (wood) or rocks (stone) on the ground until you looked away. The dust, chips and rocks that fly out were drawn into the light's shadow map while it updated. The game's effects are no longer drawn into shadow maps.
-- Less lag placing and breaking: each light round a change used to search everything in its reach again before updating its shadow. Now a placed piece is just added to what each light already knows, and a broken one needs nothing. The check of what's round a light is also worked out once per object instead of on every update. Lower-detail models are no longer switched off and on for every shadow update (the update always draws full detail, so they were never drawn anyway).
-- Shadows change with the piece: placing or breaking something in view updates the lights you can see in the next frame, instead of one side of one light per frame after each other (it was a few frames late).
+
+* Fixed: breaking a piece near a light left shadows of chips (wood) or rocks (stone) on the ground until you looked away. The dust, chips and rocks that fly out were drawn into the light's shadow map while it updated. The game's effects are no longer drawn into shadow maps.
+* Less lag placing and breaking: each light round a change used to search everything in its reach again before updating its shadow. Now a placed piece is just added to what each light already knows, and a broken one needs nothing. The check of what's round a light is also worked out once per object instead of on every update. Lower-detail models are no longer switched off and on for every shadow update (the update always draws full detail, so they were never drawn anyway).
+* Shadows change with the piece: placing or breaking something in view updates the lights you can see in the next frame, instead of one side of one light per frame after each other (it was a few frames late).
 
 ## 0.1.6
-- Leaner: the mod keeps its shadow maps one way only (sized by the screen, kept as depth, both sides in one render). The two older ways it carried as fallbacks are gone (about 750 lines, a third of the lighting shader and three shaders), and so are their textures. A GPU that can't do this keeps the game's own point-light shadows.
-- Coming home is smooth: shadow maps are kept when their lights unload, and a light that loads back in with nothing changed around it gets its map back without rendering. Maps that do have to be built are spread out over time.
-- Less lag after a portal: the game keeps loading a base in for a few seconds after the loading screen, and every piece that appeared made the lights around it render again. A light now waits until everything around it has loaded (the same check the portal itself waits on), then renders once.
-- Shadow maps render in half the work: the surfaces facing a light and the ones facing away are drawn in one pass instead of two.
-- Food, meads and items on stands are no longer checked every frame.
-- Fixed: torches placed by the world (the green ground torches at swamp crypts) were shaded by their own model; like built ones, they no longer are.
+
+* Leaner: the mod keeps its shadow maps one way only (sized by the screen, kept as depth, both sides in one render). The two older ways it carried as fallbacks are gone (about 750 lines, a third of the lighting shader and three shaders), and so are their textures. A GPU that can't do this keeps the game's own point-light shadows.
+* Coming home is smooth: shadow maps are kept when their lights unload, and a light that loads back in with nothing changed around it gets its map back without rendering. Maps that do have to be built are spread out over time.
+* Less lag after a portal: the game keeps loading a base in for a few seconds after the loading screen, and every piece that appeared made the lights around it render again. A light now waits until everything around it has loaded (the same check the portal itself waits on), then renders once.
+* Shadow maps render in half the work: the surfaces facing a light and the ones facing away are drawn in one pass instead of two.
+* Food, meads and items on stands are no longer checked every frame.
+* Fixed: torches placed by the world (the green ground torches at swamp crypts) were shaded by their own model; like built ones, they no longer are.
 
 ## 0.1.5
-- Less stutter arriving at a base through a portal: shadow memory is set aside once instead of growing (and copying every shadow map) several times over while the base loads in.
-- Shadow maps get smaller again as you move away from a light (they only ever grew before), so the memory follows what's on your screen.
-- Fixed: shadows between you and a light further away could be low-res: a map's size was measured from the light, not from where its shadows come nearest the camera. One map texel is now no bigger than one screen pixel there.
+
+* Less stutter arriving at a base through a portal: shadow memory is set aside once instead of growing (and copying every shadow map) several times over while the base loads in.
+* Shadow maps get smaller again as you move away from a light (they only ever grew before), so the memory follows what's on your screen.
+* Fixed: shadows between you and a light further away could be low-res: a map's size was measured from the light, not from where its shadows come nearest the camera. One map texel is now no bigger than one screen pixel there.
 
 ## 0.1.4
-- Follows the game's Point light shadows setting. On the highest setting nothing changes. Off: no light shadows from the mod either. Low and the default: every light within the game's own shadow distance (20 m) gets its shadows, not just 1 or 3, and moving shadows get the same work per frame the game would spend on its 1 or 3 lights, nearest lights first. Better looking than vanilla at the same cost.
-- Recommended: set Point light shadows to the highest setting. That's what the mod is made for, and where it looks its best.
+
+* Follows the game's Point light shadows setting. On the highest setting nothing changes. Off: no light shadows from the mod either. Low and the default: every light within the game's own shadow distance (20 m) gets its shadows, not just 1 or 3, and moving shadows get the same work per frame the game would spend on its 1 or 3 lights, nearest lights first. Better looking than vanilla at the same cost.
+* Recommended: set Point light shadows to the highest setting. That's what the mod is made for, and where it looks its best.
 
 ## 0.1.3
-- Uses far less video memory (about 2 GB down to well under 1 GB on a big card). Each shadow map is sized by how much of your screen its light covers, the way games size theirs: a light far away gets a small map, one you're standing in gets the full size. Maps are kept once, as 16-bit depth, instead of twice.
-- Fits your graphics card: the shadow maps take at most a fifth of its memory, and moving shadows give way first on smaller cards. A party of players near many lights could fill the memory and slow everything to a crawl.
-- Faster lighting on the GPU: pixels out of a light's reach and parts of a light with nothing moving skip their shadow work.
-- Moving shadows: the nearest lights get them first when there are more than fit, and their memory is freed again once things calm down.
-- Lights no longer switch from a low-res to a full-size shadow map while you look at them: the best lights get full-size maps before you get close.
+
+* Uses far less video memory (about 2 GB down to well under 1 GB on a big card). Each shadow map is sized by how much of your screen its light covers, the way games size theirs: a light far away gets a small map, one you're standing in gets the full size. Maps are kept once, as 16-bit depth, instead of twice.
+* Fits your graphics card: the shadow maps take at most a fifth of its memory, and moving shadows give way first on smaller cards. A party of players near many lights could fill the memory and slow everything to a crawl.
+* Faster lighting on the GPU: pixels out of a light's reach and parts of a light with nothing moving skip their shadow work.
+* Moving shadows: the nearest lights get them first when there are more than fit, and their memory is freed again once things calm down.
+* Lights no longer switch from a low-res to a full-size shadow map while you look at them: the best lights get full-size maps before you get close.
 
 ## 0.1.2
-- Lights whose light covers more of your screen (close, or big and bright in view) get full-size shadow maps first.
-- Sharper shadow edges close to a light: fine details (herbs, strings, small pots) no longer smear into blobs.
-- Fixed: see-through parts of pieces (the spice rack's herbs, leaves) cast solid card-shaped shadows in cached shadows instead of their real shape.
+
+* Lights whose light covers more of your screen (close, or big and bright in view) get full-size shadow maps first.
+* Sharper shadow edges close to a light: fine details (herbs, strings, small pots) no longer smear into blobs.
+* Fixed: see-through parts of pieces (the spice rack's herbs, leaves) cast solid card-shaped shadows in cached shadows instead of their real shape.
 
 ## 0.1.1
-- Faster moving shadows: only the part of a shadow map that changed is redrawn, each object is drawn once for every side of a light's map it touches, and the further out in a light's range the moving things are, the less often their shadows are redrawn (every frame close to the light, every 4th at the edge). You now cast a moving shadow out to a light's whole range.
-- Placed food and meads are part of the cached shadows instead of the moving ones, and a placed mead's glow is a light of its own.
-- Lights on item stands and armour stands (a trophy's flame, a weapon's glow) get shadows like any placed light, and an item no longer blocks its own light.
-- Fixed: items on stands and placed items could lose parts of their cached shadow to their texture's alpha.
-- Fixed: lights on items (dropped, placed or on a stand, like Brenna's trophy) cast no shadows: they kept the game's near plane, which on some is almost their whole range.
-- Fixed: a mounted item's light could be treated as a rolling dropped item and keep losing its shadow map.
-- Lights you walk up to switch to their full-size shadow map sooner, up to three at once.
-- Benchmark: compares the full mod, every moving shadow redrawn every frame, the cached shadows alone, the cached shadows with the game's own moving shadows, and vanilla, in the same time as before.
-- Coloured ambient occlusion: the game's ambient occlusion takes on the colour of the surface it lands on (GTAO multi-bounce), so bright surfaces are darkened less and coloured ones don't go grey.
-- Removed: the sun shadow caster culling. Measured, it saved nothing.
+
+* Faster moving shadows: only the part of a shadow map that changed is redrawn, each object is drawn once for every side of a light's map it touches, and the further out in a light's range the moving things are, the less often their shadows are redrawn (every frame close to the light, every 4th at the edge). You now cast a moving shadow out to a light's whole range.
+* Placed food and meads are part of the cached shadows instead of the moving ones, and a placed mead's glow is a light of its own.
+* Lights on item stands and armour stands (a trophy's flame, a weapon's glow) get shadows like any placed light, and an item no longer blocks its own light.
+* Fixed: items on stands and placed items could lose parts of their cached shadow to their texture's alpha.
+* Fixed: lights on items (dropped, placed or on a stand, like Brenna's trophy) cast no shadows: they kept the game's near plane, which on some is almost their whole range.
+* Fixed: a mounted item's light could be treated as a rolling dropped item and keep losing its shadow map.
+* Lights you walk up to switch to their full-size shadow map sooner, up to three at once.
+* Benchmark: compares the full mod, every moving shadow redrawn every frame, the cached shadows alone, the cached shadows with the game's own moving shadows, and vanilla, in the same time as before.
+* Coloured ambient occlusion: the game's ambient occlusion takes on the colour of the surface it lands on (GTAO multi-bounce), so bright surfaces are darkened less and coloured ones don't go grey.
+* Removed: the sun shadow caster culling. Measured, it saved nothing.
 
 ## 0.1.0
-- First release.
+
+* First release.
+

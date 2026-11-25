@@ -56,7 +56,7 @@ namespace WiresShadows
         private static readonly int LightNormalFactorId = Shader.PropertyToID("_LightNormalFactor");
         private static readonly List<Material> s_facingSet = new List<Material>();
 
-        private static bool FacingWanted => Plugin.WeatherFacing != null && Plugin.WeatherFacing.Value;
+        private static bool FacingWanted => Plugin.WeatherFacing != null && Plugin.WeatherFacing.Value && Plugin.UseShader.Value;
 
         private static void FacingApply(GameObject[] psystems)
         {
@@ -180,6 +180,7 @@ namespace WiresShadows
         {
             GeometryUtility.CalculateFrustumPlanes(cam, _lPlanes);
             bool linear = QualitySettings.activeColorSpace == ColorSpace.Linear;
+            bool temperature = GraphicsSettings.lightsUseColorTemperature, linearIntensity = GraphicsSettings.lightsUseLinearIntensity;
             int n = 0;
             foreach (Tracked t in Lights)
             {
@@ -195,7 +196,7 @@ namespace WiresShadows
                     if (_lPlanes[k].GetDistanceToPoint(p) < -r) { seen = false; break; }
                 if (!seen) continue;
                 _tPos[n] = new Vector4(p.x, p.y, p.z, 1f / (r * r));
-                _tColor[n] = UnityLightColor(l, linear);
+                _tColor[n] = UnityLightColor(l, linear, temperature, linearIntensity);
                 n++;
             }
             return n;

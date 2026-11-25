@@ -119,6 +119,7 @@ namespace WiresShadows
             Matrix4x4 view = cam.worldToCameraMatrix, proj = cam.projectionMatrix;
             float w = cam.pixelWidth, h = cam.pixelHeight, near = cam.nearClipPlane;
             bool linear = QualitySettings.activeColorSpace == ColorSpace.Linear;
+            bool temperature = GraphicsSettings.lightsUseColorTemperature, linearIntensity = GraphicsSettings.lightsUseLinearIntensity;
             int n = 0;
             System.Array.Clear(_tWhy, 0, _tWhy.Length);
             foreach (Tracked t in Lights)
@@ -127,11 +128,10 @@ namespace WiresShadows
                 Light l = t != null ? t.Light : null;
                 if (l == null) { _tWhy[0]++; continue; }
                 if (!l.isActiveAndEnabled) { _tWhy[1]++; continue; }
-                if (l.type != LightType.Point || l.cookie != null) { _tWhy[2]++; continue; }
-                if (l.shadows != LightShadows.None) { _tWhy[3]++; continue; }
-                if (l.range <= 0f || l.intensity <= 0f) { _tWhy[4]++; continue; }
+                // where it is first: most lights that are on but not lit this frame are behind or off screen
                 Vector3 p = l.transform.position;
                 float r = l.range;
+                if (r <= 0f) { _tWhy[4]++; continue; }
                 Vector3 c = view.MultiplyPoint3x4(p);
                 float depth = -c.z;
                 if (depth + r < near) { _tWhy[5]++; continue; } // behind the camera
@@ -157,13 +157,16 @@ namespace WiresShadows
                     rect = new Vector4(x0 - 1f, y0 - 1f, x1 + 1f, y1 + 1f);
                     if (rect.z < 0f || rect.x > w || rect.w < 0f || rect.y > h) { _tWhy[6]++; continue; } // off screen
                 }
+                if (l.type != LightType.Point || l.cookie != null) { _tWhy[2]++; continue; }
+                if (l.shadows != LightShadows.None) { _tWhy[3]++; continue; }
+                if (l.intensity <= 0f) { _tWhy[4]++; continue; }
                 // The tracked light already knows its slot. Check ownership to
                 // preserve the exact readiness/membership rules of the old map.
                 int sl = t.Slot;
                 int slot = t.Ready && sl >= 0 && sl < _slots.Length &&
                     ReferenceEquals(_slots[sl], t) ? sl : -1;
                 _tPos[n] = new Vector4(p.x, p.y, p.z, 1f / (r * r));
-                _tColor[n] = UnityLightColor(l, linear);
+                _tColor[n] = UnityLightColor(l, linear, temperature, linearIntensity);
                 _tColor[n].w = slot;
                 _tRect[n] = rect;
                 _tDepth[n] = new Vector4(Mathf.Max(0f, depth - r), depth + r, 0f, 0f);
@@ -173,11 +176,12 @@ namespace WiresShadows
         }
 
         // Unity's _LightColor: colour times intensity, made linear as Unity does it
-        private static Vector4 UnityLightColor(Light l, bool linear)
+        private static Vector4 UnityLightColor(Light l, bool linear, bool temperature, bool linearIntensity)
         {
             Color col = l.color;
-            if (GraphicsSettings.lightsUseColorTemperature && l.useColorTemperature) col *= Mathf.CorrelatedColorTemperatureToRGB(l.colorTemperature);
-            Color lc = !linear ? col * l.intensity : GraphicsSettings.lightsUseLinearIntensity ? col.linear * l.intensity : (col * l.intensity).linear;
+            if (temperature && l.useColorTemperature) col *= Mathf.CorrelatedColorTemperatureToRGB(l.colorTemperature);
+            float intensity = l.intensity;
+            Color lc = !linear ? col * intensity : linearIntensity ? col.linear * intensity : (col * intensity).linear;
             return new Vector4(lc.r, lc.g, lc.b, -1f);
         }
 

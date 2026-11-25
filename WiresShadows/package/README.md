@@ -2,9 +2,11 @@
 
 Better lighting for Valheim: real shadows for every light you place, more natural shading on every surface and improved ambient occlusion, with optional smooth shading instead of the toon steps, and it runs faster than vanilla.
 
-In vanilla Valheim only the few lights nearest you get shadows, and the game redraws those every frame. Every other sconce and torch shines straight through walls, floors and roofs. Wire's Shadows gives every placed light cached shadows instead, so your base looks right and runs faster than vanilla. On top, every surface is shaded more naturally, and the shade in corners and creases takes light bouncing between surfaces into account.
+In vanilla Valheim only the few lights nearest you get shadows, and the game redraws those every frame. Every other sconce and torch shines straight through walls, floors and roofs. Wire's Shadows gives every placed light cached shadows instead, so your base looks far better and runs faster. On top, every surface is shaded more naturally, and corners and creases look richer because light bounces between surfaces.
 
-![Wire's Shadows](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/showcaseimage.jpg)
+Look at the back wall and under the tables: each light only lights what it can reach and the rest stays dark, so the room gets depth and a much better mood. Vanilla lights it almost evenly and looks flat.
+
+![Wire's Shadows](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/basementmodded.jpg)
 
 ## Features
 
@@ -13,61 +15,50 @@ In vanilla Valheim only the few lights nearest you get shadows, and the game red
 * **Every placed light casts shadows:** sconces, torches, braziers, hearths, lanterns, forges and the rest. No more light leaking through walls, floors and roofs.
 * **Cached:** a light's shadow is drawn once and again only when something near it changes (building, a door opening).
 * **Moving shadows** for players, creatures, doors, dropped items and moving machine parts. Only the changed part is redrawn, only where it can be seen.
-* **Items on stands, food and meads** cast shadows, and their glows are lights of their own.
+* **Items on stands, food and meads** cast shadows, and so do glowing ones with their light.
 * **Ready before the loading screen fades,** so nothing pops in after loading or teleporting.
 
-Each scene with Wire's Shadows first and vanilla second.
+Look at the floor: the counter, the benches and the railing throw clear shadows, and the light fades into dark corners. It grounds everything in the room. Vanilla has only a few faint ones here and looks washed out.
 
-![Wire's Shadows, upstairs](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/upstairsmodded.jpg)
-![Vanilla, upstairs](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/upstairsvanilla.jpg)
+![Shadows for every light](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/upstairsmodded.jpg)
 
-![Wire's Shadows, basement](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/basementmodded.jpg)
-![Vanilla, basement](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/basementvanilla.jpg)
+### Look and feel
 
-![Wire's Shadows, house by day](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/moddedhouse.jpg)
-![Vanilla, house by day](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/vanillahouse.jpg)
-
-![Wire's Shadows, main menu](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/moddedmainmenu.jpg)
-![Vanilla, main menu](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/vanillamainmenu.jpg)
-
-### Enhanced shading: Burley's diffuse
+#### Enhanced shading: Burley's diffuse
 
 Valheim lights every surface with Lambert's model ([Lambert, 1760](https://en.wikipedia.org/wiki/Lambertian_reflectance)): how bright a surface is depends only on the angle of the light, and it looks the same from every side. Real surfaces don't. A rough one (ground, rock, bark, leaves) looks brighter and flatter when the light is behind you, and a smooth one darkens toward its edges.
 
-The mod uses Burley's diffuse instead ([Burley, Disney, 2012](https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf)), which does both from each surface's roughness and was built to match measured real materials. It's the same model as in Unity's own Standard shader. Lit straight on, it gives exactly what Lambert does.
+The mod uses Burley's diffuse instead ([Burley, Disney, 2012](https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf)), which does both from each surface's roughness and was built to match measured real materials. Unity's Standard shader uses it too. The result is softer and more believable, above all outdoors.
 
-Enhanced shading and contact shadows on, then off (the game's look):
+#### Improved ambient occlusion: multi-bounce
 
-![Wire's Shadows, nature](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/onnature.jpg)
-![Vanilla, nature](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/offnature.jpg)
+Valheim's ambient occlusion (Amplify Occlusion, GTAO) darkens corners and creases the same grey everywhere. In reality light bounces around inside a corner and picks up the surface's colour, so bright corners stay lighter and coloured ones keep their colour. The mod adds that bounce, per colour channel from the surface's colour, with the fit from [Jimenez et al., Activision, 2016](https://blog.selfshadow.com/publications/s2016-shading-course/activision/s2016_pbs_activision_occlusion.pdf). Corners look warmer and less dirty, and it stays steady from frame to frame.
 
-Enhanced shading on, then off:
+#### Contact shadows
 
-![Enhanced shading on](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/eitrlookon.jpg)
-![Enhanced shading off](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/eitrlookoff.jpg)
+Short, sharp sun and moon shadows where the shadow map is too coarse: stones on the ground, plank edges, the foot of a post. Traced on screen toward the sun with Bend Studio's screen-space shadows ([Aldridge, Sony Interactive Entertainment, 2023](https://www.bendstudio.com/blog/inside-bend-screen-space-shadows/)). They get longer as the sun or moon gets low. Pixels the sun can't shadow anyway (sky, beyond its shadow distance, surfaces facing away) are skipped, so it costs very little.
 
-### Improved ambient occlusion: multi-bounce
+Look at the grass, the small plants and the stumps: every blade and leaf throws a small, crisp shadow (Contact shadows), so the meadow looks lush and detailed. In vanilla the grass close to you looks nearly flat.
 
-Valheim's ambient occlusion (Amplify Occlusion, GTAO) darkens corners and creases the same grey everywhere. In reality light bounces around inside a corner and picks up the surface's colour, so bright corners stay lighter and coloured ones keep their colour. The mod adds that bounce, per colour channel from the surface's own colour, with the fit from [Jimenez et al., Activision, 2016](https://blog.selfshadow.com/publications/s2016-shading-course/activision/s2016_pbs_activision_occlusion.pdf). It also runs at full resolution and stays steady from frame to frame.
+![Look and feel, by day](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/onnature.jpg)
 
-### Contact shadows
+Look at the deck boards and the stones by the lights (Enhanced shading: rough wood and stone catch more of the light) and at the creases between the stones and beams (Improved AO: dark but still colourful, which looks much nicer than flat grey).
 
-Short, sharp sun and moon shadows where the shadow map is too coarse: stones on the ground, plank edges, the foot of a post. Traced on screen toward the sun with Bend Studio's screen-space shadows ([Aldridge, Sony Interactive Entertainment, 2023](https://www.bendstudio.com/blog/inside-bend-screen-space-shadows/)). Pixels the sun can't shadow anyway (sky, beyond its shadow distance, surfaces facing away) are skipped, so it costs very little.
+![Look and feel, by night](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/eitrlookon.jpg)
 
-### Weather catches light
+#### Weather catches light
 
 Rain and snow are lit by which way each flake faces the light, so they catch firelight and moonlight instead of being flat white specks.
 
-### Smooth shading (optional)
+#### Smooth shading (optional)
 
 Off by default. Light fades smoothly from lit to unlit instead of in Valheim's toon steps, the look of Badgers Shading Overhaul, built in.
 
-The game's toon steps, then Smooth shading on:
+Look at the banners and the stone wall: the light fades out softly instead of in hard-edged patches. Less cartoonish, more natural.
 
-![Smooth shading off](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/toonon.jpg)
-![Smooth shading on](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/toonoff.jpg)
+![Smooth shading](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresShadows/images/new/toonoff.jpg)
 
-With the Look settings off, the lighting is exactly the game's own.
+With the Look settings off, the shading is exactly that of Valheim.
 
 ## Limitations
 
@@ -78,14 +69,14 @@ With the Look settings off, the lighting is exactly the game's own.
 
 ### General
 
-* **Enabled:** off brings back the game's own lighting and shadows.
-* **Shadows:** which placed lights cast shadows. All (default): every one. Performance: only the ones the game itself gives shadows (fires, braziers, hearths, lanterns); sconces, standing torches and the like get none. Off: none. Torches you carry keep the game's own shadows. The game's Point light shadows setting isn't used.
+* **Enabled:** off brings back Valheim's lighting and shadows.
+* **Shadows:** which placed lights cast shadows. All (default): every one. Performance: only the ones the game itself gives shadows (fires, braziers, hearths, lanterns); sconces, standing torches and the like get none. Off: none. Passing effects (spells, a boss's fire) get none from the mod, and torches you carry keep Valheim's. The game's Point light shadows setting isn't used for placed lights.
 
 ### Look
 
 * **Enhanced shading:** on by default. Burley's diffuse instead of Lambert. Off: the game's look.
 * **Smooth shading:** off by default. No toon steps, for the sun, moon and every light. Just as bright overall.
-* **Improved AO:** on by default. Multi-bounce ambient occlusion. Off: the game's own.
+* **Improved AO:** on by default. Multi-bounce ambient occlusion. Off: Valheim's.
 * **Contact shadows:** on by default. Short sun and moon shadows the shadow map is too coarse for.
 * **Weather catches light:** on by default. Rain and snow lit by which way each flake faces the light.
 
@@ -101,7 +92,7 @@ With the Look settings off, the lighting is exactly the game's own.
 
 * **Benchmark:** about a minute. Measures the mod against vanilla where you stand and shows the frame times, and what moving shadows, point lights and the lighting shader each cost.
 * **Quick benchmark:** the mod against vanilla in about 10 seconds.
-* **Timing log:** off by default. What the mod's own work costs per frame, in the log every 5 seconds.
+* **Timing log:** off by default. What the mod's work costs per frame, in the log every 5 seconds.
 * **Debug log:** off by default. Writes what the mod does to the log; turns itself on while a benchmark runs.
 
 ## Performance
@@ -115,7 +106,7 @@ Measure it yourself: turn on Benchmark in an in-game config menu (such as Shudna
 ## Compatibility
 
 * Client side only.
-* Windows (DirectX 11). Where the shaders can't load, the game's own lighting stays.
+* Windows (DirectX 11). Where the shaders can't load, Valheim's lighting stays.
 * Mods that merge building pieces into bigger meshes: their meshes are left as they are.
 * Mods that replace the game's lighting shader can't be used together with this one.
 

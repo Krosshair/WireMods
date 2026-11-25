@@ -20,13 +20,18 @@ namespace WiresShadows
         private static CommandBuffer s_cb;
         private static Light s_sun;
         private static RenderTexture s_rt;
-        private static int s_main = -1, s_clear = -1;
+        private static int s_clear = -1;
+        // the trace, for each length it can reach: samples, and the kernel that reads that far
+        private static readonly int[] Reach = { 60, 124, 188 };
+        private static readonly string[] Names = { "CSMain", "CSMid", "CSLong" };
+        private static readonly int[] s_trace = new int[3];
         private static bool s_on;
 
         private static readonly int DepthId = Shader.PropertyToID("_WireContactDepth"), OutId = Shader.PropertyToID("_WireContactOut"),
             LightId = Shader.PropertyToID("_WireContactLight"), WaveId = Shader.PropertyToID("_WireContactWave"),
             DepthValuesId = Shader.PropertyToID("_WireContactDepthValues"), NormalId = Shader.PropertyToID("_WireContactNormal"),
-            SunId = Shader.PropertyToID("_WireContactSun"), EyeId = Shader.PropertyToID("_WireContactEye");
+            SunId = Shader.PropertyToID("_WireContactSun"), EyeId = Shader.PropertyToID("_WireContactEye"),
+            LengthId = Shader.PropertyToID("_WireContactLength");
         private static readonly int SunStrengthId = Shader.PropertyToID("_WireSunShadowStrength");
         private static readonly int[] Wave = new int[4];
 
@@ -43,10 +48,13 @@ namespace WiresShadows
             {
                 if (s_apply == null) s_apply = new Material(ApplyShader) { hideFlags = HideFlags.HideAndDontSave };
                 // a bundle whose shader didn't compile has no kernels: stay off rather than throw
-                if (!Compute.HasKernel("CSMain") || !Compute.HasKernel("Clear")) { s_on = false; Plugin.Log.LogWarning("Contact shadows: shader not available, staying off."); return; }
-                s_main = Compute.FindKernel("CSMain");
+                bool ok = Compute.HasKernel("Clear");
+                foreach (string name in Names) ok = ok && Compute.HasKernel(name);
+                if (!ok) { s_on = false; Plugin.Log.LogWarning("Contact shadows: shader not available, staying off."); return; }
                 s_clear = Compute.FindKernel("Clear");
-                if (!Compute.IsSupported(s_main) || !Compute.IsSupported(s_clear)) { s_on = false; Plugin.Log.LogWarning("Contact shadows: shader not supported here, staying off."); return; }
+                ok = Compute.IsSupported(s_clear);
+                for (int i = 0; i < Names.Length; i++) { s_trace[i] = Compute.FindKernel(Names[i]); ok = ok && Compute.IsSupported(s_trace[i]); }
+                if (!ok) { s_on = false; Plugin.Log.LogWarning("Contact shadows: shader not supported here, staying off."); return; }
                 Camera.onPreRender += Frame;
             }
             else
@@ -99,17 +107,27 @@ namespace WiresShadows
             Vector4 lp = vp * new Vector4(toSun.x, toSun.y, toSun.z, 0f);
             bool reversed = SystemInfo.usesReversedZBuffer;
 
+            // A shadow is as long as its caster is tall with the light 45 degrees up, and longer the lower
+            // it is (the cotangent of its height): the trace follows, from its usual 60 samples up to 188
+            // (45 degrees and 188 are picked). The shortest kernel that reads that far does it.
+            float up = Mathf.Max(toSun.y, .01f);
+            float length = Mathf.Clamp(Reach[0] * Mathf.Sqrt(Mathf.Max(0f, 1f - up * up)) / up, Reach[0], Reach[Reach.Length - 1]);
+            int which = 0;
+            while (Reach[which] < length) which++;
+            int trace = s_trace[which];
+
             s_cb.Clear();
             Wave[0] = 0; Wave[1] = 0; Wave[2] = w; Wave[3] = h;
             s_cb.SetComputeIntParams(Compute, WaveId, Wave);
             s_cb.SetComputeTextureParam(Compute, s_clear, OutId, s_rt);
             s_cb.DispatchCompute(Compute, s_clear, (w + 7) / 8, (h + 7) / 8, 1);
 
-            s_cb.SetComputeTextureParam(Compute, s_main, DepthId, BuiltinRenderTextureType.ResolvedDepth);
-            s_cb.SetComputeTextureParam(Compute, s_main, OutId, s_rt);
+            s_cb.SetComputeFloatParam(Compute, LengthId, length);
+            s_cb.SetComputeTextureParam(Compute, trace, DepthId, BuiltinRenderTextureType.ResolvedDepth);
+            s_cb.SetComputeTextureParam(Compute, trace, OutId, s_rt);
             s_cb.SetComputeVectorParam(Compute, DepthValuesId, new Vector4(reversed ? 0f : 1f, reversed ? 1f : 0f, 0f, 0f));
             // for skipping what the sun can't shadow: its direction, the game's sun shadow distance, raw depth to eye depth
-            s_cb.SetComputeTextureParam(Compute, s_main, NormalId, BuiltinRenderTextureType.GBuffer2);
+            s_cb.SetComputeTextureParam(Compute, trace, NormalId, BuiltinRenderTextureType.GBuffer2);
             s_cb.SetComputeVectorParam(Compute, SunId, new Vector4(toSun.x, toSun.y, toSun.z, QualitySettings.shadowDistance));
             float near = cam.nearClipPlane, far = cam.farClipPlane;
             float zx = reversed ? -1f + far / near : 1f - far / near, zy = reversed ? 1f : far / near;
@@ -120,7 +138,7 @@ namespace WiresShadows
             {
                 Wave[0] = s_offset[i * 2]; Wave[1] = s_offset[i * 2 + 1];
                 s_cb.SetComputeIntParams(Compute, WaveId, Wave);
-                s_cb.DispatchCompute(Compute, s_main, s_waves[i * 3], s_waves[i * 3 + 1], s_waves[i * 3 + 2]);
+                s_cb.DispatchCompute(Compute, trace, s_waves[i * 3], s_waves[i * 3 + 1], s_waves[i * 3 + 2]);
             }
             s_apply.SetFloat(SunStrengthId, sun.shadowStrength); // as dark as the sun's own shadows, no darker
             s_cb.Blit(s_rt, BuiltinRenderTextureType.CurrentActive, s_apply);

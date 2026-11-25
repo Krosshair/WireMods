@@ -36,6 +36,7 @@ namespace WiresShadows
             internal ItemStand Stand;    // the stand holding it, if any
             internal float LitAt = -10f;  // when it was last switched on
             internal bool Instant;       // next render shows at full strength
+            internal bool Temporary;     // a passing effect (an attack's fire, a spell): lights, but never gets a shadow map
             internal int ReleasedFrame = -1;
             internal float NearEligibleSince = -1f; // far map has remained eligible for near promotion
             internal float LastNearPromotionAt = -100f; // diagnostic for repeat promotions
@@ -722,6 +723,7 @@ namespace WiresShadows
                 OriginalShadowNearPlane = light.shadowNearPlane,
                 Sconce = IsSconce(light),
                 FakeFlame = fire != null,
+                Temporary = IsTemporary(light),
                 RegisteredAt = Time.time
             };
             Lights.Add(t);
@@ -734,6 +736,19 @@ namespace WiresShadows
             if (Instance != null && (Instance._active ||
                 (Plugin.Shadows.Value == Plugin.ShadowMode.Off && Plugin.UseShader.Value && Plugin.CachedShadows)))
                 Suppress(t);
+        }
+
+        // A passing effect's light: an attack's fire on the ground (Fader's, 1 to 20 s), a spell, a
+        // death or summoning effect. The game doesn't keep these (a ZNetView that isn't persistent, or
+        // none and a TimedDestruction). They stay known, so they light everything as before, but never
+        // take a shadow slot: each drew a whole map on the spot for something gone in seconds, and many
+        // at once can push the base's lights out of theirs. Never part of a built piece
+        // (the Frost Foundry has a part of its own that isn't kept).
+        private static bool IsTemporary(Light light)
+        {
+            if (light.GetComponentInParent<Piece>() != null) return false;
+            ZNetView nv = light.GetComponentInParent<ZNetView>();
+            return nv != null ? !nv.m_persistent : light.GetComponentInParent<TimedDestruction>() != null;
         }
 
         // The glow of an item lying loose (dropped). Items mounted on an item stand or armour stand
@@ -776,6 +791,8 @@ namespace WiresShadows
             {
                 return;
             }
+            if (t.Temporary)
+                return;
             ShadowCache c = Instance;
             if (t.Slot < 0)
             {
@@ -2760,9 +2777,14 @@ namespace WiresShadows
         // While the cache runs, no point light uses Unity's own per-frame
         // shadows: slotted lights read the cache, the rest have none (as
         // vanilla lights past their shadow distance).
+        // A passing effect that has shadows in vanilla (the Dverger staff's fire) keeps the game's own,
+        // as a carried torch does. Not with Shadows off: nothing has any then.
+        private static bool KeepsOwnShadows(Tracked t) => t.Temporary &&
+            (t.OriginalShadowLod || t.OriginalShadows != LightShadows.None) && Plugin.Shadows.Value != Plugin.ShadowMode.Off;
+
         private static void Suppress(Tracked t)
         {
-            if (t.Suppressed || t.Light == null)
+            if (t.Suppressed || t.Light == null || KeepsOwnShadows(t))
                 return;
             t.Suppressed = true;
             if (t.Lod != null) ShadowLod(t.Lod) = false;
@@ -2924,12 +2946,12 @@ namespace WiresShadows
             for (int s = 0; s < _slots.Length; s++)
             {
                 Tracked t = _slots[s];
-                Vector4 now = t != null && t.Ready && t.Light != null
-                    ? new Vector4(t.Light.transform.position.x,
-                                  t.Light.transform.position.y,
-                                  t.Light.transform.position.z,
-                                  t.FakeFlame ? 1f : 0f)
-                    : new Vector4(1e9f, 1e9f, 1e9f, 0f);
+                Vector4 now = new Vector4(1e9f, 1e9f, 1e9f, 0f);
+                if (t != null && t.Ready && t.Light != null)
+                {
+                    Vector3 at = t.Light.transform.position;
+                    now = new Vector4(at.x, at.y, at.z, t.FakeFlame ? 1f : 0f);
+                }
                 Vector4 prev = _lightNow[s];
                 if (prev.x == now.x && prev.y == now.y &&
                     prev.z == now.z && prev.w == now.w)
@@ -4284,6 +4306,7 @@ namespace WiresShadows
                 if (p.Root != null && (p.Center - cam).sqrMagnitude <= far2)
                     AddGroup(p.Center, p.Radius, p.Hash, false, p.Renderers, true, KindSwing);
             AddParticleGroups(cam, far2);
+            AddLogGroups(cam, far2);
             // A broken piece's falling chunks, for the few seconds they last: one group per piece (not
             // one per chunk), redrawn every frame only while a chunk still moves, at rest drawn once.
             // Breaking a lot made dozens of chunk groups, each redrawn every frame in every light.
@@ -4570,8 +4593,8 @@ namespace WiresShadows
                 StartCoroutine(RenderDirty());
         }
 
-        // Waiting maps, most important first: a whole map per frame for lights
-        // near the camera, a face per frame for the rest.
+        // Waiting maps, most important first, a face per frame. Behind a loading screen near ones go
+        // whole and the rest several faces a frame.
         private System.Collections.IEnumerator RenderDirty()
         {
             _rendering = true;
@@ -4867,8 +4890,9 @@ namespace WiresShadows
 
         // Shadows on Performance: only the lights the game itself gives shadows (fires, braziers,
         // hearths, lanterns), as their prefab has them. Sconces, standing torches and the like get none.
-        private static bool Allowed(Tracked t) =>
-            Plugin.Shadows.Value != Plugin.ShadowMode.Performance || t.OriginalShadowLod || t.OriginalShadows != LightShadows.None;
+        // Passing effects' lights (IsTemporary) get none in any mode.
+        private static bool Allowed(Tracked t) => !t.Temporary &&
+            (Plugin.Shadows.Value != Plugin.ShadowMode.Performance || t.OriginalShadowLod || t.OriginalShadows != LightShadows.None);
 
         private static float _spawnedAt = -10f;
 
@@ -5143,6 +5167,8 @@ namespace WiresShadows
             // A swinging door is drawn into the moving map instead.
             foreach (Renderer r in SwingHidden)
                 if (r != null) t.Hide.Add(r);
+            foreach (Renderer r in LogHidden)
+                if (r != null) t.Hide.Add(r);
             // Animated machine parts live in the moving maps.
             foreach (Renderer r in MachineHidden)
                 if (r != null) t.Hide.Add(r);
@@ -5264,8 +5290,8 @@ namespace WiresShadows
             {
                 if (r.forceRenderingOff)
                     continue;
-                // a machine's moving parts (the moving maps draw them) and a swinging door's
-                if (MachineHidden.Contains(r) || SwingHidden.Contains(r))
+                // a machine's moving parts (the moving maps draw them), a swinging door's and felled logs
+                if (MachineHidden.Contains(r) || SwingHidden.Contains(r) || LogHidden.Contains(r))
                 {
                     t.Hide.Add(r);
                     continue;

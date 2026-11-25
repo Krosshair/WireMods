@@ -1,7 +1,7 @@
 {
     "name": "WiresShadows",
     "description": "Better lighting: shadows for every light, more natural shading, improved ambient occlusion and optional smooth shading, faster than vanilla.",
-    "version_number": "0.5.0",
+    "version_number": "0.5.1",
     "website_url": "",
     "dependencies": []
 }
