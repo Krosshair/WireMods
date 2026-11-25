@@ -17,7 +17,7 @@ namespace WiresAltBiomeInfo
     {
         public const string Guid = "wire.valheim.altbiomeinfo";
         public const string Name = "Wire's Alt Biome Info";
-        public const string Version = "0.1.6";
+        public const string Version = "0.1.7";
 
         private Harmony _harmony;
 
@@ -44,6 +44,9 @@ namespace WiresAltBiomeInfo
         private const string DefaultFormat =
             "{modifiers} {biome}";
 
+        // The file that matches the game's language.
+        private const string Auto = "Automatic";
+
         // English is part of the DLL. External language files are
         // overlays on top of these defaults, never a requirement
         // for the mod's normal English behavior.
@@ -53,32 +56,35 @@ namespace WiresAltBiomeInfo
                     StringComparer.OrdinalIgnoreCase)
                 {
                     { "Mushroom", "Fungal" },
-                    { "Lantern", "Lantern" },
+                    { "Lantern", "Lamplit" },
                     { "Bones", "Skeletal" },
-                    { "Menhir", "Menhir" },
-                    { "Dark Meadows", "Dark" },
+                    { "Menhir", "Hallowed" },
+                    { "Thistle", "Bristling" },
+                    { "Dark Meadows", "Dyster" },
                     { "Peaceful Meadows", "Peaceful" },
-                    { "Dandelion Meadows", "Dandelion" },
+                    { "Dandelion Meadows", "Golden" },
                     { "Raspberry Meadows", "Bountiful" },
-                    { "Smalltree Meadows", "Sapling" },
-                    { "Birch Meadows", "Birch" },
-                    { "Troll Black Forest", "Trollish" },
-                    { "Root Black Forest", "Rooty" },
-                    { "Ruin Black Forest", "Ruined" },
-                    { "Rock Black Forest", "Rocky" },
-                    { "Pinetree Black Forest", "Piney" },
+                    { "Smalltree Meadows", "Young" },
+                    { "Birch Meadows", "Pale" },
+                    { "Greyling Meadows", "Overrun" },
+                    { "Troll Black Forest", "Trolsk" },
+                    { "Root Black Forest", "Gnarled" },
+                    { "Ruin Black Forest", "Forsaken" },
+                    { "Rock Black Forest", "Craggy" },
+                    { "Pinetree Black Forest", "Boreal" },
                     { "Blueberry Black Forest", "Bountiful" },
                     { "Kalhygge Black Forest", "Kalhygge" },
-                    { "Hut Swamp", "Hut" },
+                    { "Hut Swamp", "Hexed" },
                     { "Bog Swamp", "Boggy" },
                     { "Bat Swamp", "Swarming" },
                     { "Abomination Swamp", "Abominable" },
+                    { "Statue Swamp", "Graven" },
                     { "Wolf Mountain", "Lupine" },
-                    { "Drake Mountain", "Drake" },
+                    { "Drake Mountain", "Draconic" },
                     { "Fortress Mountain", "Fortified" },
-                    { "Lox Plains", "Teeming" },
+                    { "Lox Plains", "Trampled" },
                     { "Goblin Plains", "Overrun" },
-                    { "Death Plains", "Death" },
+                    { "Death Plains", "Dreaded" },
                     { "Rockless Mistlands", "Rockless" },
                     { "Trees Mistlands", "Sylvan" },
                     { "Swords Mistlands", "Gladial" },
@@ -96,6 +102,29 @@ namespace WiresAltBiomeInfo
         private static string _nameFormat =
             DefaultFormat;
         private static ConfigEntry<string> _language;
+        private static List<string> _available =
+            new List<string>();
+
+        // "German" finds German.txt, else a file that starts with it ("German - AI Translated").
+        private static string GameLanguageFile()
+        {
+            string game = PlatformPrefs.GetString("language", "English");
+            string near = null;
+
+            foreach (string file in _available)
+            {
+                if (string.Equals(file, game, StringComparison.OrdinalIgnoreCase))
+                    return file;
+
+                if (near == null &&
+                    file.Length > game.Length &&
+                    file.StartsWith(game, StringComparison.OrdinalIgnoreCase) &&
+                    !char.IsLetter(file[game.Length]))
+                    near = file;
+            }
+
+            return near ?? "English";
+        }
 
         internal static void Initialize(
             string pluginDirectory,
@@ -108,7 +137,7 @@ namespace WiresAltBiomeInfo
                     "translations");
 
             List<string> languages =
-                new List<string> { "English" };
+                new List<string> { Auto, "English" };
 
             AddLanguagesFromDirectory(
                 _translationDirectory,
@@ -123,13 +152,18 @@ namespace WiresAltBiomeInfo
             languages.Sort(
                 StringComparer.OrdinalIgnoreCase);
 
+            // Automatic comes first in the list
+            languages.Remove(Auto);
+            languages.Insert(0, Auto);
+            _available = languages;
+
             _language =
                 config.Bind(
                     "Translations",
                     "Language",
-                    "English",
+                    Auto,
                     new ConfigDescription(
-                        "Language overlay to load. English defaults are built into the DLL.",
+                        "Language of the biome descriptions. Automatic: the one that matches the game's language, if there's a file for it, else English.",
                         new AcceptableValueList<string>(
                             languages.ToArray())));
 
@@ -168,6 +202,9 @@ namespace WiresAltBiomeInfo
                 _language != null
                     ? _language.Value
                     : "English";
+
+            if (string.Equals(language, Auto, StringComparison.OrdinalIgnoreCase))
+                language = GameLanguageFile();
 
             if (string.IsNullOrWhiteSpace(language) ||
                 string.Equals(
@@ -847,6 +884,8 @@ namespace WiresAltBiomeInfo
         [HarmonyPostfix]
         private static void Postfix(Minimap __instance)
         {
+            TranslationFiles.LoadSelectedLanguage();
+
             if (__instance == null ||
                 __instance.m_biomeNameSmall == null ||
                 Player.m_localPlayer == null)

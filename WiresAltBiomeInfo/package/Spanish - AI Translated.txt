@@ -1,7 +1,7 @@
 # Wire's Alt Biome Info translation file
-# Valheim version used for this template: 1.0.16
+# Valheim version used for this template: 1.0.30
 #
-# This file contains ALL 32 current vanilla AltBiome definitions.
+# This file contains ALL 35 current vanilla AltBiome definitions.
 # The text on the LEFT is the game's AltBiome name/key. DO NOT translate it.
 # Translate only the text on the RIGHT side of =.
 #
@@ -18,6 +18,7 @@ Mushroom=Fúngico
 Lantern=Linterna
 Bones=Esquelético
 Menhir=Menhir
+Thistle=Espinoso
 
 # Meadows
 Dark Meadows=Oscuras
@@ -26,6 +27,7 @@ Dandelion Meadows=de Dientes de León
 Raspberry Meadows=Abundantes
 Smalltree Meadows=de Retoños
 Birch Meadows=de Abedules
+Greyling Meadows=Invadidas
 
 # Black Forest
 Troll Black Forest=Trolesco
@@ -41,6 +43,7 @@ Hut Swamp=de Cabañas
 Bog Swamp=Cenagoso
 Bat Swamp=Enjambre
 Abomination Swamp=Abominable
+Statue Swamp=de Estatuas
 
 # Mountain
 Wolf Mountain=Lupinas

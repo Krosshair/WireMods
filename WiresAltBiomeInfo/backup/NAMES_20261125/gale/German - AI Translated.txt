@@ -1,0 +1,60 @@
+# Wire's Alt Biome Info translation file
+# Valheim version used for this template: 1.0.16
+#
+# This file contains ALL 32 current vanilla AltBiome definitions.
+# The text on the LEFT is the game's AltBiome name/key. DO NOT translate it.
+# Translate only the text on the RIGHT side of =.
+#
+# Valheim already localizes the normal base biome names
+# (Meadows, Black Forest, Swamp, Mountain, Plains, Mistlands, etc.).
+# This file translates the extra AltBiome description added by this mod.
+#
+# Format controls the final order.
+# Keep both placeholders exactly: {modifiers} and {biome}
+Format={modifiers} {biome}
+
+# Allgemeine / biomübergreifende AltBiomes
+Mushroom=Pilzreich
+Lantern=Laternenreich
+Bones=Skelettreich
+Menhir=Menhirreich
+
+# Meadows
+Dark Meadows=Dunkle
+Peaceful Meadows=Friedliche
+Dandelion Meadows=Löwenzahnreiche
+Raspberry Meadows=Üppige
+Smalltree Meadows=Jungbaumreiche
+Birch Meadows=Birkenreiche
+
+# Black Forest
+Troll Black Forest=Trollreicher
+Root Black Forest=Wurzelreicher
+Ruin Black Forest=Ruinenreicher
+Rock Black Forest=Felsiger
+Pinetree Black Forest=Kiefernreicher
+Blueberry Black Forest=Üppiger
+Kalhygge Black Forest=Kalhygge
+
+# Swamp
+Hut Swamp=Hüttenreicher
+Bog Swamp=Mooriger
+Bat Swamp=Schwärmender
+Abomination Swamp=Abscheulicher
+
+# Mountain
+Wolf Mountain=Wolfsreiches
+Drake Mountain=Drachenreiches
+Fortress Mountain=Befestigtes
+
+# Plains
+Lox Plains=Loxreiche
+Goblin Plains=Überrannte
+Death Plains=Tödliche
+
+# Mistlands
+Rockless Mistlands=Felslose
+Trees Mistlands=Waldreiche
+Swords Mistlands=Klingenreiche
+Hare Mistlands=Hasenreiche
+BroodSwarm Mistlands=Verseuchte

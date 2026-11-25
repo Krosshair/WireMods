@@ -1,23 +1,32 @@
 # Wire's Alt Biome Info
 
-Shows Valheim 1.0 alt-biome names in the existing vanilla biome labels instead of adding another HUD element.
+Valheim 1.0 has special versions of its biomes: a swamp full of huts and wraiths, a mountain ruled by wolves, meadows without a greyling in sight. The game never tells you which one you're in. This mod does.
 
-Traslations
+* **Lupine Mountain** instead of Mountain
+* **Hexed Swamp** instead of Swamp
+* **Peaceful Meadows** instead of Meadows
 
-translations/English.txt is kept only as a translator reference/template. Selecting English always uses the built-in DLL defaults.
+Covers all 35 alt biomes of Valheim 1.0.30. No new HUD elements: the names show up where the game already writes the biome.
 
-Other language .txt files work as overlays on top of the built-in English defaults. They may be placed either in the translations folder or beside the DLL (the latter also handles mod-manager installs that flatten folders).
+* **Minimap:** where you are.
+* **Big map:** wherever you point, if you've explored it.
+* **Discovery message:** each kind of alt biome gets its moment the first time you walk into it.
 
-To make a translation:
-1. Copy English.txt.
-2. Rename the copy to whatever, preferably the language that the translation is in.
-3. rename the modifier adjectives
-4. save
-5. open the game
-6. load it in-game using the config.
+An area can be more than one thing at once, like a Fungal Peaceful Meadows.
 
-Valheim already localizes the normal base biome names. These translation entries cover the extra AltBiome descriptions displayed by this mod.
+Client side only.
 
+## Languages
 
-Disclaimer: the code is AI assisted since I barely know C#. Not fully AI nor human.
-https://ko-fi.com/krosshair
+English is built in. German and Spanish (both AI translated) come with the mod. The mod follows the game's language, or pick one with the Language setting. The biome itself is always in your game's language.
+
+To make your own:
+
+1. Copy English.txt, which lies next to the mod's DLL, and name the copy after your language.
+2. Translate the words to the right of each `=`. Leave the left side as it is.
+3. If your language puts the description after the biome, swap the two parts in the `Format` line.
+4. Start the game and pick your file in the Language setting.
+
+Disclaimer: development is AI assisted. Not fully human or AI.
+
+Donations: [ko-fi.com/krosshair](https://ko-fi.com/krosshair)

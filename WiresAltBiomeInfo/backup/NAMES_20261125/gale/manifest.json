@@ -1,0 +1,7 @@
+{
+    "name": "WiresAltBiomeInfo",
+    "description": "Shows Valheim 1.0 alt-biome names in the existing minimap and map biome labels.",
+    "version_number": "0.1.6",
+    "website_url": "",
+    "dependencies": []
+}

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.7
+- New names for the alt biomes the mod didn't cover yet: Bristling (Thistle, in the Swamp and Black Forest), Overrun Meadows (Greyling) and Graven Swamp (Statue). German and Spanish have them too.
+- Better names: Gnarled Black Forest (was Rooty), Boreal Black Forest (was Piney), Young Meadows (was Sapling), Hexed Swamp (was Hut), Trampled Plains (was Teeming), Lamplit (was Lantern), Hallowed (was Menhir), Golden Meadows (was Dandelion), Pale Meadows (was Birch), Forsaken Black Forest (was Ruined), Craggy Black Forest (was Rocky), Draconic Mountain (was Drake), Dreaded Plains (was Death). Two are Scandinavian, like the Kalhygge already was: Trolsk Black Forest (was Trollish; troll-like, enchanted) and Dyster Meadows (was Dark; gloomy).
+- Language is now Automatic by default and follows the game's language. If you already have a config, it keeps what it was set to.
+- Renamed areas show their discovery message once more, since Valheim remembers areas by name.
+- README rewritten.
+
 ## 0.1.6
 - hotfix
 

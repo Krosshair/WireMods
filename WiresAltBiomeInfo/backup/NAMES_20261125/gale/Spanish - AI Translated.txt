@@ -1,0 +1,60 @@
+# Wire's Alt Biome Info translation file
+# Valheim version used for this template: 1.0.16
+#
+# This file contains ALL 32 current vanilla AltBiome definitions.
+# The text on the LEFT is the game's AltBiome name/key. DO NOT translate it.
+# Translate only the text on the RIGHT side of =.
+#
+# Valheim already localizes the normal base biome names
+# (Meadows, Black Forest, Swamp, Mountain, Plains, Mistlands, etc.).
+# This file translates the extra AltBiome description added by this mod.
+#
+# Format controls the final order.
+# Keep both placeholders exactly: {modifiers} and {biome}
+Format={modifiers} {biome}
+
+# AltBiomes generales / de varios biomas
+Mushroom=Fúngico
+Lantern=Linterna
+Bones=Esquelético
+Menhir=Menhir
+
+# Meadows
+Dark Meadows=Oscuras
+Peaceful Meadows=Pacíficas
+Dandelion Meadows=de Dientes de León
+Raspberry Meadows=Abundantes
+Smalltree Meadows=de Retoños
+Birch Meadows=de Abedules
+
+# Black Forest
+Troll Black Forest=Trolesco
+Root Black Forest=Enraizado
+Ruin Black Forest=Ruinoso
+Rock Black Forest=Rocoso
+Pinetree Black Forest=de Pinos
+Blueberry Black Forest=Abundante
+Kalhygge Black Forest=Kalhygge
+
+# Swamp
+Hut Swamp=de Cabañas
+Bog Swamp=Cenagoso
+Bat Swamp=Enjambre
+Abomination Swamp=Abominable
+
+# Mountain
+Wolf Mountain=Lupinas
+Drake Mountain=de Dracos
+Fortress Mountain=Fortificadas
+
+# Plains
+Lox Plains=Repletas
+Goblin Plains=Invadidas
+Death Plains=Mortales
+
+# Mistlands
+Rockless Mistlands=Sin Rocas
+Trees Mistlands=Arboladas
+Swords Mistlands=de Espadas
+Hare Mistlands=Repletas
+BroodSwarm Mistlands=Infestadas

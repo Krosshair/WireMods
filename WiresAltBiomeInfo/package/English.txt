@@ -1,7 +1,7 @@
 # Wire's Alt Biome Info translation file
-# Valheim version used for this template: 1.0.16
+# Valheim version used for this template: 1.0.30
 #
-# This file contains ALL 32 current vanilla AltBiome definitions.
+# This file contains ALL 35 current vanilla AltBiome definitions.
 # The text on the LEFT is the game's AltBiome name/key. DO NOT translate it.
 # Translate only the text on the RIGHT side of =.
 #
@@ -15,42 +15,45 @@ Format={modifiers} {biome}
 
 # Multi-biome / general AltBiomes
 Mushroom=Fungal
-Lantern=Lantern
+Lantern=Lamplit
 Bones=Skeletal
-Menhir=Menhir
+Menhir=Hallowed
+Thistle=Bristling
 
 # Meadows
-Dark Meadows=Dark
+Dark Meadows=Dyster
 Peaceful Meadows=Peaceful
-Dandelion Meadows=Dandelion
+Dandelion Meadows=Golden
 Raspberry Meadows=Bountiful
-Smalltree Meadows=Sapling
-Birch Meadows=Birch
+Smalltree Meadows=Young
+Birch Meadows=Pale
+Greyling Meadows=Overrun
 
 # Black Forest
-Troll Black Forest=Trollish
-Root Black Forest=Rooty
-Ruin Black Forest=Ruined
-Rock Black Forest=Rocky
-Pinetree Black Forest=Piney
+Troll Black Forest=Trolsk
+Root Black Forest=Gnarled
+Ruin Black Forest=Forsaken
+Rock Black Forest=Craggy
+Pinetree Black Forest=Boreal
 Blueberry Black Forest=Bountiful
 Kalhygge Black Forest=Kalhygge
 
 # Swamp
-Hut Swamp=Hut
+Hut Swamp=Hexed
 Bog Swamp=Boggy
 Bat Swamp=Swarming
 Abomination Swamp=Abominable
+Statue Swamp=Graven
 
 # Mountain
 Wolf Mountain=Lupine
-Drake Mountain=Drake
+Drake Mountain=Draconic
 Fortress Mountain=Fortified
 
 # Plains
-Lox Plains=Teeming
+Lox Plains=Trampled
 Goblin Plains=Overrun
-Death Plains=Death
+Death Plains=Dreaded
 
 # Mistlands
 Rockless Mistlands=Rockless
