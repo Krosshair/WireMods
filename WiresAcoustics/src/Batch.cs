@@ -114,8 +114,8 @@ namespace WiresAcoustics
             f.CheckedFrom = Hearing.At;
             f.CheckedAt = to;
             f.CheckedTime = Time.time;
-            // from what you acted on: its walls traced to the point you touched (Interaction)
-            if (f.Interacted) to = f.Touched;
+            // from what you acted on: its walls traced to the point you touched, while it's in reach (Interaction)
+            if (f.Interacted && f.Touch.Now(out Vector3 touched)) to = touched;
             f.CheckedGen = Occlusion.WorldGen;
             // Skip expensive obstacle rays for a source with estimated open
             // gain below -60 dB. This is ONLY a geometry-work skip: the source

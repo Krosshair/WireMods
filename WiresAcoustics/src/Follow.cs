@@ -54,7 +54,12 @@ namespace WiresAcoustics
                 // made during something you did (Interaction): heard clearly within reach
                 bool yours = Interaction.Acting; // and within your reach, below: not some other sound the action set off elsewhere
                 foreach (GameObject go in __result)
-                    if (go != null && go.GetComponent<ZSFX>() != null && go.GetComponent<AudioSource>() is AudioSource made) AcousticFilter.For(made).MadeByYou = yours && Interaction.Near(go.transform.position);
+                    if (go != null && go.GetComponent<ZSFX>() != null && go.GetComponent<AudioSource>() is AudioSource made)
+                    {
+                        AcousticFilter m = AcousticFilter.For(made);
+                        m.MadeByYou = yours && Interaction.Near(go.transform.position);
+                        if (m.MadeByYou) m.Touch = Interaction.Last;
+                    }
                 if (PlayerSounds.IsCue(__instance)) { PlayerSounds.MarkCue(__result); return; }
                 Transform given = baseParent != null ? baseParent : Owner;
                 // a tree coming down: its fall sound is made at the stump, then the log is spawned

@@ -259,15 +259,14 @@ namespace WiresAcoustics
         }
 
         // From the room measurement (every 0.2 s).
-        internal static void Update(AudioMan man, float enclosure)
+        internal static void Update(AudioMan man, float closed)
         {
             // the game's own cold and freezing (what its status effects go by), for the air (Filter)
             AcousticFilter.AirWeather = EnvMan.IsFreezing() ? AcousticFilter.Freezing : EnvMan.IsCold() ? AcousticFilter.Cold : AcousticFilter.Warm;
             float s = AcousticMath.OcclusionStrength;
-            // inside from about a third closed in, fully from about two thirds
-            // and glided there over a second (a room ray or two changing near a window moved it in
+            // glided there over a second (a room ray or two changing near a window moved it in
             // steps, so the bed jumped)
-            float insideNow = s > 0f ? Mathf.Clamp01(enclosure) : 0f;
+            float insideNow = s > 0f ? Mathf.Clamp01(closed) : 0f;
             if (s_insideAt < 0f) s_inside = insideNow; // initial measurement starts at the true room state
             s_insideAt = Time.time;
             s_insideTarget = insideNow;
@@ -507,7 +506,7 @@ namespace WiresAcoustics
                 outdoor != null && outdoor.clip != null &&
                 outdoor.isPlaying && outdoor.volume > .0001f &&
                 !ReferenceEquals(outdoor.clip, s_routedAmbientClip))
-                Update(man, Room.Enclosure);
+                Update(man, Room.Closed);
             bool rainSelected = env != null && env.m_isWet &&
                 env.m_ambientLoop != null;
             if (rainSelected) s_lastRainClip = env.m_ambientLoop;

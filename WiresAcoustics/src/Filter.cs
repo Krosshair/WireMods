@@ -196,8 +196,8 @@ namespace WiresAcoustics
         // The visual held weapon itself is the emitter for a weapon sweep.
         // The point hand/impact sounds use LocalizedEvent instead.
         internal bool WeaponSource;
-        internal bool Interacted;                  // it comes from what you're using (Interaction): clear within reach
-        internal Vector3 Touched;                   // the point you touched on it: its walls are traced to there (Interaction)
+        internal bool Interacted;                  // it comes from what you acted on (Interaction)
+        internal Interaction.Touch Touch;          // the point you touched on it: its walls are traced to there while it's in reach
         internal bool MadeByYou;                   // made during one of your actions (Interaction.Acting, set by Follow when made)
         internal float BaseWidth;                  // from the source's own spread; Width adds the area's size
         internal volatile bool Stereo = true;      // the clip has two channels (a mono one has no side to keep)

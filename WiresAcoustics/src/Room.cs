@@ -64,6 +64,7 @@ namespace WiresAcoustics
 
         // Measured, smoothed (read by Occlusion for the per-sound reverb send).
         internal static float Enclosure;
+        internal static float Closed; // how closed in from the outside's own sound (Measure)
         internal static float BuiltRoof; // distance-weighted coverage of actual overhead roof pieces, not intermediate floors
         // How rain on that roof sounds from below: through its own material (and a floor between, if any).
         internal static float RoofGain = 1f, RoofCutoff = 22000f;
@@ -422,6 +423,7 @@ namespace WiresAcoustics
             s_haveCast = false;
             s_environmentSelected = false;
             Enclosure = 0f;
+            Closed = 0f;
             BuiltRoof = 0f;
             WallBed = 0f;
             GroundSoftness = .5f;
@@ -520,6 +522,7 @@ namespace WiresAcoustics
         private static void Measure()
         {
             int level = 0;
+            float natural = 0f, naturalAlpha = 0f, built = 0f; // what closes you in: rock, ground and trees, or building
             float hits = 0f;
             int roofRays = 0;
             float builtRoofRays = 0f;
@@ -644,7 +647,13 @@ namespace WiresAcoustics
                 if (Dirs[i].y > -.05f)
                 {
                     level++;
-                    if (hit) levelHits += (Tree[i] ? TreeWeight : 1f) * solidFraction;
+                    if (hit)
+                    {
+                        float shut = (Tree[i] ? TreeWeight : 1f) * solidFraction;
+                        levelHits += shut;
+                        if (Built[i]) built += shut;
+                        else { natural += shut; naturalAlpha += Alpha[i] * shut; }
+                    }
                 }
                 int wallRay = hit && Built[i] ? i : SealedBy[i];
                 if (wallRay >= 0)
@@ -663,6 +672,14 @@ namespace WiresAcoustics
                 else if (d < near2) near2 = d;
             }
             float enclosure = level > 0 ? levelHits / level : 0f;
+            // How closed in you are from the outside's own sound (Ambience). A building keeps it out; a
+            // rock or a hillside beside you is out there too and throws back what it doesn't absorb. The
+            // outside comes in through the open directions and goes out through them and into what's
+            // natural round you, so in balance its energy is open / (open + absorption x the rest) of what
+            // it is in the open: nearly all of it beside a cliff, none in a closed cave.
+            float openShare = level - levelHits;
+            float outside = openShare > 0f ? openShare / (openShare + naturalAlpha) : 0f;
+            float closed = natural + built > 0f ? enclosure * Mathf.Lerp(1f - outside, 1f, built / (natural + built)) : 0f;
             float path = hits > 0 ? pathSum / hits : MaxDistance;
             float alpha = hits > 0 ? alphaSum / hits : 1f;
             float alphaEff = Mathf.Max(.01f, (alphaSum + escaped) / Rays); // open directions let the sound out
@@ -748,6 +765,7 @@ namespace WiresAcoustics
             // Store measured geometry directly; Ambience owns the continuous
             // playback fade, and s_current retains the reverb-tail smoothing.
             Enclosure = enclosure;
+            Closed = closed;
             BuiltRoof = roofRays > 0 ? builtRoofRays / roofRays : 0f;
             if (roofWeight > 0f) { RoofGain = roofGainSum / roofWeight; RoofCutoff = Mathf.Exp(roofCutLog / roofWeight); }
             WallBed = bedWalls > 0 ? Mathf.Sqrt(bedSum / bedWalls) : 0f;
@@ -771,7 +789,7 @@ namespace WiresAcoustics
             // the very same measured angular paths and material boundary.
             // This does not schedule ANY additional physics work.
             EnvironmentalField.Measure(Dirs, Picked, Hit);
-            if (AudioMan.instance != null) Ambience.Update(AudioMan.instance, Enclosure);
+            if (AudioMan.instance != null) Ambience.Update(AudioMan.instance, Closed);
 
             if (Plugin.DebugLog.Value && Time.time >= s_nextLog)
             {

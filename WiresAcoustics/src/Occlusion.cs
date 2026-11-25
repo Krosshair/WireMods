@@ -106,8 +106,8 @@ namespace WiresAcoustics
             // wall from an earlier sound incarnation into a new playback.
             if (starting && f != null)
             {
-                f.Interacted = f.MadeByYou || Interaction.From(to, __instance.transform);
-                if (f.Interacted) f.Touched = Interaction.Touched;
+                f.Interacted = f.MadeByYou;
+                if (!f.Interacted && Interaction.From(__instance.transform, f)) { f.Interacted = true; f.Touch = Interaction.Last; }
                 // A pooled/restarted source needs current owner geometry
                 // before its very first occlusion rays and HRTF width.
                 f.AreaKnown = false;
@@ -138,8 +138,9 @@ namespace WiresAcoustics
                 // frame with the answer. From the sound's own spot only: its own object never counts
                 // (Counts), and what you're using is clear (Interaction).
                 Own = null;
-                bool aimed = f != null && f.Interacted;
-                Starts.Hold(__instance, src, aimed ? f.Touched : to, aimed);
+                Vector3 touched = default;
+                bool aimed = f != null && f.Interacted && f.Touch.Now(out touched);
+                Starts.Hold(__instance, src, aimed ? touched : to, aimed);
                 return;
             }
             Own = null;

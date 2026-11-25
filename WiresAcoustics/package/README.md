@@ -1,93 +1,91 @@
 # Wire's Acoustics
 
-Sound physics.
+**Ray traced sound for Valheim. You hear the room you're in, the walls around you and the world outside.**
 
-Inspired by the video [Physically-based audio: why most games sound fake [Voxel Devlog #31]](https://www.youtube.com/watch?v=oN4NZ0sDqKQ), on ray traced audio.
+![Wire's Acoustics](https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresAcoustics/images/hero.jpg)
 
-## Showcase video
+In short:
 
-Coming later, sorry lol. If you want, you can record your own, I guess.
+* **Every space sounds like itself.** A stone hall rings, a log cabin sounds warm, a cave sounds like a cave and open ground is dry.
+* **Walls finally matter.** The fight outside is muffled until you open the door, and you hear it through the window it really comes through.
+* **You know where things are.** Front, back, up and down, not just left and right. Best with headphones.
+* **The world gets bigger.** Far sounds arrive late, lose their highs and carry with the wind instead of cutting off after a few metres.
+* **Rain, wind and sea stay outside,** and get in through the gaps you left.
+
+Vanilla will sound flat once you go back.
+
+Inspired by [Physically-based audio: why most games sound fake](https://www.youtube.com/watch?v=oN4NZ0sDqKQ) (Voxel Devlog #31). A showcase video is coming later.
 
 ## How it works
 
-The mod traces rays through the world, the way light is traced in a renderer, but for sound. A few times a second, rays go out from your character's head in every direction and find out what's around you: how closed in you are, how big the space is, what it's made of, and where the openings are. Every sound you hear is then shaped by that space and by everything between it and you.
+Rays go out from your character's head in every direction, the way light is traced in a renderer. They find out how big the space is, how closed in, what it's made of and where the openings are. Every sound is then shaped by that and by what stands between it and you.
 
-Which way a sound is comes from the camera, as you see it. How far it is, what's in the way and which room you're in come from your character's head, so zooming out doesn't make your own steps quieter and the camera slipping behind a wall doesn't muffle the world.
-
-Wherever I could, the numbers come from real measurements and standards instead of being made up. The sources are at the bottom.
+Which way a sound is comes from the camera, as you see it. How far it is and what's in the way come from your character's head, so zooming out changes nothing.
 
 ## Features
 
-### Reverb from the real space
-The reverb is worked out from what the rays hit: how big the space is, how closed in, and what it's made of. A stone hall rings, a log cabin sounds warmer, a cave sounds like a cave, and a furnished room is drier than an empty one. Windows, doors and gaps let sound out instead of counting the sky behind them as part of the room. Open ground is dry.
+* **Reverb from the real space:** worked out from its size, shape and materials. Furniture, rugs and curtains make a room softer, windows and doors let sound out.
+* **Walls by material:** stone keeps out more than wood, a grate hardly anything. The next room is muffled, not silent.
+* **Sound finds a way:** through windows, doors and roof holes, round corners and over half walls, and it's heard from there. As you step past an edge it changes gradually.
+* **Hills, rocks and trees** block sound by their size: a trunk barely matters, a boulder takes the highs off, a hill takes a lot.
+* **Distance and air:** natural fading, travel time, Doppler, and air that takes the highs off far sounds, by the weather.
+* **Wind:** carries sound downwind, weakens it upwind, gusts and lulls, and drops to a low rumble when you're sheltered.
+* **Weather and sea:** rain sounds like the roof above you, the sea comes from the real shoreline, and under water everything above goes quiet.
+* **Sounds come from where they're made:** a swing from the weapon, a roar from the head, a chest from its lid, a fire from its flame, crafting from the station. Bigger things sound wider.
+* **HRTF (headphones):** how your head and ears change a sound by its direction, for every sound.
+* **More sounds at once:** 128 instead of 32, so nothing drops out in a busy base.
+* **Extras:** a portal's hum carries through with you, the Mistlands mist no longer lowers the pitch, and the main menu gets the HRTF too.
 
-### Walls block sound like real walls
-A door lets through more sound than a plank wall, and stone keeps out more than wood. The next room is muffled, not silent. How much of a sound you can hear also changes as you move past the edge of a wall: a little bit hidden shouldn't sound the same as being completely behind it. Sounds can still reach you over a wall or round its corners.
+## Headphones or speakers
 
-### Sound goes round things
-A sound behind a wall also reaches you through openings: a window, a door, a hole in the roof, or round a corner. More than one opening can carry the same sound. When you move, the sound changes direction gradually instead of jumping between windows. The sound through the wall arrives first, but a much louder arrival through an opening can take over, as your hearing does in real life. Hills, rocks, trees and furniture muffle sound by their size: a trunk barely matters, a boulder takes the highs off, and a hill blocks more the higher it rises.
-
-### Material matters
-Every surface absorbs the lows and highs by published data for what it is. Snow swallows sound, moss and forest floors soften it, grass a bit less, paving and stone reflect it, water reflects almost everything. Just like IRL. Cool, right?
-
-### Distance and air
-Sounds fade with distance the way real sound does, instead of cutting out after a few metres: a quiet sound still reaches far, just quietly. Sound takes time to travel, so far sounds arrive late, and sounds coming towards you or going away shift in pitch. A small fire crackles more softly than a large one. The air takes the highs off distant sounds, with warm, cold and freezing weather matched to the real Norwegian weather Valheim is modelled on.
-
-### Wind
-Downwind, a distant sound carries further; upwind, it can become quieter. The effect depends on the wind, the distance and the ground around you, and falls away when you're sheltered behind a wall, a rock or a hill. The wind itself is heard from where it comes round and over things: behind a wall it drops to a low rumble, and it gusts and lulls rather than blowing as one even loop. Wind in the Plains reeds follows the wind too; birds and rain don't get mistaken for wind.
-
-### HRTF (headphones)
-HRTF stands for head-related transfer function: how your head and ears change a sound depending on where it comes from. A sound on your left reaches your right ear a tiny bit later and duller, sounds behind you lose some brightness, and your outer ear colours sounds from above and below. The mod models this itself, for every sound, so you can tell front from back and up from down, not just left from right. Best with headphones. *I'd recommend turning HRTF off on speakers, as your real head already produces ACTUAL HRTF.* For the mod's own HRTF to sound its best, turn off Windows Sonic or Dolby Atmos spatial processing on your output device while playing Valheim; running both spatializers together can reduce directional clarity.
-
-### Sounds come from where they're made
-The game plays a lot of sounds at a character's feet or at the base of a piece. Here, a weapon swing comes from the moving weapon itself, a bow's draw from the bow, holstering from your back, eating from your head. Creatures roar from their head, claw with their arm and stomp with their feet. A chest opens at its lid, a door sounds from its hinge, a fire or furnace from its flame, crafting from the part of the station you use, a ward from its head, a trader from their head. Whatever you're using, building, removing or repairing is heard clearly while it's within your reach, even in a tight wall of chests. Raising terrain makes a sound above the new ground, not inside it. Rotated pieces stay in the right place. Bigger things can sound wider, while a specific hit or action still comes from the spot where it happened.
-
-### Weather and the sea
-The rain, wind and birds are outside, not in the room with you. Windows, doors and gaps let more of them in; the walls round you let through a quieter, duller sound. Rain stays audible under a roof, and the roof gives it a little more presence without treating a floor between storeys as the roof. The rain keeps Valheim's own ambient recording. The sea is heard from the actual shoreline, including more than one direction where the coast surrounds you. A house blocks the part of the shore behind it, but a post barely matters. Under water, the world above is about 30 dB quieter, as the physics of the water surface says.
-
-### Portals
-Going through a portal, its hum doesn't stop and restart: it carries through with you and keeps playing from the exit portal. More of an extra than sound physics, but it's audio-related so it's here.
-
-### Also
-- No pitch drop in the Mistlands mist (fog doesn't do that to sound, and I don't like it).
-- The main menu's sounds get the HRTF too. Barely noticeable there, tbh, but it's there.
+Headphones are best. Turn off Windows Sonic and Dolby Atmos while playing: two spatializers at once sound worse. On speakers, turn HRTF off, as your real head already does that part.
 
 ## Works with
 
-- **Proximity Voice Chat (Azumatt):** voices come from the speaker's head and get the walls, openings and HRTF like any sound.
-- **Wire's Stackify:** its chest sounds come from each chest.
-- (kinda) **Immersive Weather & Acoustics:** set its `EnableAudioOcclusion = false` so only one audio system runs; its visual weather can stay on.
+* **Proximity Voice Chat (Azumatt):** voices come from the speaker's head and get walls, openings and HRTF.
+* **Wire's Stackify:** its chest sounds come from each chest.
+* **Immersive Weather & Acoustics** (kinda): set `EnableAudioOcclusion = false` there, so only one mod does the audio.
 
 ## Performance
 
-The ray tracing runs on Unity's worker threads, and the per-sound processing runs on the audio thread: sounds too quiet to hear aren't processed. The mod asks Unity to mix 128 sounds at once instead of the game's 32, so in a busy base far sounds don't drop out and nothing is cut off mid-sound. The game's audio update does a small amount of bookkeeping on the main thread. Paths round walls are only traced for sounds that are blocked, and rooms that don't change are scanned less often, with a refresh when something is built, removed or a door opens.
+Rays run on worker threads and the sound processing on the audio thread. Sounds too quiet to hear aren't processed, and a room is only scanned again when you move or something in it changes.
 
 ## Settings
 
-- **General:** Enabled, Room reverb, Muffling, HRTF (headphones), Realistic distance, Travel time, Doppler, Under water, Air, Wind, Sound placement, Voice chat.
-- **Tuning:** Reverb strength, Muffling strength, HRTF strength.
-- **Debug:** Debug log: the measured space, muffled sounds and the mod's costs, every few seconds.
-- Turning the mod off restores the game's own reverb zones, reverb sends and sound placement without a reload (for whatever is still loaded). Only the 128 voices stay until you restart the game: changing that restarts Unity's audio.
+* **General:** a switch for each part: Room reverb, Realistic distance, Muffling, HRTF, Travel time, Doppler, Under water, Air, Wind, Sound placement, Voice chat, Random loop start.
+* **Tuning:** Reverb strength, HRTF strength, Muffling strength, and two advanced ones for how finely a sound's size is sampled.
+* **Debug:** Debug log.
+
+Client side only. You can turn the mod off while playing; only the 128 sounds stay until you restart.
 
 ## Sources
 
-Every value below was checked against the source it's credited to.
+Wherever I could, the numbers come from measurements and standards instead of being made up:
 
-- **Air absorption:** [ISO 9613-1:1993](https://www.iso.org/standard/17426.html), Attenuation of sound during propagation outdoors, part 1 (Bass, Sutherland, Zuckerwar, Blackstock and Hester's formula). Weather: [Bergen (Florida)](https://en.wikipedia.org/wiki/Bergen) July and [Finsevatn](https://en.wikipedia.org/wiki/Finse) January climate normals, 1991-2020.
-- **Barriers, corners, hills, obstacles:** Maekawa's barrier formula as Kurze and Anderson wrote it ([Sound attenuation by barriers](https://doi.org/10.1016/0003-682X(71)90024-7), Applied Acoustics 4, 1971); capped at 20 dB as in [ISO 9613-2:1996](https://www.iso.org/standard/20649.html) for a single edge (both as summarised by [Arup](https://strutt.arup.com/help/Environmental_Noise/EnviroBarrierAtten.htm)).
-- **Walls and doors:** [WoodWorks, Mass Timber Acoustics](https://www.woodworks.org/wp-content/uploads/wood_solution_paper-MASS-TIMBER-ACOUSTICS.pdf) (bare cross-laminated timber walls, STC 33 at 78 mm, 38 at 175 mm); [Commercial Acoustics](https://commercial-acoustics.com/sound-advice/stc-rating-chart/) (solid-core wood door, STC 30 to 35); [Engineering ToolBox](https://engineeringtoolbox.com/sound-transmission-massive-walls-d_1409.html) (230 mm brick plastered both sides, STC 55, and the average shape of a wall's loss over frequency). Iron and ice: the mass law, as in [Warnock, Factors Affecting Sound Transmission Loss](https://web.mit.edu/parmstr/Public/NRCan/CanBldgDigests/cbd239_e.html) (NRC Canadian Building Digest 239, 1985).
-- **Surface absorption:** [Sengpiel's table](https://sengpielaudio.com/calculator-RT60Coeff.htm) (brick, marble, wood on joists, water or ice, concrete); the [pyroomacoustics materials database](https://pyroomacoustics.readthedocs.io/en/stable/pyroomacoustics.materials.database.html) (furniture, rugs, curtains, limestone); [heyizhou.net's absorption tables](https://heyizhou.net/notes/absorption-coefficients) (steel decking; heavy wood from Vorländer's Auralization).
-- **Ground:** the Nord2000 ground classes (flow resistivity), as listed in the [d&b NoizCalc technical white paper](https://www.dbaudio.com/assets/products/downloads/software/noizcalc/dbaudio-noizcalc-technical-white-paper-1.6-en.pdf); turned into absorption with Delany and Bazley's model ([Acoustical properties of fibrous absorbent materials](https://doi.org/10.1016/0003-682X(70)90031-9), Applied Acoustics 3, 1970).
-- **Trees:** Li, Van Renterghem, Kang, Verheyen and Botteldooren, [Sound absorption by tree bark](https://doi.org/10.1016/j.apacoust.2020.107328), Applied Acoustics 165 (2020).
-- **Room size and reverb:** Sabine's reverberation formula, RT60 = 0.161 V / A ([Sengpiel](https://sengpielaudio.com/calculator-RT60.htm)); the critical distance, 0.057 √(QV/RT) ([Arup](https://strutt.arup.com/help/Electroacoustics/DCritical.htm)).
-- **Wind:** [Waddington and Lam, The effect of weather conditions on the propagation of sound](https://www.ioa.org.uk/system/files/proceedings/dc_waddington_yw_lam_the_effect_of_weather_conditions_on_the_propagation_of_sound.pdf) (Proceedings of the IOA 24, 2002); the US National Weather Service's [blizzard definition](https://forecast.weather.gov/glossary.php?word=bliz) to match the game's wind to real wind speeds.
-- **Outside sounds indoors:** through an opening, the share of the outside's all-round sound the opening shows you; checked against measured homes, outdoor to indoor about 10 dB with a window open ([Locher et al., 2018](https://doi.org/10.3390/ijerph15010149)).
-- **Direction of sounds behind walls:** the precedence effect: the first arrival sets the direction unless a later one, 2 to 50 ms after it, is more than 10 dB louder ([Haas, 1951; Blauert, 1983](https://en.wikipedia.org/wiki/Precedence_effect)).
-- **HRTF:** the delay between the ears from Woodworth's spherical head ([Woodworth, 1938](https://en.wikipedia.org/wiki/Interaural_time_difference)), head radius 8.75 cm ([Hartmann, How We Localize Sound](https://web.pa.msu.edu/acoustics/locsound.pdf), Physics Today, 1999). The rest of the HRTF (level, shading, the outer-ear notch) is modelled, not measured.
-- **Under water:** the air and water impedances from [UNSW Physics](https://animations.physics.unsw.edu.au/jw/sound-impedance-intensity.htm), and the standard transmission at a boundary.
-- **The sea as a line source:** [Hong Kong Environmental Protection Department](https://www.epd.gov.hk/epd/noise_education/web/ENG_EPD_HTML/m1/intro_6.html), noise basics.
+* **Walls:** the material presets of Valve's [Steam Audio](https://valvesoftware.github.io/steam-audio/doc/capi/scene.html); see-through pieces by how open they are (area-weighted, as ASHRAE does).
+* **Edges of walls:** Fresnel knife-edge diffraction ([ITU-R P.526](https://www.itu.int/rec/R-REC-P.526)).
+* **Corners, hills and obstacles:** Maekawa's barrier formula as [Kurze and Anderson](https://doi.org/10.1016/0003-682X%2871%2990024-7) wrote it (1971), capped at 20 dB as in [ISO 9613-2](https://www.iso.org/standard/20649.html).
+* **Air:** [ISO 9613-1](https://www.iso.org/standard/17426.html), with the climate of [Bergen](https://en.wikipedia.org/wiki/Bergen) and [Finse](https://en.wikipedia.org/wiki/Finse).
+* **Wind:** the NCHRP Report 791 results in the [FHWA Noise Measurement Handbook](https://www.fhwa.dot.gov/Environment/noise/measurement/handbook.cfm).
+* **Surfaces:** [Sengpiel](https://sengpielaudio.com/calculator-RT60Coeff.htm), the [pyroomacoustics database](https://pyroomacoustics.readthedocs.io/en/stable/pyroomacoustics.materials.database.html), [heyizhou.net](https://heyizhou.net/notes/absorption-coefficients) (steel, and heavy wood from Vorländer); tree bark from [Li et al., 2020](https://doi.org/10.1016/j.apacoust.2020.107328).
+* **Ground:** the Nord2000 classes ([d&b NoizCalc white paper](https://www.dbaudio.com/assets/products/downloads/software/noizcalc/dbaudio-noizcalc-technical-white-paper-1.6-en.pdf)) with [Delany and Bazley's model](https://doi.org/10.1016/0003-682X%2870%2990031-9) (1970).
+* **Room reverb:** [Sabine's formula](https://sengpielaudio.com/calculator-RT60.htm) and the [critical distance](https://strutt.arup.com/help/Electroacoustics/DCritical.htm).
+* **Outside sounds indoors:** checked against [Locher et al., 2018](https://doi.org/10.3390/ijerph15010149).
+* **Direction round walls:** the [precedence effect](https://en.wikipedia.org/wiki/Precedence_effect) (Haas 1951, Blauert 1983).
+* **HRTF:** [Woodworth's delay between the ears](https://en.wikipedia.org/wiki/Interaural_time_difference), head radius from [Hartmann, 1999](https://web.pa.msu.edu/acoustics/locsound.pdf). The rest of it is modelled, not measured.
+* **Water:** impedances from [UNSW Physics](https://animations.physics.unsw.edu.au/jw/sound-impedance-intensity.htm).
+* **Sea as a line source:** [Hong Kong EPD](https://www.epd.gov.hk/epd/noise_education/web/ENG_EPD_HTML/m1/intro_6.html).
 
-Not from a source (judgement values): the wind in the lee of things (12 dB less, down to 800 Hz) and its gusts (up to 4 dB either way), the approximations used to blend partial enclosure and multiple obstruction paths, a wall counting once however many pieces it's built from, indoors 3 dB softer first reflections and 4 dB darker reverb (cozy), random calls kept off buildings within 10 m of you (moved out 4 m at a time), where you count as inside (a third to two thirds closed in), the reverb's loudness and tone, rooms heard at half their built size and as furnished homes (Valheim builds are about twice real size and bare), how much soft obstacles muffle, how much trees enclose a space, props' absorption, random bird and insect calls sitting 1 m above whatever is at their spot, upwind sounds held to 10 dB quieter at most (measured: 20 dB and more), the HRTF's amounts (level, shading, the outer ear's notch), past the game's own range for a sound, 6 dB more each time the distance doubles (instead of a cut-off), fire strength normalized to each fire loop's original authored audio range (10 m reference), where round a wall the mod looks for a way (just past the edge of what blocks it, 1 to 7 m to the sides and up to 5.5 m over), how finite sampled ray paths approximate a partially covered emitter, a player's own unplaced sounds made placed with a near distance of at least 1 m, the wind in your ears (up to 2 dB louder facing it, 3 dB quieter with your back to it), the two rays beside every line 8 cm off (two of three must agree), a line through more than 16 things counting as through a plank wall at least, and a door's sounds 15 cm in from its hinge.
+Not from a source (judgement values):
+
+* **Rooms:** heard at half their built size and as furnished homes (Valheim builds are about twice real size and bare), the reverb's loudness and tone, 3 dB softer first reflections and 4 dB darker reverb indoors, how much trees close a space in, what props absorb.
+* **Wind:** 12 dB less and down to 800 Hz in the lee of things, gusts up to 4 dB either way, up to 2 dB louder side-on and 3 dB quieter with your back to it, full wind taken as 12 m/s.
+* **In the way:** how much soft obstacles muffle, a wall counting once however many pieces it's built from, the two rays 8 cm beside every line, where the mod looks for a way round a wall (up to 5.5 m along it).
+* **Distance:** 6 dB more per doubling past the range Valheim gives a sound instead of a cut-off, fires by their range (10 m as full size).
+* **Placing:** random bird and insect calls 1 m above whatever is at their spot and not on buildings within 10 m of you (moved out 4 m at a time), your unplaced sounds made placed with a near distance of at least 1 m, a door's sounds 15 cm in from its hinge.
+* **HRTF:** the amounts of level, shading and the outer ear's notch.
+* **Openings:** how big a gap must be to count as an opening (a 10 cm sphere).
 
 Disclaimer: development is AI assisted. Not fully human or AI.
-Donations: ko-fi.com/krosshair
+
+Donations: [ko-fi.com/krosshair](https://ko-fi.com/krosshair)

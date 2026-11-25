@@ -1,3 +1,11 @@
+## 0.7.3
+
+- Fixed: everything could sound muffled for a while after eating, drinking or pressing a hotbar key (or E) while looking at the ground, a rock or a creature: sounds around you were then checked against that spot instead of their own, so anything between you and it muffled them all. The same could happen inside a location or dungeon after using something there.
+- Fixed: the point you touched on something only counts while it's within your reach, and moves with it. Walking away from a chest or station, or a ship, cart or animal moving off, could muffle its sounds.
+- Fixed: a sound counts as coming from what you used only if it belongs to it. Before, any sound inside its box did, like a creature walking past.
+- Fixed: wind, insects and other background sound got quieter and duller beside rocks, cliffs and hillsides as if you were inside a building. Caves and buildings stay as they are.
+- Simpler README with a screenshot, and the sources brought up to date (walls, wall edges and wind changed in 0.7.0).
+
 ## 0.7.2
 
 - Fixed: the log filled with "'R8_SRGB' is not supported" warnings while building pieces were measured for how open they are. Sound is unchanged.
