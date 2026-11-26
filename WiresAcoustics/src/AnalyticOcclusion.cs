@@ -199,7 +199,6 @@ namespace WiresAcoustics
                 (listener-f.AnalyticLastEar).sqrMagnitude < 1e-10f &&
                 (source-f.AnalyticLastSource).sqrMagnitude < 1e-10f &&
                 Mathf.Abs(strength-f.AnalyticLastStrength) < 1e-5f &&
-                Mathf.Abs(f.UnderAmount-f.AnalyticLastWater) < 1e-5f &&
                 Mathf.Abs(f.AnalyticIndirectGain-f.AnalyticLastIndirect) < 1e-5f)
                 return; // stationary source/listener: ZERO expensive geometry math
             if(!Evaluate(f,listener,source,out float gain,
@@ -213,7 +212,6 @@ namespace WiresAcoustics
             f.AnalyticLastEar = listener;
             f.AnalyticLastSource = source;
             f.AnalyticLastStrength = strength;
-            f.AnalyticLastWater = f.UnderAmount;
             f.AnalyticLastIndirect = f.AnalyticIndirectGain;
             f.AnalyticWorldGen = Occlusion.WorldGen;
             f.LastCoverage = covered;
@@ -230,7 +228,6 @@ namespace WiresAcoustics
                 SpectralPaths.Combine(gain,cutoff,
                     path,f.AnalyticIndirectCutoff,out gain,out cutoff);
             }
-            Underwater.Apply(ref gain,ref cutoff,f.UnderAmount);
             if(Mathf.Abs(f.TargetGain-gain) > .0001f ||
                Mathf.Abs(f.TargetCutoff-cutoff) > 1f)
             {

@@ -335,7 +335,6 @@ namespace WiresAcoustics
                     .Append(" processingChange=").Append(f.LastProcessingDb.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture)).Append("dB")
                     .Append(" hrtf=").Append(f.Hrtf)
                     .Append(" doppler=").Append(f.Doppler.ToString("F3", CultureInfo.InvariantCulture))
-                    .Append(" water=").Append(f.UnderAmount.ToString("F2", CultureInfo.InvariantCulture))
                     .Append(" reverbSend=").Append(src.reverbZoneMix.ToString("F3", CultureInfo.InvariantCulture))
                     .Append(" sourcePos=").Append(f.transform.position.x.ToString("F2", CultureInfo.InvariantCulture))
                     .Append(',').Append(f.transform.position.y.ToString("F2", CultureInfo.InvariantCulture))

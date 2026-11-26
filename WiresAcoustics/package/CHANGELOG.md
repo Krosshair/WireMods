@@ -1,3 +1,7 @@
+## 0.8.2
+
+- Removed: muffling through the water's surface, and its Under water setting.
+
 ## 0.8.1
 
 - Improved: far sounds lose their highs the way real air takes them, at every pitch. Before, the very top (above about 12 kHz) stayed far too bright on distant sounds (up to 25 dB at 150 m).

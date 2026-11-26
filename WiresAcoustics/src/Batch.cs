@@ -20,7 +20,7 @@ namespace WiresAcoustics
         {
             internal AcousticFilter F;
             internal Vector3 To, Listener;
-            internal bool Under, Reverb, Corners, Probe, Started, Waiting; // Started: this check sent probes for its walls; Waiting: some still on their way
+            internal bool Reverb, Corners, Probe, Started, Waiting; // Started: this check sent probes for its walls; Waiting: some still on their way
             internal int Slot, Dir, K, Version, Gen; // a probe piece: which record, which way, how many, which pass; geometry revision
             internal Vector3 At, N;             // and where on which wall
             internal int First, Routes, EdgeN, VolumeN;
@@ -100,12 +100,12 @@ namespace WiresAcoustics
                     if (!affected) continue;
                 }
                 f.FastGeometryResponse = true;
-                Enqueue(f, at, Underwater.Muffles(at, f.transform),
+                Enqueue(f, at,
                     Plugin.RoomReverb.Value && !f.Source.bypassReverbZones);
             }
         }
 
-        internal static void Enqueue(AcousticFilter f, Vector3 to, bool under, bool reverb)
+        internal static void Enqueue(AcousticFilter f, Vector3 to, bool reverb)
         {
             if (f == null) return;
             f.CheckedFrom = Hearing.At;
@@ -119,8 +119,7 @@ namespace WiresAcoustics
             // itself is not muted, and is rechecked when it becomes audible.
             if ((f.Kind == AcousticFilter.Kinds.Sfx ||
                  f.Kind == AcousticFilter.Kinds.Other) &&
-                f.Placed && Budget.Open(f) < .001f &&
-                !AcousticFilter.GlobalActive)
+                f.Placed && Budget.Open(f) < .001f)
             {
                 s_silentRaysSkipped++;
                 return;
@@ -129,20 +128,17 @@ namespace WiresAcoustics
             if (Occlusion.Mine(f.transform, f))
             {
                 f.EdgeModelValid = false;
-                f.UnderAmount = Underwater.SourceAmount(to, f.transform);
-                f.Set(Mathf.Lerp(1f, Underwater.Gain, f.UnderAmount), 22000f, false);
+                f.Set(1f, 22000f, false);
                 f.LastOcc = 0f;
                 f.Routed = false;
                 f.RouteSpread = 0f;
                 return;
             }
             // No wall processing requested: don't submit ANY geometry rays.
-            // Underwater's attenuation still applies when necessary.
             if (!Plugin.Occlusion.Value)
             {
                 f.EdgeModelValid = false;
-                f.UnderAmount = Underwater.SourceAmount(to, f.transform);
-                f.Set(Mathf.Lerp(1f, Underwater.Gain, f.UnderAmount), 22000f, false);
+                f.Set(1f, 22000f, false);
                 f.LastOcc = 0f;
                 if (f.Records != null) foreach (Corners.Record rec in f.Records) rec.Valid = false;
                 f.Routed = false;
@@ -152,7 +148,7 @@ namespace WiresAcoustics
             // A single cached box wall already has continuous Fresnel
             // diffraction; don't schedule duplicate corner-probe jobs for
             // the SAME geometry every time the listener moves.
-            Queue.Add(new Req { F = f, To = to, Under = under, Reverb = reverb,
+            Queue.Add(new Req { F = f, To = to, Reverb = reverb,
                 // Independent window/door routes remain valid candidates
                 // even when this source uses analytical direct-wall sound.
                 // The cached wall's own corner probes stay suppressed.
@@ -405,7 +401,7 @@ namespace WiresAcoustics
             for (int d = 0; d < Corners.Dirs; d++)
             {
                 rec.Has[d] = false;
-                Later.Add(new Req { F = f, To = check.To, Under = check.Under, Reverb = check.Reverb, Probe = true,
+                Later.Add(new Req { F = f, To = check.To, Reverb = check.Reverb, Probe = true,
                                     Slot = slot, Dir = d, K = k, At = at, N = n, Version = rec.Version });
             }
         }
@@ -450,7 +446,7 @@ namespace WiresAcoustics
             rec.Pending--;
             if (rec.Pending == 0) SharedEdges.Publish(rec);
             if (found || rec.Pending <= 0)
-                Queue.Add(new Req { F = f, To = r.To, Under = r.Under, Reverb = r.Reverb, Corners = true });
+                Queue.Add(new Req { F = f, To = r.To, Reverb = r.Reverb, Corners = true });
         }
 
         // Nothing solid (a wall, the ground, rock) on a probe ray.
@@ -677,7 +673,6 @@ namespace WiresAcoustics
                     }
                     if (f.Source != null && f.Source.isPlaying && f.Active)
                         Enqueue(f, f.transform.position,
-                            Underwater.Muffles(f.transform.position, f.transform),
                             Plugin.RoomReverb.Value && !f.Source.bypassReverbZones);
                     continue;
                 }
@@ -787,8 +782,7 @@ namespace WiresAcoustics
                 // Never hold the previous clear value while probes run.
                 bool blocked = directCoverage > 0f;
                 if (on && direct.Walls > 0 && !r.Corners && !analyticDirect)
-                    Queue.Add(new Req { F = f, To = r.To, Under = r.Under,
-                        Reverb = r.Reverb, Corners = true });
+                    Queue.Add(new Req { F = f, To = r.To, Reverb = r.Reverb, Corners = true });
                 if (blocked) s_blocked++;
                 else s_clear++;
                 if (on && blocked)
@@ -994,8 +988,6 @@ namespace WiresAcoustics
                 }
                 else if (blocked) s_noPath++;
                 Occlusion.Own = null;
-                f.UnderAmount = Underwater.SourceAmount(r.To, f.transform);
-                Underwater.Apply(ref gain, ref cutoff, f.UnderAmount);
                 f.AcousticPath = f.AnalyticActive ?
                     (pathGain > 0f ? "analytic-box+indirect" : "analytic-box-coverage") :
                                  volumeFresnel ? "volume-fresnel" :

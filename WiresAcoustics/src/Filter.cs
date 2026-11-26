@@ -37,20 +37,11 @@ namespace WiresAcoustics
         internal bool AnalyticHasPortal, AnalyticActive;
         internal bool AnalyticPoseValid;
         internal Vector3 AnalyticLastEar, AnalyticLastSource;
-        internal float AnalyticLastStrength, AnalyticLastWater, AnalyticLastIndirect;
+        internal float AnalyticLastStrength, AnalyticLastIndirect;
         private static volatile int s_rate = 48000;
-        private static volatile float s_globalGain = 1f, s_globalCutoff = 22000f;
-        internal static volatile bool GlobalActive;
 
         // How strong the direction cues are (setting "HRTF strength": 1 as modelled, up to 2).
         internal static volatile float Strength = 1f;
-
-        // Applied to every filtered sound on top of its own values: your head under water hears
-        // the air above through the surface (Underwater). A sound in the water with it doesn't cross
-        // the surface, so it skips that (InWater, set with each wall check).
-        internal volatile float InWaterAmount;
-        private float GlobalGain => Mathf.Lerp(s_globalGain, 1f, InWaterAmount);
-        private float GlobalCutoff => AcousticMath.LogLerp(s_globalCutoff, 22000f, InWaterAmount);
 
         // The HRTF makes two ears' worth of sound: on stereo output only. On surround speakers (5.1,
         // 7.1) Unity's own panning places sounds across them instead (writing two channels there
@@ -75,13 +66,6 @@ namespace WiresAcoustics
         internal static AcousticFilter For(AudioSource source) =>
             source.GetComponent<AcousticFilter>() ??
             source.gameObject.AddComponent<AcousticFilter>();
-
-        internal static void SetGlobal(float gain, float cutoff, bool active)
-        {
-            s_globalGain = gain;
-            s_globalCutoff = cutoff;
-            GlobalActive = active;
-        }
 
         // Audio-thread time spent in these callbacks (Stopwatch ticks), read and reset by Budget.
         // With how many callbacks ran the HRTF.
@@ -155,7 +139,6 @@ namespace WiresAcoustics
         internal Corners.Record[] Records;
         // Measured barrier data for position-dependent edge propagation.
         internal bool EdgeModelValid, EdgePositionKnown, EdgeCanOverride;
-        internal float UnderAmount;
         internal int EdgeModelGen;
         internal float EdgeWallGain, EdgeWallCutoff;
         internal Vector3 EdgeWallAt, EdgeWallNormal, EdgeModelSource;
@@ -225,7 +208,7 @@ namespace WiresAcoustics
         // Anything for the callback to do; if not, Budget leaves it switched off (no cost at all).
         internal bool NeedsWork =>
             m_hrtf || m_gain < .999f || m_cutoff < 20000f || m_targetGain < .999f || m_targetCutoff < 20000f || AirDistance > 1.5f || GroundDipDb > .2f ||
-            DistanceGain < .999f || DistanceGain > 1.001f || SourceLevel < .999f || SourceLevel > 1.001f || GlobalActive;
+            DistanceGain < .999f || DistanceGain > 1.001f || SourceLevel < .999f || SourceLevel > 1.001f;
 
         internal static float AirAt(float dist)
         {
@@ -634,8 +617,8 @@ namespace WiresAcoustics
         // Observed DSP state, sampled on the main thread for debug only.
         internal float DspGain => m_gain;
         internal float DspCutoff => m_cutoff;
-        internal float EstimatedCompositeGain => m_targetGain * GlobalGain * DistanceGain * SourceLevel;
-        internal float EstimatedCompositeCutoff => Mathf.Min(m_targetCutoff, Mathf.Min(GlobalCutoff, AirCutoff));
+        internal float EstimatedCompositeGain => m_targetGain * DistanceGain * SourceLevel;
+        internal float EstimatedCompositeCutoff => Mathf.Min(m_targetCutoff, AirCutoff);
 
         internal void SetDirection(Vector3 d) { m_dx = d.x; m_dy = d.y; m_dz = d.z; }
 
@@ -671,7 +654,6 @@ namespace WiresAcoustics
                 f.Physical(false);
                 if (f.OwnReverbMix >= 0f && f.Source != null) { f.Source.reverbZoneMix = f.OwnReverbMix; f.OwnReverbMix = -1f; }
                 f.SourceLevel = 1f;
-                f.InWaterAmount = 0f;
                 if (f.enabled) f.enabled = false; // the mod off: no callbacks at all
             }
             Budget.Clear();
@@ -810,7 +792,7 @@ namespace WiresAcoustics
             // Timing and counting are only for the debug log: without it, just the processing.
             if (!diagnostic && !meter)
             {
-                float tq = m_targetGain * GlobalGain * DistanceGain * SourceLevel;
+                float tq = m_targetGain * DistanceGain * SourceLevel;
                 if (m_gain < 1e-4f && tq < 1e-4f)
                 {
                     System.Array.Clear(data, 0, data.Length);
@@ -826,7 +808,7 @@ namespace WiresAcoustics
             // A source already below -80 dB and still targeting silence
             // cannot be heard; zero its existing buffer, rather than running
             // ~2,000 samples of HRTF/low-pass code.
-            float target = m_targetGain * GlobalGain * DistanceGain * SourceLevel;
+            float target = m_targetGain * DistanceGain * SourceLevel;
             bool silent = m_gain < 1e-4f && target < 1e-4f;
             long t1;
             if (silent)
@@ -885,10 +867,8 @@ namespace WiresAcoustics
             // or malformed buffer must never reach 1/frames processing.
             if (channels <= 0 || channels > MaxChannels || data.Length < channels ||
                 data.Length % channels != 0) return;
-            float tg = m_targetGain * GlobalGain * DistanceGain * SourceLevel;
+            float tg = m_targetGain * DistanceGain * SourceLevel;
             float tc = m_targetCutoff;
-            float gc = GlobalCutoff;
-            if (gc < tc) tc = gc;
             bool restartAir = false;
             if (m_snap)
             {

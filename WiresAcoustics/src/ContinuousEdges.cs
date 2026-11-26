@@ -160,7 +160,6 @@ namespace WiresAcoustics
             FresnelEdge.Transfer(signed, d1, d2,
                                  f.EdgeWallGain, f.EdgeWallCutoff,
                                  out float gain, out float cutoff, out float bend);
-            Underwater.Apply(ref gain, ref cutoff, f.UnderAmount);
 
             f.AcousticPath = "single-edge-fresnel";
             f.AcousticRouteCount = 1;

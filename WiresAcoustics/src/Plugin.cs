@@ -16,10 +16,10 @@ namespace WiresAcoustics
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "wire.valheim.acoustics";
-        public const string Version = "0.8.1";
+        public const string Version = "0.8.2";
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled, RoomReverb, Occlusion, Hrtf, RealDistance, DebugLog;
-        internal static ConfigEntry<bool> TravelTime, DopplerOn, UnderwaterOn, Air, Wind, Placement, VoiceChatOn, RandomLoopPhase;
+        internal static ConfigEntry<bool> TravelTime, DopplerOn, Air, Wind, Placement, VoiceChatOn, RandomLoopPhase;
         internal static ConfigEntry<float> ReverbStrength, OcclusionStrength, HrtfStrength;
         internal static ConfigEntry<int> VolumetricRays;
         internal static ConfigEntry<float> SourceSphereRadius;
@@ -52,7 +52,6 @@ namespace WiresAcoustics
                 "Sound takes time to reach you (350 m/s from your character's head): a sound far away starts as late as its distance makes it, up to half a second.");
             DopplerOn = Setting("General", "Doppler", true,
                 "Sounds coming toward you are higher, going away lower. Needs Realistic distance (off: the game's own).");
-            UnderwaterOn = Setting("General", "Under water", true, "With your head under water everything is muffled, and sounds under water are muffled when you're above it.");
             Air = Setting("General", "Air", true, "The further a sound travels, the more of its highs the air takes away (by the weather).");
             Wind = Setting("General", "Wind", true, "Wind carries positional world sounds downwind and weakens them upwind over distance. The contribution fades with the listener's measured shelter behind walls, buildings and terrain; fully sheltered sounds use ordinary distance and wall attenuation.");
             Placement = Setting("General", "Sound placement", true,

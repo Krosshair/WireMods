@@ -273,8 +273,6 @@ namespace WiresAcoustics
                             float bend = Mathf.Clamp01(f.AnalyticBendShare);
                             f.Routed = bend > .001f;
                             f.RoutePoint = Vector3.Lerp(r.To,f.AnalyticEdgePoint,bend);
-                            Underwater.Apply(ref firstGain, ref firstCut,
-                                             f.UnderAmount);
                             f.Set(firstGain, firstCut, true);
                         }
                     }

@@ -52,7 +52,6 @@ namespace WiresAcoustics
                 (listener - f.AnalyticLastEar).sqrMagnitude < 1e-10f &&
                 (source - f.AnalyticLastSource).sqrMagnitude < 1e-10f &&
                 Mathf.Abs(strength - f.AnalyticLastStrength) < 1e-5f &&
-                Mathf.Abs(f.UnderAmount - f.AnalyticLastWater) < 1e-5f &&
                 Mathf.Abs(f.AnalyticIndirectGain - f.AnalyticLastIndirect) < 1e-5f)
                 return;
             if (Occlusion.ChangedNear(f.AnalyticWorldGen, listener, source, Corners.Reach))
@@ -251,7 +250,6 @@ namespace WiresAcoustics
                 f.AnalyticLastEar = m.Listener;
                 f.AnalyticLastSource = m.Source;
                 f.AnalyticLastStrength = m.Strength;
-                f.AnalyticLastWater = f.UnderAmount;
                 f.AnalyticLastIndirect = f.AnalyticIndirectGain;
                 f.AnalyticEdgePoint = r.Edge;
                 f.AnalyticBendShare = r.Bend;
@@ -270,7 +268,6 @@ namespace WiresAcoustics
                     SpectralPaths.Combine(gain, cutoff, path,
                         f.AnalyticIndirectCutoff, out gain, out cutoff);
                 }
-                Underwater.Apply(ref gain, ref cutoff, f.UnderAmount);
                 if (Mathf.Abs(f.TargetGain - gain) > .0001f ||
                     Mathf.Abs(f.TargetCutoff - cutoff) > 1f)
                     f.Set(gain, cutoff, false);

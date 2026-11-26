@@ -99,8 +99,6 @@ namespace WiresAcoustics
             bool reverb = Plugin.RoomReverb.Value && !src.bypassReverbZones;
 
             bool hrtf = Plugin.Hrtf.Value;
-            bool under = Underwater.Muffles(to, __instance.transform);
-            float inWater = Underwater.SubmergedAmount(to);
             bool starting = !src.isPlaying;
             // ZSFX/AudioSource instances may be reused. Never carry a cached
             // wall from an earlier sound incarnation into a new playback.
@@ -146,11 +144,10 @@ namespace WiresAcoustics
             Own = null;
             s_checked++;
             if (occ > .05f) s_muffled++;
-            if (occ <= .05f && !under && f == null && !hrtf && !AcousticFilter.GlobalActive && starting) return;
+            if (occ <= .05f && f == null && !hrtf && starting) return;
             if (f == null) { f = __instance.gameObject.AddComponent<AcousticFilter>(); s_added++; }
             f.Kind = AcousticFilter.Kinds.Sfx;
             f.Placed = true;
-            f.InWaterAmount = inWater;
             // The game's random ambience (a bird, a gust, an insect somewhere round you) is placed at a
             // made-up spot 5 to 20 m off with its own gentle fall-off: it stands for the world around
             // you, not one creature, so it keeps that (on a real distance curve it was 15 to 20 dB
@@ -178,16 +175,14 @@ namespace WiresAcoustics
                 f.Routed = false;
                 f.RouteSpread = 0f;
                 f.RoutePoint = to;
-                f.UnderAmount = Underwater.SourceAmount(to, __instance.transform);
-                Underwater.Apply(ref gain, ref cutoff, f.UnderAmount);
                 f.DistanceGain = f.PastRange(dist);
                 f.SetAir(dist);
                 f.Set(gain, cutoff, true);
                 if (f.Active && f.Walls.Near)
-                    Batch.Enqueue(f, to, under, reverb);
+                    Batch.Enqueue(f, to, reverb);
             }
             // the game's once-a-second call for a playing loop: a watched loop is checked on its own (WatchLoop)
-            else if (f.Active && !f.WatchLoop) Batch.Enqueue(f, to, under, reverb);
+            else if (f.Active && !f.WatchLoop) Batch.Enqueue(f, to, reverb);
             // Direction is ours (AcousticFilter): Unity's panning is flattened to "both ears equally".
             if (hrtf)
             {
@@ -587,8 +582,7 @@ namespace WiresAcoustics
                 f.Placed = placed;
                 Budget.Note(f, (f.transform.position - listener).magnitude);
                 if (!placed) { f.Set(1f, 22000f, false); f.ClearAir(); continue; }
-                f.InWaterAmount = Underwater.SubmergedAmount(f.transform.position);
-                Batch.Enqueue(f, f.transform.position, Underwater.Muffles(f.transform.position, f.transform), false);
+                Batch.Enqueue(f, f.transform.position, false);
             }
         }
 
@@ -630,8 +624,7 @@ namespace WiresAcoustics
                 Vector3 at = f.transform.position;
                 // a longer one-off (a roar): checked again only when it could sound different, as loops
                 if (Unchanged(f, at, Hearing.At)) continue;
-                f.InWaterAmount = Underwater.SubmergedAmount(at);
-                Batch.Enqueue(f, at, Underwater.Muffles(at, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
+                Batch.Enqueue(f, at, Plugin.RoomReverb.Value && !src.bypassReverbZones);
             }
         }
 
@@ -751,12 +744,11 @@ namespace WiresAcoustics
             AudioSource src = f.Source;
             if (src == null || !src.isPlaying) { f.WatchLoop = false; return; }
             Vector3 p = f.transform.position;
-            f.InWaterAmount = Underwater.SubmergedAmount(p);
             // Listener/source motion is NOT a change to world geometry.
             // Keep the ordinary audio-time glide for position updates;
             // Batch.GeometryChanged sets FastGeometryResponse for an actual
             // piece placement, removal, terrain edit or door change.
-            Batch.Enqueue(f, p, Underwater.Muffles(p, f.transform), Plugin.RoomReverb.Value && !src.bypassReverbZones);
+            Batch.Enqueue(f, p, Plugin.RoomReverb.Value && !src.bypassReverbZones);
             s_loopChecks++;
         }
 

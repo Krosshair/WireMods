@@ -429,14 +429,14 @@ namespace WiresAcoustics
             AcousticFilter f = src.GetComponent<AcousticFilter>();
             if (f == null)
             {
-                if (gain >= .999f && cutoff >= 20000f && !AcousticFilter.GlobalActive) return;
+                if (gain >= .999f && cutoff >= 20000f) return;
                 f = src.gameObject.AddComponent<AcousticFilter>();
             }
             f.Kind = AcousticFilter.Kinds.Ambient;
             if (s_inside > 0f && f.Hrtf && src != null && AudioMan.instance != null && src != WindLoop(AudioMan.instance)) f.Hrtf = false;
             f.Set(gain, cutoff, false);
             bool want = f.Hrtf || gain < .999f || cutoff < 20000f ||
-                        Mathf.Abs(f.SourceLevel - 1f) > .001f || AcousticFilter.GlobalActive;
+                        Mathf.Abs(f.SourceLevel - 1f) > .001f;
             if (!f.enabled) f.enabled = true;
             f.Active = want;
         }
@@ -678,7 +678,7 @@ namespace WiresAcoustics
             AcousticFilter f = go.GetComponent<AcousticFilter>();
             if (f == null)
             {
-                if (s_gain >= .999f && !AcousticFilter.GlobalActive) return;
+                if (s_gain >= .999f) return;
                 f = go.AddComponent<AcousticFilter>();
             }
             f.Hrtf = false;
@@ -701,7 +701,7 @@ namespace WiresAcoustics
         // The filter's callback only while there's something to do.
         private static void Need(AcousticFilter f)
         {
-            bool want = f.Hrtf || s_gain < .999f || s_cutoff < 20000f || AcousticFilter.GlobalActive;
+            bool want = f.Hrtf || s_gain < .999f || s_cutoff < 20000f;
             if (!f.enabled) f.enabled = true;
             f.Active = want;
         }

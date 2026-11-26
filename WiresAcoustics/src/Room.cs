@@ -206,9 +206,9 @@ namespace WiresAcoustics
                 if (roomReverb && !s_wasRoomReverb) { s_nextScan = 0f; Room.Invalidate(); }
                 s_wasRoomReverb = roomReverb;
                 if (s_wasHrtf && !hrtf) { Directions.Flush(); AcousticFilter.ReleaseHrtf(); }
-                if (s_wasOn && !on) { PortalLoop.Clear(); Batch.Flush(); Starts.Flush(); AcousticFilter.ReleaseAll(); PlayerSounds.RestoreAll(); Ambience.RestorePlaced(); Underwater.Reset(); Follow.Clear(); }
+                if (s_wasOn && !on) { PortalLoop.Clear(); Batch.Flush(); Starts.Flush(); AcousticFilter.ReleaseAll(); PlayerSounds.RestoreAll(); Ambience.RestorePlaced(); Follow.Clear(); }
                 s_wasOn = on; s_wasHrtf = hrtf;
-                if (!on) { Underwater.Reset(); Directions.Idle(); }
+                if (!on) Directions.Idle();
                 if (Plugin.Enabled.Value && __instance.GetActiveAudioListener() is AudioListener l)
                 {
                     Transform lt = l.transform;
@@ -218,7 +218,6 @@ namespace WiresAcoustics
                     // everything not timed on its own adds up as "the rest"
                     long r = Cost.Start(), rest = 0L;
                     Hearing.Update(lt);
-                    Underwater.Update(Hearing.At, Time.deltaTime);
                     Starts.Step(); // last frame's new sounds: checked, now started
                     AcousticFilter.Strength = Mathf.Clamp01(Plugin.HrtfStrength.Value);
                     long c = Cost.Start();
@@ -495,7 +494,7 @@ namespace WiresAcoustics
             Plugin.Log.LogInfo(s_logNow);
             Plugin.Log.LogInfo("[acoustics] space: enclosed " + s_logEnclosure.ToString("P0") + ", volume " + s_logVolume.ToString("F0") + " m3 (" + s_logGaps + " rays out through gaps), size " + s_path.ToString("F1") + " m (nearest " +
                 s_logNearest.ToString("F1") + " m), absorption " + s_alpha.ToString("F2") + " (open " + s_logOpen.ToString("P0") + "), RT60 " +
-                s_decay.ToString("F2") + " s -> " + s_current + "; " + Portals.Summary() + "; " + Ocean.Summary() + "; " + Ambience.Summary() + "; " + Spawned.Summary() + ", following their owner " + Follow.Count + "; " + Underwater.Summary() + "; " + Occlusion.Summary() + "; " + Budget.Summary() + "; " + Budget.Loudness() + "; " + AcousticFilter.DiagnosticsSummary() + "; " +
+                s_decay.ToString("F2") + " s -> " + s_current + "; " + Portals.Summary() + "; " + Ocean.Summary() + "; " + Ambience.Summary() + "; " + Spawned.Summary() + ", following their owner " + Follow.Count + "; " + Occlusion.Summary() + "; " + Budget.Summary() + "; " + Budget.Loudness() + "; " + AcousticFilter.DiagnosticsSummary() + "; " +
                 Batch.Summary() + "; " + Starts.Summary() + "; " + SharedEdges.Summary() + "; " + RoomStats.Summary() + "; " + Cost.Report() + "; " + Budget.Toggles());
             AcousticTrace.Emit();
         }

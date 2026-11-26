@@ -1,0 +1,7 @@
+{
+    "name": "WiresAcoustics",
+    "description": "Ray traced sound: you hear the room you are in, the walls around you and the world outside. Real reverb, muffling by material, sound through windows and doors, distance, wind, and headphone 3D audio. Client side.",
+    "version_number": "0.8.1",
+    "website_url": "",
+    "dependencies": ["denikson-BepInExPack_Valheim-5.4.2360"]
+}

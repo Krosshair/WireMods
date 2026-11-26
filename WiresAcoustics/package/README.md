@@ -30,7 +30,7 @@ Which way a sound is comes from the camera, as you see it. How far it is and wha
 * **Hills, rocks and trees** block sound by their size: a trunk barely matters, a boulder takes the highs off, a hill takes a lot.
 * **Distance and air:** natural fading, travel time, Doppler, air that takes the highs off far sounds by the weather, and soft ground that thins distant sounds.
 * **Wind:** carries sound downwind, weakens it upwind, gusts and lulls, and drops to a low rumble when you're sheltered.
-* **Weather and sea:** rain sounds like the roof above you, the sea comes from the real shoreline, and under water everything above goes quiet.
+* **Weather and sea:** rain sounds like the roof above you and the sea comes from the real shoreline.
 * **Sounds come from where they're made:** a swing from the weapon, a roar from the head, a chest from its lid, a fire from its flame, crafting from the station. Bigger things sound wider.
 * **HRTF (headphones):** how real people's heads and ears change a sound by its direction, for every sound: left and right, front and back, up and down.
 * **More sounds at once:** 128 instead of 32, so nothing drops out in a busy base.
@@ -51,7 +51,7 @@ Rays run on worker threads and the sound processing on the audio thread. Sounds 
 
 ## Settings
 
-* **General:** a switch for each part: Room reverb, Realistic distance, Muffling, HRTF, Travel time, Doppler, Under water, Air, Wind, Sound placement, Voice chat, Random loop start.
+* **General:** a switch for each part: Room reverb, Realistic distance, Muffling, HRTF, Travel time, Doppler, Air, Wind, Sound placement, Voice chat, Random loop start.
 * **Tuning:** Reverb strength, HRTF strength, Muffling strength, and two advanced ones for how finely a sound's size is sampled.
 * **Debug:** Debug log.
 
@@ -73,7 +73,6 @@ Wherever I could, the numbers come from measurements and standards instead of be
 * **Outside sounds indoors:** checked against [Locher et al., 2018](https://doi.org/10.3390/ijerph15010149).
 * **Direction round walls:** the [precedence effect](https://en.wikipedia.org/wiki/Precedence_effect) (Haas 1951, Blauert 1983).
 * **HRTF:** the average of 18 real people's measured ears, subjects H3 to H20 of the [SADIE II database](https://www.york.ac.uk/sadie-project/database.html) (Armstrong, Thresh and Kearney, University of York, 2018; [paper](https://doi.org/10.3390/app8112029); Apache License 2.0, included). Turned into a filter and a delay per ear and direction, as [OpenAL Soft](https://openal-soft.org) does. Of the colour both ears hear together only the broad shape is kept (see below), so Valheim still sounds like Valheim.
-* **Water:** impedances from [UNSW Physics](https://animations.physics.unsw.edu.au/jw/sound-impedance-intensity.htm).
 * **Sea as a line source:** [Hong Kong EPD](https://www.epd.gov.hk/epd/noise_education/web/ENG_EPD_HTML/m1/intro_6.html).
 
 Not from a source (judgement values):
