@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.6.12
+- Fixed: an error in the log at startup on Valheim 1.0.31. The build menu's favourite category buttons are now picked up where the game sets them up.
 ## 0.6.11
 - Added: Hide damage numbers (Global Toggles, off by default) turns off the floating damage, heal and miss numbers entirely.
 ## 0.6.10

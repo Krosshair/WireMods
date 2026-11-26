@@ -403,7 +403,8 @@ namespace WiresSmoothUI
         }
     }
 
-    [HarmonyPatch(typeof(BuildUiFavoriteCategoryCheckButton), "Awake")]
+    // On Setup: Valheim 1.0.31 removed this button's Awake. Register skips a button it already has.
+    [HarmonyPatch(typeof(BuildUiFavoriteCategoryCheckButton), nameof(BuildUiFavoriteCategoryCheckButton.Setup))]
     internal static class SmoothUIBuildFavoriteCheckPatch
     {
         [HarmonyPostfix]
