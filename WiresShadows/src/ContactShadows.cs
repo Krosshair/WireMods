@@ -31,7 +31,8 @@ namespace WiresShadows
             LightId = Shader.PropertyToID("_WireContactLight"), WaveId = Shader.PropertyToID("_WireContactWave"),
             DepthValuesId = Shader.PropertyToID("_WireContactDepthValues"), NormalId = Shader.PropertyToID("_WireContactNormal"),
             SunId = Shader.PropertyToID("_WireContactSun"), EyeId = Shader.PropertyToID("_WireContactEye"),
-            LengthId = Shader.PropertyToID("_WireContactLength");
+            LengthId = Shader.PropertyToID("_WireContactLength"), Ray0Id = Shader.PropertyToID("_WireContactRay0"),
+            RayXId = Shader.PropertyToID("_WireContactRayX"), RayYId = Shader.PropertyToID("_WireContactRayY");
         private static readonly int SunStrengthId = Shader.PropertyToID("_WireSunShadowStrength");
         private static readonly int[] Wave = new int[4];
 
@@ -132,6 +133,15 @@ namespace WiresShadows
             float near = cam.nearClipPlane, far = cam.farClipPlane;
             float zx = reversed ? -1f + far / near : 1f - far / near, zy = reversed ? 1f : far / near;
             s_cb.SetComputeVectorParam(Compute, EyeId, new Vector4(zx / far, zy / far, 0f, 0f));
+            // each pixel's view ray, for lifting the ray's start off its surface (StartDepth). Rows run
+            // up the view, as the sun's position above is worked out (BuildDispatches).
+            Transform ct = cam.transform;
+            Matrix4x4 proj = cam.projectionMatrix;
+            Vector3 across = ct.right * (2f / (proj.m00 * w)), down = ct.up * (2f / (proj.m11 * h));
+            Vector3 ray0 = ct.forward + (across * (1f - w) + down * (1f - h)) * .5f;
+            s_cb.SetComputeVectorParam(Compute, Ray0Id, ray0);
+            s_cb.SetComputeVectorParam(Compute, RayXId, across);
+            s_cb.SetComputeVectorParam(Compute, RayYId, down);
             BuildDispatches(lp, w, h);
             s_cb.SetComputeVectorParam(Compute, LightId, s_light);
             for (int i = 0; i < s_count; i++)

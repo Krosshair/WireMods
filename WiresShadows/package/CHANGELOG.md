@@ -1,3 +1,14 @@
+## 0.6.0
+
+* Fixed: Contact shadows striped grass blades and other surfaces the sun only skims with their own shadow. Each ray now starts lifted off the surface it starts on, along its normal, as the shadow maps already do.
+* Performance: a light's shadow map no longer re-renders smaller a few seconds after you walk away from it, and bigger again when you come back. Walking round a base did that over and over. Maps now only grow; when video memory runs short they still shrink to make room.
+* Performance: moving shadows work out less for each character near a light every frame. A face of a light's moving map with a character in it is redrawn whole anyway, so each of the character's parts is no longer measured on it first.
+* Benchmark: a mod run after a vanilla one waits until every shadow map is drawn again before it measures. Switching to vanilla throws the maps away, and the mod was measured while it redrew them.
+* Performance: a light's shadow map is drawn straight from the things in its reach, instead of a camera render that went through the whole scene again for each of the map's six faces. Which side of a surface faces the light is told by the surface itself, not by how it's drawn.
+* Scenery with no collider at all (the plain round bush, small shrubs, Ashlands vines) is found as it spawns, so it still casts in light from nearby fires.
+* Performance: every light's depth range was sent to the graphics card each frame and read by nothing; no longer. Code that could never run (a second way of drawing moving shadows, a few unused values) removed.
+* README: performance figures from this version (a decorated base and the wilderness), and the quick benchmark's wait.
+
 ## 0.5.2
 
 * Fixed: a faint diagonal line swept across the grass as you turned the camera, with Contact shadows on. Depth edges are now looked for on both axes instead of one, so grass is shaded the same on both sides of it. Grass casts slightly less contact shadow. One more depth read per step on the graphics card, not measured.

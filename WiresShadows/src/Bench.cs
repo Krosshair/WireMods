@@ -16,6 +16,8 @@ namespace WiresShadows
         private float Window = 3.2f;
         private float Settle = 2f;
         private const float Quick = .5f;
+        private const float MaxWait = 30f; // s a phase waits for shadow maps at most (picked)
+        private float _drawingAt; // when a shadow map was last waiting to be drawn
         private const int Modes = 8;
         //  7 the mod with every point light off and the game's own lighting shader: 5 - 7 is what
         //    our shader costs, 7 - 6 everything else the mod runs.
@@ -32,7 +34,7 @@ namespace WiresShadows
         {
             if (off && _off.Count == 0)
             {
-                foreach (Light l in Object.FindObjectsOfType<Light>())
+                foreach (Light l in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
                     // point and spot: every light but the sun goes through the lighting shader
                     if ((l.type == LightType.Point || l.type == LightType.Spot) && l.enabled)
                     {
@@ -119,8 +121,18 @@ namespace WiresShadows
             // the game's light LOD can switch one back on: kept off (benchmark only)
             if (_off.Count > 0)
                 foreach (Light l in _off) if (l != null && l.enabled) l.enabled = false;
+            if (ShadowCache.Drawing) _drawingAt = Time.realtimeSinceStartup;
             if (t < _settle)
                 return;
+            // A mod phase after a vanilla one starts with every shadow map thrown away: measured only once
+            // they're all drawn again, or it measures the refill (a face a frame). Lights get their slots
+            // at each 1 s ranking, so nothing drawing for a moment isn't done yet: quiet for longer than
+            // one ranking. At most MaxWait.
+            if (!_sampling && !Vanilla(PhaseModes[_phase]) && Time.realtimeSinceStartup - _drawingAt < 1.25f && t < MaxWait)
+            {
+                _settle = t;
+                return;
+            }
             if (!_sampling)
             {
                 // Include only the measured window, never the warm-up.

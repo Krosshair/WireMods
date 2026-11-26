@@ -1,14 +1,13 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace WiresShadows
 {
-    // A cached face in one camera render instead of two. The surfaces facing the light and the ones
-    // facing away used to be two renders (WireShadowFront, WireShadowBack), each culling the scene
-    // again; WireShadowFrontBack draws both in one: its first pass the front faces into red, its
-    // second the back faces into green, each keeping the nearest (min blending, as the moving maps
-    // already do). Combine pass 4 takes the same midpoint rule from there into the depth map.
-    // Sized maps only, and only with a bundle that has the shader; otherwise two renders as before.
+    // A cached face: the light's casters drawn straight into it (no camera), the surfaces facing the
+    // light into red and the ones facing away into green, each keeping the nearest (min blending, as
+    // the moving maps do), by WireShadowFrontBack. Combine pass 4 takes the midpoint rule from there
+    // into the depth map.
     internal sealed partial class ShadowCache
     {
         internal static Shader FrontBackShader;
@@ -43,10 +42,35 @@ namespace WiresShadows
             }
         }
 
-        // What DrawUntagged did in each of the two renders, for the one: renderers without a
-        // RenderType tag both ways (passes 0 and 1), two-sided sheets into both channels (pass 2),
-        // colliders only as backs (pass 1).
-        private void DrawUntaggedOnePass(Tracked t)
+        // Everything a camera with the replacement shader drew, from the light's own list: each
+        // renderer still on and reaching this face, one draw per part (pass 1). The game's passing
+        // effects (dust, chips) are never part of a stored map.
+        private static readonly HashSet<Renderer> s_effectSkip = new HashSet<Renderer>();
+        private static void DrawDirect(CommandBuffer cb, Tracked t, float range)
+        {
+            s_effectSkip.Clear();
+            foreach (Renderer r in Effects) if (r != null) s_effectSkip.Add(r);
+            int bit = 1 << t.Face;
+            float range2 = range * range;
+            for (int i = 0; i < t.Direct.Count; i++)
+            {
+                Renderer r = t.Direct[i];
+                if (r == null || !r.enabled || r.forceRenderingOff || !r.gameObject.activeInHierarchy || s_effectSkip.Contains(r))
+                    continue;
+                Bounds b = r.bounds;
+                if (b.SqrDistance(t.Center) > range2 || (FacesFor(b.center - t.Center, b.extents.magnitude) & bit) == 0)
+                    continue;
+                r.GetSharedMaterials(Materials);
+                int sub = t.DirectSub[i];
+                if (sub >= Materials.Count || Materials[sub] == null) continue;
+                cb.DrawRenderer(r, ClipMaterial(Materials[sub], FrontBackShader), sub, 1);
+            }
+        }
+
+        // The rest of a face: renderers without a RenderType tag (pass 1, front or back by which way each
+        // surface faces the light), two-sided sheets into both channels (pass 0), colliders only as
+        // backs (pass 2).
+        private void DrawUntaggedOnePass(CommandBuffer cb, Tracked t)
         {
             if (t.Explicit.Count == 0 && t.ProxyMeshes.Count == 0 && t.Sheets.Count == 0)
                 return;
@@ -73,13 +97,13 @@ namespace WiresShadows
                     if (Materials[sub] != null)
                     {
                         if (clothMesh != null && sub < clothMesh.subMeshCount)
-                            _staticCb.DrawMesh(clothMesh, pushed, ClipMaterial(Materials[sub], FrontBackShader), sub, 2);
+                            cb.DrawMesh(clothMesh, pushed, ClipMaterial(Materials[sub], FrontBackShader), sub, 0);
                         else
-                            _staticCb.DrawRenderer(r, ClipMaterial(Materials[sub], FrontBackShader), sub, 2);
+                            cb.DrawRenderer(r, ClipMaterial(Materials[sub], FrontBackShader), sub, 0);
                     }
             }
             for (int i = 0; i < t.ProxyMeshes.Count; i++)
-                _staticCb.DrawMesh(t.ProxyMeshes[i], t.ProxyMatrices[i], _frontBackMat, 0, 1, i < t.NearProxies ? _proxyProps : _structProps);
+                cb.DrawMesh(t.ProxyMeshes[i], t.ProxyMatrices[i], _frontBackMat, 0, 2, i < t.NearProxies ? _proxyProps : _structProps);
             for (int i = 0; i < t.Explicit.Count; i++)
             {
                 Renderer r = t.Explicit[i];
@@ -90,8 +114,7 @@ namespace WiresShadows
                 Material orig = sub < Materials.Count ? Materials[sub] : null;
                 bool item = StandVisuals.Contains(r) || DropVisuals.Contains(r);
                 Material m = orig != null ? ClipMaterial(orig, FrontBackShader, item) : _frontBackMat;
-                _staticCb.DrawRenderer(r, m, sub, 0);
-                _staticCb.DrawRenderer(r, m, sub, 1);
+                cb.DrawRenderer(r, m, sub, 1);
             }
         }
 

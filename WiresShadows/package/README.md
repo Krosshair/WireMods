@@ -106,17 +106,24 @@ With the Look settings off, the shading is exactly that of Valheim.
 ### Testing
 
 * **Benchmark:** about a minute. Measures the mod against vanilla where you stand and shows the frame times, and what moving shadows, point lights and the lighting shader each cost.
-* **Quick benchmark:** the mod against vanilla in about 10 seconds.
+* **Quick benchmark:** the mod against vanilla in about 10 seconds, a little longer near many lights (it waits until their shadows are drawn again).
 * **Timing log:** off by default. What the mod's work costs per frame, in the log every 5 seconds.
 * **Debug log:** off by default. Writes what the mod does to the log; turns itself on while a benchmark runs.
 
 ## Performance
 
-Faster than vanilla with point lights maxed out, while looking much better.
+**Faster than vanilla in a base, the same out in the wilderness.**
 
-On my PC (RTX 4090, i5-13600KF, 128 GB RAM), in my base of about 6,000 pieces, the latest benchmark (0.2.1) gave 16.26 ms a frame (62 fps) with the mod and 20.26 ms (49 fps) in vanilla, 4 ms a frame faster. Earlier ones there: 15.35 ms (65 fps) against 19.95 ms (50 fps), and 20.17 ms (50 fps) against 24.85 ms (40 fps). It depends on what's happening, so I can't guarantee it's always faster.
+Valheim is almost always held back by the processor, and that's where the mod saves: each light's shadows are drawn once and kept instead of every frame, every light is lit in one pass, and pieces hidden from view aren't drawn.
 
-Who gets it: nearly everyone in some form, because Valheim is almost always held back by the processor, and that's where this mod saves. The gap is widest in a big base against vanilla on its highest settings, and shrinks the lower you set vanilla. A PC held back by its graphics card gains little or nothing, and a weak one can even lose a bit to Enhanced shading, Improved AO and Contact shadows. I don't expect many of you to be in that spot, but if you are, turn those three off.
+* **In a base:** about 7 ms a frame faster in mine (about 6,000 pieces): 17.58 ms (57 fps) against 24.20 ms (41 fps) in vanilla. The gap is widest against vanilla's highest point light settings.
+* **In the wilderness:** the same, 15.90 ms (63 fps) against 15.59 ms (64 fps).
+* **On a weak graphics card or at a very high resolution,** it can be slower: Enhanced shading, Improved AO and Contact shadows add work there. Turn those three off.
+* **With many players or creatures near many lights,** it can be slower: their shadows are redrawn as they move, in every light around them, sconces and torches included (vanilla gives those none). Shadows: Performance keeps it to the lights the game itself gives shadows.
+* **Right after loading into the world,** the shadows of the lights around you are drawn over the first seconds, a little each frame.
+* **Video memory:** the shadow maps take up to about a fifth of it.
+
+Measured on my PC (RTX 4090, i5-13600KF, 128 GB RAM) with 0.6.0. It depends on what's happening, so I can't guarantee it's always faster.
 
 Measure it yourself: turn on Benchmark in an in-game config menu (such as Shudnal's Configuration Manager).
 

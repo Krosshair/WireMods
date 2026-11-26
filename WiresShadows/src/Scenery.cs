@@ -48,6 +48,40 @@ namespace WiresShadows
             TerrainChanged(b.center, b.extents.magnitude);
         }
 
+        // ---- Scenery without a collider ----
+        // A light's casters are found through colliders in its reach (FindCasters). Some scenery has
+        // none at all (a plain bush, small shrubs, vines): kept here as it spawns, checked once per
+        // kind of object, and taken in by the lights it's near.
+
+        private static readonly Dictionary<int, bool> s_colliderless = new Dictionary<int, bool>();
+        private static readonly List<Transform> Colliderless = new List<Transform>(256);
+
+        internal static void Spawned(ZNetView nv)
+        {
+            ZDO zdo = nv != null ? nv.GetZDO() : null;
+            if (zdo == null || !nv.m_persistent) return; // kept in the world: not a passing effect
+            int prefab = zdo.GetPrefab();
+            if (!s_colliderless.TryGetValue(prefab, out bool none))
+            {
+                GameObject go = nv.gameObject;
+                none = go.GetComponentInChildren<Collider>(true) == null && go.GetComponentInChildren<MeshRenderer>(true) != null &&
+                       go.GetComponent<Character>() == null && go.GetComponent<ItemDrop>() == null;
+                s_colliderless[prefab] = none;
+            }
+            if (none) Colliderless.Add(nv.transform);
+        }
+
+        private static void AddColliderless(Vector3 center, float range)
+        {
+            float reach = range + 4f; // a bush's middle can be a few metres from its leaves (picked; each part is checked again as drawn)
+            for (int i = Colliderless.Count - 1; i >= 0; i--)
+            {
+                Transform tr = Colliderless[i];
+                if (tr == null) { Colliderless[i] = Colliderless[Colliderless.Count - 1]; Colliderless.RemoveAt(Colliderless.Count - 1); continue; }
+                if ((tr.position - center).sqrMagnitude <= reach * reach) Roots.Add(tr);
+            }
+        }
+
         // ---- Logs ----
 
         private sealed class Log { internal TreeLog Of; internal Renderer[] Renderers; }
@@ -145,6 +179,12 @@ namespace WiresShadows
             Collider[] areas = Areas(__instance);
             if (areas != null && index >= 0 && index < areas.Length) ShadowCache.ScenerySplit(areas[index]);
         }
+    }
+
+    [HarmonyPatch(typeof(ZNetView), "Awake")]
+    internal static class SceneSpawned
+    {
+        private static void Postfix(ZNetView __instance) => ShadowCache.Spawned(__instance);
     }
 
     [HarmonyPatch(typeof(TreeLog), "Awake")]

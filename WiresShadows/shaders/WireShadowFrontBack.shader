@@ -1,8 +1,8 @@
-// Cached shadow maps in one render: WireShadowFront and WireShadowBack together. Pass 0 draws the
-// surfaces facing the light into red, pass 1 the ones facing away into green, each keeping the
-// nearest (min blending, no depth buffer: a distance is its own depth). The camera draws both
-// passes of an object in its one render, so the scene is culled once. Same near-plane cut,
-// collider proxies and cut-out holes as the two shaders.
+// Cached shadow maps, drawn straight from each light's own casters (ShadowCache.DrawDirect and
+// DrawUntaggedOnePass, no camera): the surfaces facing the light into red, the ones facing away into
+// green, each keeping the nearest (min blending, no depth buffer: a distance is its own depth).
+// Combine pass 4 takes the midpoint from there. Same near-plane cut, collider proxies and cut-out
+// holes as before.
 Shader "Hidden/WireShadowFrontBack"
 {
     CGINCLUDE
@@ -25,7 +25,7 @@ Shader "Hidden/WireShadowFrontBack"
     }
     float _WireMapRes; // the map's face size (ShadowCache, per render)
     struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
-    struct v2f { float4 pos : SV_POSITION; float3 world : TEXCOORD0; float2 uv : TEXCOORD1; };
+    struct v2f { float4 pos : SV_POSITION; float3 world : TEXCOORD0; float2 uv : TEXCOORD1; float3 normal : TEXCOORD2; };
     v2f vert(appdata v)
     {
         UNITY_SETUP_INSTANCE_ID(v);
@@ -41,83 +41,76 @@ Shader "Hidden/WireShadowFrontBack"
         o.pos = mul(UNITY_MATRIX_VP, float4(world, 1.0));
         o.world = world;
         o.uv = TRANSFORM_TEX(v.uv, _MainTex);
+        o.normal = n;
         return o;
     }
-    // Opaque: holes only where a cutoff (or _WireClip, drawn directly) says so.
-    float4 fragOpaque(v2f i) : SV_Target
+    // Whether this surface faces the light. Told by the triangle itself (turned outward by the
+    // mesh's normals), not by which way it's wound on screen: a face is drawn without a camera, and
+    // a winding flipped by the render target would swap fronts and backs.
+    bool FacesLight(v2f i)
     {
+        float3 t = cross(ddx(i.world), ddy(i.world));
+        if (dot(t, i.normal) < 0) t = -t;
+        return dot(t, i.world - _WireLightCenter) < 0;
+    }
+    void Holes(v2f i)
+    {
+        // holes only where a cutoff (_WireClip) says so
         if (_WireClip > 0.5 || _Cutoff > 0.001)
             clip(tex2D(_MainTex, i.uv).a - max(_Cutoff, 0.01));
+    }
+    float4 fragSheet(v2f i) : SV_Target
+    {
+        Holes(i);
         float d = WireDist(i.world);
         return float4(d, d, 0, 0);
     }
-    float4 fragCutout(v2f i) : SV_Target
+    float4 fragBoth(v2f i) : SV_Target
     {
-        clip(tex2D(_MainTex, i.uv).a - max(_Cutoff, 0.01));
+        Holes(i);
         float d = WireDist(i.world);
-        return float4(d, d, 0, 0);
+        return FacesLight(i) ? float4(d, 60000, 0, 0) : float4(60000, d, 0, 0);
+    }
+    float4 fragBack(v2f i) : SV_Target
+    {
+        float d = WireDist(i.world);
+        if (FacesLight(i)) discard;
+        return float4(60000, d, 0, 0);
     }
     ENDCG
 
     SubShader
     {
-        Tags { "RenderType" = "Opaque" }
-        // 0: facing the light -> red
+        // 0: two-sided sheets (a banner) count from both sides, both channels.
         Pass
         {
-            Cull Back ZTest Always ZWrite Off ColorMask R
-            BlendOp Min Blend One One
-            CGPROGRAM
-            #pragma vertex vert
-            #pragma fragment fragOpaque
-            #pragma multi_compile_instancing
-            ENDCG
-        }
-        // 1: facing away -> green
-        Pass
-        {
-            Cull Front ZTest Always ZWrite Off ColorMask G
-            BlendOp Min Blend One One
-            CGPROGRAM
-            #pragma vertex vert
-            #pragma fragment fragOpaque
-            #pragma multi_compile_instancing
-            ENDCG
-        }
-        // 2, drawn directly only: two-sided sheets (a banner) count from both sides, both
-        // channels. The tag keeps the camera from drawing it.
-        Pass
-        {
-            Tags { "LightMode" = "ShadowCaster" }
             Cull Off ZTest Always ZWrite Off ColorMask RG
             BlendOp Min Blend One One
             CGPROGRAM
             #pragma vertex vert
-            #pragma fragment fragOpaque
+            #pragma fragment fragSheet
             #pragma multi_compile_instancing
             ENDCG
         }
-    }
-    SubShader
-    {
-        Tags { "RenderType" = "TransparentCutout" }
+        // 1: models: facing the light -> red, facing away -> green
         Pass
         {
-            Cull Back ZTest Always ZWrite Off ColorMask R
+            Cull Off ZTest Always ZWrite Off ColorMask RG
             BlendOp Min Blend One One
             CGPROGRAM
             #pragma vertex vert
-            #pragma fragment fragCutout
+            #pragma fragment fragBoth
             #pragma multi_compile_instancing
             ENDCG
         }
+        // 2: colliders: only as backs -> green
         Pass
         {
-            Cull Front ZTest Always ZWrite Off ColorMask G
+            Cull Off ZTest Always ZWrite Off ColorMask G
             BlendOp Min Blend One One
             CGPROGRAM
             #pragma vertex vert
-            #pragma fragment fragCutout
+            #pragma fragment fragBack
             #pragma multi_compile_instancing
             ENDCG
         }

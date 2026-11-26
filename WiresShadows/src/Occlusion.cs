@@ -10,7 +10,7 @@ namespace WiresShadows
     // piece's box against a depth pyramid of what was on screen (WireOcclusion.compute) and the
     // answer comes back a few frames later (async readback, no stall). A hidden piece is set to
     // "shadows only": Unity skips it on screen but still draws its sun and moon shadow, and the
-    // mod's point-light maps draw it as before (ShowFor). Nothing else about it changes.
+    // mod's point-light maps draw it as before (they draw their casters themselves, whatever their mode). Nothing else about it changes.
     // Because the answer is late, everything that could open a view in the meantime is covered:
     // - the camera moving: each box's screen area is widened by how far the camera could move
     //   until the answer is used, over the distance to the nearest thing in front (parallax); if it
@@ -205,25 +205,6 @@ namespace WiresShadows
                 Show(i);
         }
 
-        // The mod's point-light map render (ShadowCache): hidden pieces in the light's reach drawn as usual.
-        internal static void ShowFor(Vector3 c, float r, List<Renderer> changed, List<ShadowCastingMode> prior)
-        {
-            if (s_hidden.Count == 0) return;
-            float r2 = r * r;
-            foreach (int i in s_hidden)
-            {
-                Vector3 mn = s_boxes[i * 2], mx = s_boxes[i * 2 + 1];
-                Vector3 q = new Vector3(Mathf.Clamp(c.x, mn.x, mx.x), Mathf.Clamp(c.y, mn.y, mx.y), Mathf.Clamp(c.z, mn.z, mx.z));
-                if ((q - c).sqrMagnitude > r2) continue;
-                foreach (Renderer rd in s_slots[i].Renderers)
-                    if (rd != null && rd.shadowCastingMode == ShadowCastingMode.ShadowsOnly)
-                    {
-                        changed.Add(rd);
-                        prior.Add(ShadowCastingMode.ShadowsOnly);
-                        rd.shadowCastingMode = ShadowCastingMode.On;
-                    }
-            }
-        }
 
         // ---- Pieces ----
         private static void RegisterPending()

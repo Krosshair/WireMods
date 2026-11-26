@@ -244,7 +244,7 @@ namespace WiresShadows
         private static bool s_seenPending;
         private static readonly uint[] s_zero = new uint[1];
         private static readonly int CountIndexId = Shader.PropertyToID("_WireCountIndex"),
-            CountSlotId = Shader.PropertyToID("_WireCountSlot"), MachineSeenId = Shader.PropertyToID("_WireMachineSeen");
+            CountSlotId = Shader.PropertyToID("_WireCountSlot");
 
         // the casters of the group just added belong to this machine
         private static void TagMachine(Machine m, int groupBefore)

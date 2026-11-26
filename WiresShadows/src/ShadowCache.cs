@@ -51,6 +51,8 @@ namespace WiresShadows
             internal readonly List<Matrix4x4> ProxyMatrices = new List<Matrix4x4>();
             internal int NearProxies;
             internal readonly List<int> ExplicitSub = new List<int>();
+            internal readonly List<Renderer> Direct = new List<Renderer>();     // everything else in reach, drawn straight into the map (DrawDirect)
+            internal readonly List<int> DirectSub = new List<int>();
             internal Vector3 Center;
             internal bool Dirty;         // waiting for a full re-render
             internal float DirtyAt;      // not before this time (bursts of changes coalesce)
@@ -66,11 +68,8 @@ namespace WiresShadows
             internal bool Interact;      // something you did changed it, in view: first in the 2 ms a frame
             internal bool Ready;         // has a complete map
             internal bool SizeOnly;      // waiting for a redraw only to change its map's size
-            internal float DownsizeSince = -1f; // first re-rank where a smaller tier was justified; reset when it isn't
             internal float Fade;         // shadow strength fading in, as LightLod does (1 s)
             internal bool SnapOnFirstMap; // registered during world load; no post-load fade
-            internal readonly List<Renderer> Hide = new List<Renderer>();
-            internal readonly List<Renderer> Show = new List<Renderer>();
             internal LightShadows OriginalShadows;
             internal bool OriginalShadowLod;
             internal bool Suppressed;    // Unity's own shadows off for this light
@@ -279,7 +278,6 @@ namespace WiresShadows
         // (one per tier), a face per frame, and are copied in whole when done:
         // no hitch, and never a half-updated map.
         private Material _combine;
-        private CommandBuffer _staticCb;
 
 
         private const float ClothPush = 0.15f;
@@ -585,11 +583,11 @@ namespace WiresShadows
         }
 
 
-        private int _farResolution;
         private static readonly int NearCountId = Shader.PropertyToID("_WireNearCount");
-        private Camera _camera;
         private int _resolution;
         private bool _rendering;
+        // Shadow maps still waiting to be drawn (the benchmark waits for them before measuring the mod).
+        internal static bool Drawing => Instance != null && Instance._rendering;
 
         internal static int SlotCount => Mathf.Clamp(Plugin.Slots, 1, NearMax);
         internal static int FarCount => Mathf.Clamp(Plugin.FarSlots, 0, FarMax);
@@ -1810,7 +1808,7 @@ namespace WiresShadows
         private static readonly List<ParticleCaster> Particles = new List<ParticleCaster>(64);
         private static readonly Dictionary<Material, Material> Sheets = new Dictionary<Material, Material>();
         private static readonly int SheetCutId = Shader.PropertyToID("_WireSheetCut");
-        private static int s_sheetPass = -2, s_sheetGsPass = -2;
+        private static int s_sheetPass = -2;
 
         // The sprite's texture, cut hard at the material's own cutoff (sawdust chips); a solid one (a
         // stone's rock bits) whole. See-through particles (dust clouds) cast none: their shadow was
@@ -1825,7 +1823,6 @@ namespace WiresShadows
             {
                 var probe = new Material(DistanceShader);
                 s_sheetPass = probe.FindPass("WIRESHEET");
-                s_sheetGsPass = SystemInfo.supportsGeometryShaders ? probe.FindPass("WIRESHEETGS") : -1;
                 Object.Destroy(probe);
             }
             if (s_sheetPass < 0) return null;
@@ -2034,7 +2031,6 @@ namespace WiresShadows
             DropVisuals.Clear();
             PlacedDrops.Clear();
             LostDrops.Clear();
-            if (_camera != null) Destroy(_camera.gameObject);
             Instance = null;
         }
 
@@ -2156,7 +2152,6 @@ namespace WiresShadows
             _movRes = res;
             ReleaseAll();
             _resolution = res;
-            _farResolution = farRes;
             _near = slots;
             _ultra = ultra;
             far += ultra;
@@ -2203,23 +2198,7 @@ namespace WiresShadows
             System.Array.Clear(_dynActive, 0, _dynActive.Length);
             System.Array.Clear(_dynFacesLast, 0, _dynFacesLast.Length);
 
-            if (_camera == null)
-            {
-                var go = new GameObject("WireShadowCamera") { hideFlags = HideFlags.HideAndDontSave };
-                DontDestroyOnLoad(go);
-                _camera = go.AddComponent<Camera>();
-                _camera.enabled = false;
-                _camera.clearFlags = CameraClearFlags.SolidColor;
-                _camera.backgroundColor = new Color(60000f, 60000f, 0, 0);
-                _camera.renderingPath = RenderingPath.Forward;
-                _camera.allowHDR = false;
-                _camera.allowMSAA = false;
-                _camera.useOcclusionCulling = false;
-                _camera.SetReplacementShader(FrontBackShader, "RenderType");
-                _staticCb = new CommandBuffer { name = "WireUntaggedCasters" };
-                _camera.AddCommandBuffer(CameraEvent.AfterForwardOpaque, _staticCb);
-            }
-            _camera.cullingMask = StaticLayerMask = StaticMask();
+            StaticLayerMask = StaticMask(); // the layers a stored map draws (SortRoot, AddUntagged)
             return true;
         }
 
@@ -2490,13 +2469,16 @@ namespace WiresShadows
                     if (t == null || t.Light == null || t.Slot < 0 || _mapTier[t.Slot] < 0f)
                         continue;
                     int mapped = (int)_mapTier[t.Slot];
+                    // Only ever bigger. Stepping away used to re-render a map smaller after a few
+                    // seconds and walking back re-rendered it bigger again: two whole maps for the
+                    // same shadows, over and over while walking round a base. A smaller map only
+                    // saves video memory, and when that runs short ShrinkOversized still makes room.
                     bool upgrade = t.WantTier < mapped;
-                    bool downgrade = t.WantTier >= mapped + 2;
 
                     // A size-only redraw was queued but the player moved back
                     // before it started: cancel it. No geometry change has
                     // happened (any real change clears SizeOnly).
-                    if (t.Dirty && t.SizeOnly && t.Face < 0 && !upgrade && !downgrade &&
+                    if (t.Dirty && t.SizeOnly && t.Face < 0 && !upgrade &&
                         t.DoorFaces == 0 && !t.Interact)
                     {
                         t.Dirty = false;
@@ -2504,36 +2486,14 @@ namespace WiresShadows
                         Timing.Count(Timing.Part.ResizeCanceled);
                     }
 
-                    if (!downgrade) t.DownsizeSince = -1f;
-                    if (!t.Ready || t.Dirty || t.Face >= 0 ||
+                    if (!upgrade || !t.Ready || t.Dirty || t.Face >= 0 ||
                         t.PromotionTo != null || t.PromotionFrom != null)
                         continue;
-                    if (upgrade)
-                    {
-                        t.DownsizeSince = -1f;
-                        t.Dirty = true;
-                        t.DirtyAt = Time.time;
-                        t.SizeOnly = true;
-                        Timing.Count(Timing.Part.SizeChange);
-                        Timing.Count(Timing.Part.ResizeUpgrade);
-                    }
-                    else if (downgrade)
-                    {
-                        if (t.DownsizeSince < 0f)
-                        {
-                            t.DownsizeSince = Time.time;
-                            Timing.Count(Timing.Part.ResizeDeferred);
-                        }
-                        if (Time.time - t.DownsizeSince >= DownsizeStableSeconds)
-                        {
-                            t.DownsizeSince = -1f;
-                            t.Dirty = true;
-                            t.DirtyAt = Time.time;
-                            t.SizeOnly = true;
-                            Timing.Count(Timing.Part.SizeChange);
-                            Timing.Count(Timing.Part.ResizeDowngrade);
-                        }
-                    }
+                    t.Dirty = true;
+                    t.DirtyAt = Time.time;
+                    t.SizeOnly = true;
+                    Timing.Count(Timing.Part.SizeChange);
+                    Timing.Count(Timing.Part.ResizeUpgrade);
                 }
                 long tp = Timing.Start();
                 SizePoolsForWaiting();
@@ -2701,11 +2661,6 @@ namespace WiresShadows
         // A ready far map remains visible while walking. Don't replace it
         // with a costly new six-face near map for a transient viewpoint.
         private const float NearPromotionStableSeconds = 1.25f;
-        // Shorter-res maps cost six cubemap captures to build. Keep an existing
-        // sharper map through brief steps/turns instead of thrashing tiers.
-        // Does not delay upgrading map resolution, genuine scene edits, or
-        // memory-pressure ShrinkOversized (which must free scarce pool space).
-        private const float DownsizeStableSeconds = 3f;
 
         // Whether the light is near enough to get shadows at all. LightLod
         // switches lights off and shrinks their range with distance; the
@@ -2839,7 +2794,6 @@ namespace WiresShadows
             }
             t.DoorFaces = 0;
             t.DoorPrepared = false;
-            t.DownsizeSince = -1f;
             t.NearEligibleSince = -1f;
             t.SnapOnFirstMap = Loading() || Time.time < _fillUntil;
             t.Interact = false;
@@ -3457,7 +3411,7 @@ namespace WiresShadows
                     for (int f = 0; f < 6; f++) _faceSlot[sl * 6 + f] = ((draw | toClear) & (1 << f)) != 0 ? _slotUsed++ : f;
                 }
                 if (draw != 0)
-                    DrawMovingDirect(t, pl, draw, DynOrigin[sl], sl * 6, _dynFacesLast[sl] == 0, _dynFacesLast[sl] == 0 ? 0 : DynPartial[sl]);
+                    DrawMovingDirect(t, draw, DynOrigin[sl], sl * 6, _dynFacesLast[sl] == 0, _dynFacesLast[sl] == 0 ? 0 : DynPartial[sl]);
                 for (int f = 0; f < 6; f++)
                     if ((toClear & (1 << f)) != 0)
                     {
@@ -3591,7 +3545,6 @@ namespace WiresShadows
                 Graphics.ExecuteCommandBuffer(_frameCb);
             }
         }
-        private static readonly Color Empty = new Color(60000f, 0, 0, 0); // farther than any light reaches
         private Material _distMaterial;
 
 
@@ -3620,23 +3573,13 @@ namespace WiresShadows
         // Partial faces: only what moves changed. The part of the face where the moving things are now
         // and were last frame is cleared, and everything that overlaps it is drawn again (still things
         // included, so nothing is cut). The rest of the face keeps what it had. A whole face otherwise.
-        private bool DrawMovingDirect(Tracked t, int slice, int faces, Vector3 lp, int rectBase, bool firstUse, int partialFaces)
+        private bool DrawMovingDirect(Tracked t, int faces, Vector3 lp, int rectBase, bool firstUse, int partialFaces)
         {
             if (_distMaterial == null)
                 _distMaterial = new Material(DistanceShader) { hideFlags = HideFlags.HideAndDontSave };
             if (_combine == null)
                 _combine = new Material(CombineShader) { hideFlags = HideFlags.HideAndDontSave };
-            bool fullSize = t.Slot < _near;
             RenderTexture maps = _movScratch;
-            slice = 0; // the scratch cube: converted into this light's cube after
-            if (s_gsPass == -2)
-            {
-                s_gsPass = SystemInfo.supportsGeometryShaders ? _distMaterial.FindPass("WIREGS") : -1;
-                Plugin.Note("[moving] " + (s_gsPass >= 0 ? "one draw per object for all cube faces (geometry shader)" : "one draw per object per cube face"));
-            }
-            bool gs = s_gsPass >= 0;
-            GsMask.Clear();
-            GsOrder.Clear();
             // One min-blended pass per moving cubemap face.
 
             LightCasters.Clear();
@@ -3685,11 +3628,15 @@ namespace WiresShadows
                 Vector4 projectionX = vp.GetColumn(0);
                 Vector4 projectionY = vp.GetColumn(1);
                 Vector4 projectionZ = vp.GetColumn(2);
+                // A face with a character in it is redrawn whole: each caster's outline on it would
+                // only skip the few that land on no pixels, which the graphics card clips anyway.
+                bool wholeFace = (DynCharFaces[rectBase / 6] & (1 << f)) != 0;
                 for (int ci = 0; ci < LightCasters.Count; ci++)
                 {
                     if ((LightCasterFaces[ci] & (1 << f)) == 0)
                         continue;
                     int k = LightCasters[ci];
+                    if (wholeFace) { FaceRenderers.Add(k); continue; }
                     Caster c = Casters[k];
                     // FacesFor is an intentionally conservative sphere test.
                     // AABB projection may prove a renderer covers NO pixels
@@ -3703,7 +3650,8 @@ namespace WiresShadows
                     if ((LightCasterFaces[ci] & VolatileBit) != 0) vol = Union(vol, casterRect);
                 }
                 bool partial = !firstUse && (partialFaces & (1 << f)) != 0;
-                if ((DynCharFaces[rectBase / 6] & (1 << f)) != 0) { partial = false; rect = new RectInt(0, 0, size, size); }
+                // the moving part counts as the whole face too: a later partial redraw clears all of it
+                if (wholeFace) { partial = false; rect = vol = new RectInt(0, 0, size, size); }
                 RectInt lastVol = _dynVolRect[rectBase + f];
                 _dynVolRect[rectBase + f] = vol;
                 if (partial)
@@ -3760,20 +3708,6 @@ namespace WiresShadows
                     }
                     continue;
                 }
-                if (gs)
-                {
-                    // drawn below, once per object for all its faces
-                    _frameCb.DisableScissorRect();
-                    // as the per-face path's matrices end up on the GPU (SetViewProjectionMatrices
-                    // converts its projection once more)
-                    GsVP[f] = GL.GetGPUProjectionMatrix(proj, true) * view;
-                    foreach (int k in FaceRenderers)
-                    {
-                        if (!GsMask.TryGetValue(k, out int m)) GsOrder.Add(k);
-                        GsMask[k] = m | (1 << f);
-                    }
-                    continue;
-                }
                 _frameCb.SetViewProjectionMatrices(view, proj);
                 if (_benchSampling) _benchDraws += FaceRenderers.Count;
                 int counted = CountBegin(t);
@@ -3788,37 +3722,9 @@ namespace WiresShadows
                 CountEnd(counted);
                 _frameCb.DisableScissorRect();
             }
-            if (gs && GsOrder.Count > 0)
-            {
-                // Each face's part was cleared above. Without a scissor an object also redraws its
-                // unchanged pixels outside it, which min blending leaves as they were.
-                _frameCb.SetRenderTarget(new RenderTargetIdentifier(maps, 0, CubemapFace.Unknown, -1));
-                _frameCb.SetGlobalMatrixArray(FaceVPId, GsVP);
-                _frameCb.SetGlobalFloat(SliceBaseId, slice * 6);
-                int counted = CountBegin(t);
-                foreach (int k in GsOrder)
-                {
-                    Caster c = Casters[k];
-                    _frameCb.SetGlobalFloat(FaceMaskId, GsMask[k]);
-                    if (c.Sheet != null)
-                    {
-                        // its sprite pass, one draw for all its faces (none on a GPU without geometry shaders)
-                        if (s_sheetGsPass >= 0) _frameCb.DrawRenderer(c.R, c.Sheet, 0, s_sheetGsPass);
-                        continue;
-                    }
-                    if (counted >= 0) counted = CountFor(k, t, counted);
-                    for (int sub = 0; sub < c.Subs; sub++)
-                        _frameCb.DrawRenderer(c.R, _distMaterial, sub, s_gsPass);
-                }
-                CountEnd(counted);
-                if (_benchSampling) _benchDraws += GsOrder.Count;
-            }
             return true;
         }
 
-        // The one-draw-for-all-faces pass (WireShadowDistance "WIREGS"), if the bundle has it and
-        // the GPU runs geometry shaders; -1 otherwise (one draw per face, as before).
-        private static int s_gsPass = -2;
         // ---- Moving shadows batched over lights ----
         // Each frame's moving faces, from all lights, each in a scratch slot of its own, then every
         // moving object drawn once for all of them (WireShadowDistance "WIREGSBATCH"): a character in
@@ -3924,12 +3830,7 @@ namespace WiresShadows
             s_sortedCount = 0;
         }
 
-        private static readonly Matrix4x4[] GsVP = new Matrix4x4[6];
-        private static readonly Dictionary<int, int> GsMask = new Dictionary<int, int>();
-        private static readonly List<int> GsOrder = new List<int>();
-        private static readonly int FaceVPId = Shader.PropertyToID("_WireFaceVP");
-        private static readonly int FaceMaskId = Shader.PropertyToID("_WireFaceMask");
-        private static readonly int SliceBaseId = Shader.PropertyToID("_WireSliceBase");
+
 
         private static readonly List<int> FaceRenderers = new List<int>();
         private static readonly List<RectInt> FaceRects = new List<RectInt>();
@@ -4183,7 +4084,7 @@ namespace WiresShadows
         // out near the edge the light is too dim to show its shadow.
         private static bool Within(Group g, Vector3 lp, float range)
         {
-            float r = g.Character ? range * DimEdge : range + g.Radius;
+            float r = g.Character ? range : range + g.Radius;
             return (g.Center - lp).sqrMagnitude <= r * r;
         }
 
@@ -4205,7 +4106,6 @@ namespace WiresShadows
         }
 
         // Characters cast moving shadows out to the light's whole range.
-        private const float DimEdge = 1f;
         // The fainter the light where the moving things are, the less often their shadows are
         // redrawn: every frame within half its range, then every 2nd, 3rd and 4th frame out to its
         // edge (by the nearest moving thing). No source: judgement values.
@@ -4598,8 +4498,7 @@ namespace WiresShadows
         private System.Collections.IEnumerator RenderDirty()
         {
             _rendering = true;
-            int burst = 0, interactFrame = -1;
-            long interactStart = 0L;
+            int burst = 0;
             while (true)
             {
                 // one face a frame outside loading, and not in a frame that already had one or is about
@@ -4671,16 +4570,10 @@ namespace WiresShadows
                     yield return null;
                     continue;
                 }
-                // Interactions: their faces first, as many as fit in 2 ms of this frame (a face
-                // costs about 2.8 ms, measured, Timing), the rest on the next frames. The first
-                // runs inside the change itself (StartCoroutine runs to its first yield at once).
+                // Interactions: their faces first. The first runs inside the change itself
+                // (StartCoroutine runs to its first yield at once).
                 if (job.Interact)
                 {
-                    if (interactFrame != Time.frameCount)
-                    {
-                        interactFrame = Time.frameCount;
-                        interactStart = System.Diagnostics.Stopwatch.GetTimestamp();
-                    }
                     // the faces it covers, on the map you see, even if a resize is due
                     if (PatchVisible(this, job)) RenderDoorFace(job);
                     if (!job.Ready || job.DoorFaces == 0) job.Interact = false;
@@ -4759,7 +4652,7 @@ namespace WiresShadows
             int face = 0;
             while ((t.DoorFaces & (1 << face)) == 0) face++;
             t.Face = face;
-            bool success = DrawFace(t, true);
+            bool success = DrawFace(t);
             t.Face = -1;
             if (success) t.DoorFaces &= ~(1 << face);
         }
@@ -4967,9 +4860,6 @@ namespace WiresShadows
 
         // Reused per static face capture. A renderer may already be hidden by
         // vanilla or another mod; never make it visible accidentally afterward.
-        private static readonly List<Renderer> ChangedForceOff = new List<Renderer>();
-        private static readonly List<Renderer> ChangedShadowMode = new List<Renderer>();
-        private static readonly List<ShadowCastingMode> PriorShadowModes = new List<ShadowCastingMode>();
 
         // Faces drawn this frame (each about 2.8 ms): outside loading, the queue draws at most one a
         // frame, and none in a frame something else already drew one in (the immediate redraw for
@@ -4977,7 +4867,7 @@ namespace WiresShadows
         // the immediate redraw ran too: two or more faces in one frame.
         private static int s_faceFrame = -1, s_facesThisFrame;
         private static bool FaceDrawnThisFrame => s_faceFrame == Time.frameCount && s_facesThisFrame > 0;
-        private bool DrawFace(Tracked t, bool partial = false)
+        private bool DrawFace(Tracked t)
         {
             if (s_faceFrame != Time.frameCount) { s_faceFrame = Time.frameCount; s_facesThisFrame = 0; }
             s_facesThisFrame++;
@@ -4990,77 +4880,31 @@ namespace WiresShadows
             // sized maps: nothing to draw into (no render cube and none on screen)
             if (_tiered && t.RenderCube < 0 && (t.Slot < 0 || _mapTier[t.Slot] < 0f)) return false;
             long setupAt = Timing.Start();
-            _camera.transform.position = t.Center;
-            // The near plane is cut as a sphere in the shaders (with the
-            // colliders drawn inside it), so the camera starts at the light.
-            _camera.nearClipPlane = 0.05f;
             Shader.SetGlobalFloat(NearCutId, NearPlane(t));
-            _camera.farClipPlane = Mathf.Max(1f, Range(t));
             Shader.SetGlobalVector(CenterId, t.Center);
-
-            ChangedForceOff.Clear();
-            ChangedShadowMode.Clear();
-            PriorShadowModes.Clear();
-            foreach (Renderer r in t.Hide)
-            {
-                if (r == null || r.forceRenderingOff) continue;
-                r.forceRenderingOff = true;
-                ChangedForceOff.Add(r);
-            }
-            // the building preview you're holding is never part of a stored map
-            foreach (Piece g in Ghosts)
-            {
-                if (g == null) continue;
-                foreach (Renderer r in g.GetComponentsInChildren<Renderer>())
-                {
-                    if (r.forceRenderingOff) continue;
-                    r.forceRenderingOff = true;
-                    ChangedForceOff.Add(r);
-                }
-            }
-            // the game's passing effects (dust, chips, sparks) are never part of a stored map
-            Effects.RemoveAll(r => r == null);
-            foreach (Renderer r in Effects)
-            {
-                if (r.forceRenderingOff) continue;
-                r.forceRenderingOff = true;
-                ChangedForceOff.Add(r);
-            }
-            foreach (Renderer r in t.Show)
-            {
-                if (r == null || r.shadowCastingMode == ShadowCastingMode.On) continue;
-                ChangedShadowMode.Add(r);
-                PriorShadowModes.Add(r.shadowCastingMode);
-                r.shadowCastingMode = ShadowCastingMode.On;
-            }
-            // pieces the occlusion culling hides from the camera still cast here
-            Occlusion.ShowFor(t.Center, Range(t), ChangedShadowMode, PriorShadowModes);
             // The scratch face of this map's size (the render's, or the one on screen for a door's
-            // single face): the front (R) and back (G) in one camera render (OnePass).
+            // single face): the front (R) and back (G) in one go (OnePass).
             bool rendering = t.RenderCube >= 0;
             int tierNow = rendering ? t.RenderTier : (int)_mapTier[t.Slot];
             Shader.SetGlobalFloat(MapResId, TierRes(tierNow)); // the casters' inward pull (WireShadowFrontBack)
-            // Always the full-detail models: the cube camera picks LODs by its own view (wide,
-            // small target), which swapped detailed pieces (the spice rack's herbs and frame)
-            // for their simplified LOD in the cached shadow.
-            float lodBias = QualitySettings.lodBias;
-            // And no lighting work for this render: it's a forward camera, which can redo the sun's
-            // shadow cascades and set up per-pixel lights for every render, six times a map, none of
-            // it used (the replacement shader reads neither).
-            float shadowDistance = QualitySettings.shadowDistance;
-            int pixelLights = QualitySettings.pixelLightCount;
             try
             {
-                QualitySettings.lodBias = 10000f;
-                QualitySettings.shadowDistance = 0f;
-                QualitySettings.pixelLightCount = 0;
-                DrawUntaggedOnePass(t);
-
+                // No camera: the light's own casters (FindCasters) drawn straight into the face. A camera
+                // render culled the whole scene and set up a camera for every face, six times a map.
+                if (_faceCb == null) _faceCb = new CommandBuffer { name = "Wire's Shadows cached face" };
+                _faceCb.Clear();
+                _faceCb.SetRenderTarget(new RenderTargetIdentifier(_tierRG[tierNow], 0, (CubemapFace)t.Face));
+                _faceCb.ClearRenderTarget(false, true, new Color(60000f, 60000f, 0f, 0f));
+                // as the moving maps draw a face (DrawMovingDirect), the same orientation
+                float range = Mathf.Max(1f, Range(t));
+                Matrix4x4 proj = GL.GetGPUProjectionMatrix(Matrix4x4.Scale(new Vector3(-1f, -1f, 1f)) * Matrix4x4.Perspective(90f, 1f, .05f, range), true);
+                _faceCb.SetViewProjectionMatrices(FaceViewBasis[t.Face] * Matrix4x4.Translate(-t.Center), proj);
+                DrawDirect(_faceCb, t, range);
+                DrawUntaggedOnePass(_faceCb, t);
                 Timing.Stop(Timing.Part.FaceSetup, setupAt);
                 long renderAt = Timing.Start();
-                bool rendered = _camera.RenderToCubemap(_tierRG[tierNow], 1 << t.Face);
+                Graphics.ExecuteCommandBuffer(_faceCb);
                 Timing.Stop(Timing.Part.FaceCubemap, renderAt);
-                if (!rendered) return false;
                 long copyAt = Timing.Start();
                 Graphics.CopyTexture(_tierRG[tierNow], t.Face, 0, _tierFlatRG[tierNow], 0, 0);
                 Timing.Stop(Timing.Part.FaceCopy, copyAt);
@@ -5071,20 +4915,10 @@ namespace WiresShadows
             }
             finally
             {
-                long restoreAt = Timing.Start();
-                QualitySettings.lodBias = lodBias;
-                QualitySettings.shadowDistance = shadowDistance;
-                QualitySettings.pixelLightCount = pixelLights;
                 Shader.SetGlobalFloat(NearCutId, 0f);
-                _staticCb.Clear();
-                foreach (Renderer r in ChangedForceOff)
-                    if (r != null) r.forceRenderingOff = false;
-                for (int i = 0; i < ChangedShadowMode.Count; i++)
-                    if (ChangedShadowMode[i] != null)
-                        ChangedShadowMode[i].shadowCastingMode = PriorShadowModes[i];
-                Timing.Stop(Timing.Part.FaceRestore, restoreAt);
             }
         }
+        private CommandBuffer _faceCb;
 
         private void FinishMap(Tracked t)
         {
@@ -5158,28 +4992,14 @@ namespace WiresShadows
         {
             Tracked keep = t;
             t = into;
-            t.Hide.Clear();
-            t.Show.Clear();
             t.Explicit.Clear();
             t.ExplicitSub.Clear();
+            t.Direct.Clear();
+            t.DirectSub.Clear();
             t.Sheets.Clear();
             Roots.Clear();
-            // A swinging door is drawn into the moving map instead.
-            foreach (Renderer r in SwingHidden)
-                if (r != null) t.Hide.Add(r);
-            foreach (Renderer r in LogHidden)
-                if (r != null) t.Hide.Add(r);
-            // Animated machine parts live in the moving maps.
-            foreach (Renderer r in MachineHidden)
-                if (r != null) t.Hide.Add(r);
-            // Mounted visuals are often colliderless or on the "item"
-            // layer, which is absent from our static shadow camera mask.
-            // Render them directly during the static re-cache rather than
-            // excluding them and sampling them every moving-shadow frame.
-            foreach (Renderer r in StandVisuals)
-                if (r != null) t.Hide.Add(r);
-            foreach (Renderer r in DropVisuals)
-                if (r != null) t.Hide.Add(r);
+            // Mounted visuals are often colliderless or on the "item" layer: drawn on their own
+            // (AddStaticItemRenderer) rather than sampled every moving-shadow frame.
             // Dropped objects, including settled ones, never enter static
             // cubemaps. Their persistent moving-map faces cache them instead.
             foreach (StandCaster stand in Stands)
@@ -5209,15 +5029,10 @@ namespace WiresShadows
                 if (Hits[i] != null)
                     Roots.Add(Hits[i].transform.root);
             Roots.Add(t.Light.transform.root);
+            AddColliderless(t.Center, Range(t)); // what the search can't find (Scenery)
             // A light doesn't shade its own model (an item's glow its item or
             // the stand holding it), except fires meant to.
-            Component own = OwnShades(t) ? null : OwnPart(t);
-            if (own != null)
-            {
-                own.GetComponentsInChildren(false, Renderers);
-                foreach (Renderer r in Renderers)
-                    if (!r.forceRenderingOff) t.Hide.Add(r);
-            }
+            Component own = OwnShades(t) ? null : OwnPart(t); // taken out of the lists in End
             var pr = new Prep { P = t, Own = own, Center = t.Center };
             pr.Roots.AddRange(Roots);
             return pr;
@@ -5254,16 +5069,22 @@ namespace WiresShadows
                     into.Explicit.RemoveAt(i);
                     into.ExplicitSub.RemoveAt(i);
                 }
-                into.Show.RemoveAll(r => r != null && r.transform.IsChildOf(ownTransform));
+                for (int i = into.Direct.Count - 1; i >= 0; --i)
+                {
+                    Renderer r = into.Direct[i];
+                    if (r == null || !r.transform.IsChildOf(ownTransform)) continue;
+                    into.Direct.RemoveAt(i);
+                    into.DirectSub.RemoveAt(i);
+                }
             }
             FindProxies(into);
             if (into != t)
             {
                 // spread over frames into a copy: its lists replace the light's now
-                t.Hide.Clear(); t.Hide.AddRange(into.Hide);
-                t.Show.Clear(); t.Show.AddRange(into.Show);
                 t.Explicit.Clear(); t.Explicit.AddRange(into.Explicit);
                 t.ExplicitSub.Clear(); t.ExplicitSub.AddRange(into.ExplicitSub);
+                t.Direct.Clear(); t.Direct.AddRange(into.Direct);
+                t.DirectSub.Clear(); t.DirectSub.AddRange(into.DirectSub);
                 t.Sheets.Clear(); t.Sheets.AddRange(into.Sheets);
                 t.ProxyMeshes.Clear(); t.ProxyMeshes.AddRange(into.ProxyMeshes);
                 t.ProxyMatrices.Clear(); t.ProxyMatrices.AddRange(into.ProxyMatrices);
@@ -5278,6 +5099,8 @@ namespace WiresShadows
         // directly (FindCasters, and a piece placed since on its own).
         private static void SortRoot(Tracked t, Transform root)
         {
+            // the building preview you're holding is never part of a stored map
+            if (Ghosts.Count > 0 && root.GetComponent<Piece>() is Piece ghost && Ghosts.Contains(ghost)) return;
             root.GetComponentsInChildren(false, Renderers);
             // Rugs and carpets lie flat on the floor: their shadow is only
             // jagged edges on the boards beneath. Characters are drawn
@@ -5290,35 +5113,18 @@ namespace WiresShadows
             {
                 if (r.forceRenderingOff)
                     continue;
-                // a machine's moving parts (the moving maps draw them), a swinging door's and felled logs
-                if (MachineHidden.Contains(r) || SwingHidden.Contains(r) || LogHidden.Contains(r))
-                {
-                    t.Hide.Add(r);
+                // Left out: a machine's moving parts, a swinging door's and felled logs (the moving maps
+                // draw them), items (drawn on their own), rugs, see-through ones, ones set not to cast,
+                // and lower-detail models (always the full-detail one: the spice rack's herbs and frame).
+                if (MachineHidden.Contains(r) || SwingHidden.Contains(r) || LogHidden.Contains(r) ||
+                    StandVisuals.Contains(r) || DropVisuals.Contains(r) || flat || looseItem || SeeThrough(r) ||
+                    r.shadowCastingMode == ShadowCastingMode.Off || FarLod(r))
                     continue;
-                }
-                if (StandVisuals.Contains(r) || DropVisuals.Contains(r) ||
-                    flat || looseItem || SeeThrough(r))
-                    t.Hide.Add(r);
-                else if (r.shadowCastingMode == ShadowCastingMode.Off)
-                    t.Hide.Add(r);
-                // A lower-detail model: the camera never picks it (the render forces full detail,
-                // lodBias), so it needs no hiding (two native calls a face each, for most of a
-                // base's pieces); only kept out of the direct draws below.
-                else if (FarLod(r))
-                    continue;
+                // two-sided sheets drawn from both sides (DrawUntaggedOnePass)
+                if (Sheet(r) && (StaticLayerMask & (1 << r.gameObject.layer)) != 0)
+                    t.Sheets.Add(r);
                 else
-                {
-                    if (r.shadowCastingMode == ShadowCastingMode.ShadowsOnly)
-                        t.Show.Add(r);
-                    if (Sheet(r) && (StaticLayerMask & (1 << r.gameObject.layer)) != 0)
-                    {
-                        // Drawn from both sides instead (DrawUntagged).
-                        t.Hide.Add(r);
-                        t.Sheets.Add(r);
-                    }
-                    else
-                        AddUntagged(t, r);
-                }
+                    AddUntagged(t, r);
             }
         }
 
@@ -5355,10 +5161,10 @@ namespace WiresShadows
             for (int i = 0; i < Materials.Count; i++)
             {
                 Material m = Materials[i];
-                if (m == null || Tagged(m) || !CastsShadow(m))
-                    continue;
-                t.Explicit.Add(r);
-                t.ExplicitSub.Add(i);
+                if (m == null) continue;
+                // what a camera with the replacement shader drew (Opaque, TransparentCutout): all of it
+                if (Tagged(m)) { t.Direct.Add(r); t.DirectSub.Add(i); }
+                else if (CastsShadow(m)) { t.Explicit.Add(r); t.ExplicitSub.Add(i); }
             }
         }
 

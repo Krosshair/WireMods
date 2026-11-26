@@ -35,6 +35,8 @@
 //    BilinearSamplingOffsetMode off, no precision offset; except IgnoreEdgePixels on (trees striped themselves
 //    with their own shadow without it), with edges looked for on both axes; the fade-out at the
 //    end of the trace longer (FADE_PART, 40% of it, instead of 8 samples).
+//  - The ray starts lifted off its own surface along the G-buffer normal (StartDepth), as shadow
+//    maps use a normal offset, so surfaces the sun skims don't shade themselves.
 //  - The trace gets longer as the sun or moon gets low, as shadows do (_WireContactLength, from the
 //    CPU): up to 60 samples in CSMain, 124 in CSMid, 188 in CSLong. Which of them runs changes
 //    nothing in the picture, only how much is read: the length alone decides what counts.
@@ -65,6 +67,9 @@ Texture2D<half4> _WireContactNormal;    // the G-buffer's world normal (rgb * 2 
 float4 _WireContactSun;                 // xyz: toward the sun (world), w: the game's sun shadow distance (m)
 float4 _WireContactEye;                 // raw depth to eye depth: 1 / (x * raw + y), as Unity's _ZBufferParams z, w
 float _WireContactLength;               // how far the trace goes (samples, at most SAMPLE_COUNT)
+float4 _WireContactRay0;                // view ray (world, 1 m along the camera's forward) through pixel (0, 0)'s centre
+float4 _WireContactRayX;                // its change per pixel across
+float4 _WireContactRayY;                // its change per pixel down the texture
 
 // Nothing for the sun to shadow here (Bend's EarlyOutPixel, customised).
 bool EarlyOutPixel(int2 p, float depth)
@@ -74,6 +79,24 @@ bool EarlyOutPixel(int2 p, float depth)
     if (p.x < 0 || p.y < 0 || p.x >= _WireContactWave.z || p.y >= _WireContactWave.w) return true;
     float3 n = _WireContactNormal.Load(int3(p, 0)).rgb * 2 - 1;
     return dot(n, _WireContactSun.xyz) <= 0;                                       // facing away from the sun
+}
+
+// Normal offset, as the cached point light maps have: the ray starts lifted off its own surface by
+// the tracer's thickness, so where the sun skims a surface (a grass blade, a stone's facet) the ray
+// no longer runs inside it and shades it with itself. Only the start's depth can move (each pixel's
+// place on its line is fixed), so the lift is where the lifted ray, parallel to the surface, crosses
+// this pixel: thickness / |N.V| nearer the camera. Surfaces steeper than the edge test's threshold
+// cast nothing already, so |N.V| is held at that slope (no lift running off toward infinity).
+float StartDepth(int2 p, float raw)
+{
+    float3 n = normalize(_WireContactNormal.Load(int3(p, 0)).rgb * 2 - 1);
+    float3 ray = _WireContactRay0.xyz + p.x * _WireContactRayX.xyz + p.y * _WireContactRayY.xyz;
+    float alongView = rsqrt(dot(ray, ray));     // the view direction's share along the camera's forward
+    float pixel = length(_WireContactRayY.xyz); // one pixel's height per metre of depth
+    float facing = max(abs(dot(n, ray)) * alongView, pixel / BILINEAR_THRESHOLD);
+    float z = 1.0 / (_WireContactEye.x * raw + _WireContactEye.y);
+    z -= SURFACE_THICKNESS * z * alongView / facing;
+    return (1.0 / z - _WireContactEye.y) / _WireContactEye.x;
 }
 
 float DepthAt(int2 p)
@@ -209,7 +232,7 @@ void Trace(uint3 inGroupID, uint3 inGroupThreadID)
     if (skip_pixel)
         return;
 
-    float start_depth = sampling_depth[0];
+    float start_depth = StartDepth((int2)write_xy, sampling_depth[0]);
     start_depth = (start_depth - _WireContactLight.z) / sample_distance[0];
 
     int sample_index = inGroupThreadID.x + 1;

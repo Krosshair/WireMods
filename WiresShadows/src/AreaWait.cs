@@ -23,7 +23,7 @@ namespace WiresShadows
             float now = Time.time;
             if (Areas.TryGetValue(zone, out AreaState s) && now - s.At < AreaRecheck) return s.Ready;
             if (Areas.Count > 256) Areas.Clear();
-            bool ready = AreaReady(p, zone);
+            bool ready = AreaReady(zone);
             Areas[zone] = new AreaState { Ready = ready, At = now };
             return ready;
         }
@@ -37,7 +37,7 @@ namespace WiresShadows
         private static readonly List<ZDO> AreaObjects = new List<ZDO>();
         private static readonly System.Func<ZNetScene, ZDO, bool> PrefabValid =
             HarmonyLib.AccessTools.MethodDelegate<System.Func<ZNetScene, ZDO, bool>>(HarmonyLib.AccessTools.Method(typeof(ZNetScene), "IsPrefabZDOValid"));
-        private static bool AreaReady(Vector3 p, Vector2s zone)
+        private static bool AreaReady(Vector2s zone)
         {
             ZNetScene scene = ZNetScene.instance;
             if (ZDOMan.instance == null) return true;

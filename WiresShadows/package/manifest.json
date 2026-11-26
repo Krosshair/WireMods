@@ -1,7 +1,7 @@
 {
     "name": "WiresShadows",
     "description": "Better lighting: torches no longer shine through walls, with real shadows for every light you place, more natural shading, richer corners and crisp contact shadows. Faster than vanilla.",
-    "version_number": "0.5.2",
+    "version_number": "0.6.0",
     "website_url": "",
     "dependencies": []
 }

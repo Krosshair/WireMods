@@ -23,7 +23,7 @@ namespace WiresShadows
         internal static ComputeShader TiledCompute;
         private const int TileSize = 16, PerTile = 64, MaxTiled = 256, LutSize = 256;
 
-        private ComputeBuffer _tPosBuf, _tColorBuf, _tRectBuf, _tDepthBuf, _tTileBuf, _tCapture, _tDummy;
+        private ComputeBuffer _tPosBuf, _tColorBuf, _tRectBuf, _tTileBuf, _tCapture, _tDummy;
         private Material _tMat;
         private CommandBuffer _tCb, _tCaptureOn, _tCaptureOff;
         private Camera _tCam, _capCam;
@@ -32,15 +32,14 @@ namespace WiresShadows
         private readonly int[] _tWhy = new int[7]; // the one-time check: lights left out, by reason
         private float _tNextRead;
         private int _tTilesX, _tTilesY, _tKernel = -1, _tCount;
-        private readonly Vector4[] _tPos = new Vector4[MaxTiled], _tColor = new Vector4[MaxTiled], _tRect = new Vector4[MaxTiled], _tDepth = new Vector4[MaxTiled];
+        private readonly Vector4[] _tPos = new Vector4[MaxTiled], _tColor = new Vector4[MaxTiled], _tRect = new Vector4[MaxTiled];
 
 
         private static readonly int TiledPosId = Shader.PropertyToID("_WireTiledPos"), TiledCountId = Shader.PropertyToID("_WireTiledCount"),
             TiledColorId = Shader.PropertyToID("_WireTiledColor"), TileLightsId = Shader.PropertyToID("_WireTileLights"),
-            TiledRectId = Shader.PropertyToID("_WireTiledRect"), TiledDepthId = Shader.PropertyToID("_WireTiledDepth"),
-            WireScreenId = Shader.PropertyToID("_WireScreen"), WireZId = Shader.PropertyToID("_WireZ"), WireDepthId = Shader.PropertyToID("_WireDepth"),
+            TiledRectId = Shader.PropertyToID("_WireTiledRect"),
+            WireScreenId = Shader.PropertyToID("_WireScreen"), WireZId = Shader.PropertyToID("_WireZ"),
             AttenId = Shader.PropertyToID("_WireAtten"), CapturingId = Shader.PropertyToID("_WireCapturing"),
-            CaptureId = Shader.PropertyToID("_WireAttenCapture"), CameraDepthId = Shader.PropertyToID("_CameraDepthTexture"),
             SrcId = Shader.PropertyToID("_WireSrc"), DstId = Shader.PropertyToID("_WireDst"),
             CamToWorldId = Shader.PropertyToID("_WireCamToWorld"), InvProjId = Shader.PropertyToID("_WireInvProj"), CamPosId = Shader.PropertyToID("_WireCamPos");
 
@@ -74,8 +73,7 @@ namespace WiresShadows
             }
             _tPosBuf.SetData(_tPos, 0, 0, Mathf.Max(1, n));
             _tColorBuf.SetData(_tColor, 0, 0, Mathf.Max(1, n));
-            _tRectBuf.SetData(_tRect, 0, 0, Mathf.Max(1, n));
-            _tDepthBuf.SetData(_tDepth, 0, 0, Mathf.Max(1, n));
+            _tRectBuf.SetData(_tRect, 0, 0, Mathf.Max(1, n));
             Shader.SetGlobalBuffer(TiledPosId, _tPosBuf);
             Shader.SetGlobalFloat(TiledCountId, n);
 
@@ -168,8 +166,7 @@ namespace WiresShadows
                 _tPos[n] = new Vector4(p.x, p.y, p.z, 1f / (r * r));
                 _tColor[n] = UnityLightColor(l, linear, temperature, linearIntensity);
                 _tColor[n].w = slot;
-                _tRect[n] = rect;
-                _tDepth[n] = new Vector4(Mathf.Max(0f, depth - r), depth + r, 0f, 0f);
+                _tRect[n] = rect;
                 n++;
             }
             return n;
@@ -189,8 +186,7 @@ namespace WiresShadows
         {
             _tPosBuf = new ComputeBuffer(MaxTiled, 16);
             _tColorBuf = new ComputeBuffer(MaxTiled, 16);
-            _tRectBuf = new ComputeBuffer(MaxTiled, 16);
-            _tDepthBuf = new ComputeBuffer(MaxTiled, 16);
+            _tRectBuf = new ComputeBuffer(MaxTiled, 16);
             _tMat = new Material(TiledShader) { hideFlags = HideFlags.HideAndDontSave };
             _tKernel = TiledCompute.FindKernel("Cull");
             _tCb = new CommandBuffer { name = "Wire's Shadows tiled lights" };
@@ -207,8 +203,7 @@ namespace WiresShadows
             if (Time.unscaledTime < _tCheckAt) return;
             _tChecked = true;
             int tiles = _tTilesX * _tTilesY;
-            Rect first = n > 0 ? new Rect(_tRect[0].x, _tRect[0].y, _tRect[0].z - _tRect[0].x, _tRect[0].w - _tRect[0].y) : default;
-            Vector4 z0 = n > 0 ? _tDepth[0] : default;
+            Rect first = n > 0 ? new Rect(_tRect[0].x, _tRect[0].y, _tRect[0].z - _tRect[0].x, _tRect[0].w - _tRect[0].y) : default;
             string why = "known " + Lights.Count + ", left out: no light " + _tWhy[0] + ", off " + _tWhy[1] + ", not a plain point light " + _tWhy[2] +
                 ", Unity shadows on " + _tWhy[3] + ", no range or intensity " + _tWhy[4] + ", behind " + _tWhy[5] + ", off screen " + _tWhy[6] +
                 "; depth texture " + (_tAddedDepth ? "turned on by the mod" : "already on");
@@ -219,7 +214,7 @@ namespace WiresShadows
                 var v = req.GetData<uint>();
                 int lit = 0, most = 0;
                 for (int t = 0; t < tiles; t++) { int c = (int)v[t * PerTile]; if (c > 0) lit++; if (c > most) most = c; }
-                Plugin.Log.LogInfo("[tiled] check: " + n + " lights gathered, " + w + "x" + h + ", " + lit + " of " + tiles + " tiles have lights (most " + most + "); first light's box " + first + ", depth " + z0.x.ToString("F1") + "-" + z0.y.ToString("F1") + " m, hdr " + (_tCam != null && _tCam.allowHDR) + ", path " + (_tCam != null ? _tCam.actualRenderingPath.ToString() : "?"));
+                Plugin.Log.LogInfo("[tiled] check: " + n + " lights gathered, " + w + "x" + h + ", " + lit + " of " + tiles + " tiles have lights (most " + most + "); first light's box " + first + ", hdr " + (_tCam != null && _tCam.allowHDR) + ", path " + (_tCam != null ? _tCam.actualRenderingPath.ToString() : "?"));
             });
         }
 
@@ -290,8 +285,7 @@ namespace WiresShadows
             _tCb?.Release(); _tCb = null;
             _tPosBuf?.Release(); _tPosBuf = null;
             _tColorBuf?.Release(); _tColorBuf = null;
-            _tRectBuf?.Release(); _tRectBuf = null;
-            _tDepthBuf?.Release(); _tDepthBuf = null;
+            _tRectBuf?.Release(); _tRectBuf = null;
             _tTileBuf?.Release(); _tTileBuf = null;
             _tTilesX = _tTilesY = 0;
             _tChecked = false; _tCheckAt = -1f; // turned on again: checked again
