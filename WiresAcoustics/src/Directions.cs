@@ -130,7 +130,11 @@ namespace WiresAcoustics
                         // the former is handled when setting spatial width
                         // below, the latter is the path angular dispersion.
                     }
-                    if (slow && f.Placed) f.AirCutoff = AcousticFilter.AirAt(er.w);
+                    if (slow && f.Placed)
+                    {
+                        f.SetAir(er.w);
+                        Ground(f, worldSource);
+                    }
                     // a playing loop: its wall check again if you or it moved, or a building changed
                     if (f.WatchLoop || f.AnalyticActive)
                     {
@@ -186,6 +190,55 @@ namespace WiresAcoustics
         {
             return windEnabled ? WindPropagation.Correction(speed, distance,
                 exposure, groundSoftness, receiverHeight) : 0f;
+        }
+
+        // The ground between a sound and you (ISO 9613-2, table 3): over porous ground the wave
+        // bouncing off it cancels part of the direct one at 250 to 500 Hz, more the farther and the
+        // lower the two are (6 to 8 dB at 30 m over grass). Heard against how it is at the sound's
+        // full-volume distance, where the game set its level, so hard ground changes nothing and
+        // nothing changes near a sound. The ground is taken as flat at the height under you, of the
+        // kind round you (Room). Fitted as one dip (a peaking filter, Q 0.7: on average within
+        // 0.7 dB of the table's bands, at most 3.4; ISO itself states 3 dB).
+        private static readonly float[] GroundBands = { 125f, 250f, 500f, 1000f };
+        private static readonly float[] s_ground = new float[4], s_groundNear = new float[4];
+
+        private static void Ground(AcousticFilter f, Vector3 source)
+        {
+            if (!Plugin.RealDistance.Value || f.Source == null) { f.GroundDipDb = 0f; return; }
+            float hr = Room.GroundReceiverHeight, G = Room.GroundPorous;
+            float hs = Mathf.Max(0f, source.y - (Hearing.At.y - hr));
+            Vector3 flat = source - Hearing.At; flat.y = 0f;
+            float dp = flat.magnitude, near = Mathf.Max(1f, f.Source.minDistance);
+            if (dp <= near || G <= .01f) { f.GroundDipDb = 0f; return; }
+            GroundTable(hs, hr, dp, G, s_ground);
+            GroundTable(hs, hr, near, G, s_groundNear);
+            // the band dips against near the sound; centre where they're deepest
+            float deepest = 0f, weight = 0f, logSum = 0f;
+            for (int i = 0; i < 4; i++)
+            {
+                float dip = s_ground[i] - s_groundNear[i];
+                if (dip <= 0f) continue;
+                if (dip > deepest) deepest = dip;
+                weight += dip * dip;
+                logSum += dip * dip * Mathf.Log(GroundBands[i]);
+            }
+            f.GroundDipDb = deepest;
+            if (weight > 0f) f.GroundDipHz = Mathf.Exp(logSum / weight);
+        }
+
+        // As + Ar at 125, 250, 500 and 1000 Hz (dB); the middle region only touches hard ground and
+        // the bands above 1 kHz are the same at every distance.
+        private static void GroundTable(float hs, float hr, float dp, float G, float[] o)
+        {
+            for (int i = 0; i < 4; i++) o[i] = 0f;
+            for (int side = 0; side < 2; side++)
+            {
+                float h = side == 0 ? hs : hr, near = 1f - Mathf.Exp(-dp / 50f), h2 = h * h;
+                o[0] += G * (1.5f + 3f * Mathf.Exp(-.12f * (h - 5f) * (h - 5f)) * near + 5.7f * Mathf.Exp(-.09f * h2) * (1f - Mathf.Exp(-2.8e-6f * dp * dp)));
+                o[1] += G * (1.5f + 8.6f * Mathf.Exp(-.09f * h2) * near);
+                o[2] += G * (1.5f + 14f * Mathf.Exp(-.46f * h2) * near);
+                o[3] += G * (1.5f + 5f * Mathf.Exp(-.9f * h2) * near);
+            }
         }
 
         private static void Apply()

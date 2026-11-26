@@ -99,6 +99,15 @@ namespace WiresAcoustics
 
         // How loud it would reach you with nothing in the way (its fall-off, range and own level, not
         // its muffling): what decides which sound's wall check is read first (Batch).
+        // The same, once per sound per frame: a queue can hold many pieces of one sound's check, and
+        // each answer reads four of the source's settings from Unity.
+        internal static float Open(AcousticFilter f, int frame)
+        {
+            if (f.OpenFrame == frame) return f.OpenValue;
+            f.OpenFrame = frame;
+            return f.OpenValue = Open(f);
+        }
+
         internal static float Open(AcousticFilter f)
         {
             AudioSource src = f.Source;

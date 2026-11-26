@@ -10,9 +10,9 @@ namespace WiresAcoustics
     // threads: scheduled on one tick, read on the next). 64 directions, first hit each:
     //  - enclosure: share of level and upward rays that hit something (open sky and open doorways
     //    let sound out);
-    //  - mean free path: average hit distance, the room's size as sound sees it;
+    //  - mean free path: 4V/S, volume and surface from the hit distances and how squarely each is hit;
     //  - absorption: by what was hit (building material, soil, rock), escaped rays absorb fully.
-    // Decay time from Sabine's formula with mean free path l = 4V/S: RT60 = 0.161 V / (S a) = 0.04 l / a.
+    // Decay time from Eyring's formula with that path l: RT60 = 0.161 V / (-S ln(1 - a)) = 0.04 l / -ln(1 - a).
     // Drives one reverb zone that follows the listener; the game's own zones are removed while this
     // runs. Outdoors is measured the same way: open sky lets the sound out (dry), the ground is
     // what it is where each ray lands (snow, grass, forest floor, stone, water), and trunks round
@@ -84,6 +84,7 @@ namespace WiresAcoustics
         // reused by FHWA-grounded outdoor wind propagation. No new rays.
         internal static float GroundSoftness = .5f;  // hard 0, porous/grass 1
         internal static float GroundReceiverHeight = 1.5f; // effective height above local floor/terrain
+        internal static float GroundPorous = 1f;     // ISO 9613-2's G: porous ground (soil, grass, snow) 1, hard (floors, paving, rock, tamped) 0
         // What the walls round you let through of the outside, as the first wall a sound comes through
         // (amplitude; 0 in the open, where there are none). Ambience's muffled bed.
         internal static float WallBed;
@@ -428,6 +429,7 @@ namespace WiresAcoustics
             WallBed = 0f;
             GroundSoftness = .5f;
             GroundReceiverHeight = 1.5f;
+            GroundPorous = 1f;
             Portals.List.Clear();
             // Geometry can change while acoustics is disabled, with event
             // callbacks intentionally inactive. Never reuse pre-disable probes.
@@ -479,7 +481,7 @@ namespace WiresAcoustics
         // Distinguish a verified gap adjacent to measured built geometry
         // from simply looking at open sky. Only the former is a portal.
         internal static bool PortalEvidence(int i) => Opening[i] >= 0f && SealedBy[i] < 0;
-        internal static readonly float[] Dist = new float[Rays], Alpha = new float[Rays];
+        internal static readonly float[] Dist = new float[Rays], Alpha = new float[Rays], Facing = new float[Rays];
 
         private static bool s_logDue;
         private static float s_logEnclosure, s_logNearest, s_logOpen, s_logVolume;
@@ -527,7 +529,7 @@ namespace WiresAcoustics
             int roofRays = 0;
             float builtRoofRays = 0f;
             float roofGainSum = 0f, roofCutLog = 0f, roofWeight = 0f;
-            float groundSoftSum = 0f, floorHeightSum = 0f, localFloorWeight = 0f;
+            float groundSoftSum = 0f, groundPorousSum = 0f, floorHeightSum = 0f, localFloorWeight = 0f;
             // The outside through the walls round you (Ambience's muffled bed): what the walls you're
             // surrounded by let through as the first wall a sound comes through (Occlusion), averaged.
             float bedSum = 0f; int bedWalls = 0;
@@ -537,7 +539,8 @@ namespace WiresAcoustics
             for (int i = 0; i < Rays; i++)
             {
                 Picked[i] = Pick(i);
-                Hit[i] = Surface(s_from, Dirs[i], Picked[i], MaxDistance, out _, out _, out Dist[i], out Alpha[i], out Tree[i]);
+                Hit[i] = Surface(s_from, Dirs[i], Picked[i], MaxDistance, out _, out Vector3 normal, out Dist[i], out Alpha[i], out Tree[i]);
+                Facing[i] = Mathf.Abs(Vector3.Dot(Dirs[i], normal));
                 Solids.Info hitSurface = Hit[i] ? Solids.Of(Picked[i]) : null;
                 Built[i] = hitSurface != null && hitSurface.Built;
                  if (Hit[i] && Dirs[i].y < -.4f)
@@ -557,6 +560,9 @@ namespace WiresAcoustics
                             (hitSurface.Ground || hitSurface.Hm != null) ?
                             Mathf.Clamp01((Alpha[i] - .105f) / .506f) : 0f;
                         groundSoftSum += softness * w;
+                        // ISO 9613-2: ground that plants can grow in is porous; paving, water, ice and
+                        // tamped ground are hard. Nord2000 class D (uncompacted ground) and softer.
+                        if (hitSurface != null && (hitSurface.Ground || hitSurface.Hm != null) && Alpha[i] >= .4f) groundPorousSum += w;
                         floorHeightSum += Mathf.Clamp(vertical, 1.5f, 4.6f) * w;
                         localFloorWeight += w;
                     }
@@ -684,23 +690,36 @@ namespace WiresAcoustics
             float alpha = hits > 0 ? alphaSum / hits : 1f;
             float alphaEff = Mathf.Max(.01f, (alphaSum + escaped) / Rays); // open directions let the sound out
             // Critical distance (how much reverb each sound gets) from the room as measured.
-            float decayAsBuilt = Mathf.Clamp(.04f * path / alphaEff, .1f, 8f);
             // What the reverb sounds like comes from three things: how big the space is, what it's made
             // of, and how closed in you are.
             // Size: Valheim rooms are built at about twice real size and bare, so taken literally they
             // ring like halls. Heard as the real rooms they stand for: half the size (RoomScale), and
             // with the soft furnishings real homes have (LivedIn) indoors.
-            float decay = Mathf.Clamp(.04f * path * RoomScale / (alphaEff + LivedIn * enclosure), .1f, 8f);
-            float volume = 0f;
+            float volume = 0f, area = 0f;
             for (int i = 0; i < Rays; i++)
             {
+                bool solid = Hit[i] && Opening[i] < 0f;
                 float r = Opening[i] >= 0f ? Opening[i] : Hit[i] ? Dist[i] : MaxDistance;
                 float open = Hit[i] ? (Solids.Of(Picked[i])?.OpenFraction ?? 0f) : 0f;
                 // Expected volume behind partially open panel, using the
                 // same area-based aperture model as enclosure and transmission.
                 volume += (1f - open) * r * r * r + open * MaxDistance * MaxDistance * MaxDistance;
+                // The room's surface as each ray sees it: a wall seen at a slant covers more than its
+                // patch of sky (r^2 / cos). Under .2 (past 78 degrees) is held there: one grazing ray
+                // would count a whole floor (64 rays in box rooms: within 13% of the true surface on
+                // average, against 20% short taking the mean distance as the path). Openings and the
+                // open sky face you.
+                float facing = solid ? Mathf.Max(Facing[i], .2f) : 1f;
+                area += (1f - open) * r * r / facing + open * MaxDistance * MaxDistance;
             }
             volume *= 4f * Mathf.PI / (3f * Rays);
+            area *= 4f * Mathf.PI / Rays;
+            // The mean free path between reflections (4V/S, Kuttruff).
+            float freePath = area > 0f ? 4f * volume / area : path;
+            // Length by Eyring (1930), not Sabine: Sabine runs long once a space absorbs much, as an
+            // open doorway or the sky does (it counts as fully absorbing).
+            float decayAsBuilt = Mathf.Clamp(.04f * freePath / Eyring(alphaEff), .1f, 8f);
+            float decay = Mathf.Clamp(.04f * freePath * RoomScale / Eyring(alphaEff + LivedIn * enclosure), .1f, 8f);
             float critical = .057f * Mathf.Sqrt(volume / decayAsBuilt);
             float nearest = (near0 + near1 + near2) / 3f;
 
@@ -773,6 +792,8 @@ namespace WiresAcoustics
             GroundSoftness = Mathf.Lerp(GroundSoftness,
                 localFloorWeight > 0f ? groundSoftSum / localFloorWeight : .5f,
                 response);
+            GroundPorous = Mathf.Lerp(GroundPorous,
+                localFloorWeight > 0f ? groundPorousSum / localFloorWeight : 1f, response);
             GroundReceiverHeight = Mathf.Lerp(GroundReceiverHeight,
                 localFloorWeight > 0f ? floorHeightSum / localFloorWeight : 4.6f,
                 response);
@@ -837,6 +858,9 @@ namespace WiresAcoustics
             alpha = s.Absorb >= 0f ? s.Absorb : s.Hm != null ? GroundAt(s.Hm, h.point) : GroundClass[3];
             return true;
         }
+
+        // Eyring's absorption exponent, -ln(1 - a): the same as a for small a, larger as a nears 1.
+        private static float Eyring(float a) => -Mathf.Log(1f - Mathf.Clamp(a, .001f, .99f));
 
         // Furniture and clutter at 500 Hz (pyroomacoustics' material database): beds as empty
         // cloth-covered upholstered chairs, rugs, hides and furs as hairy carpet on felt, banners,

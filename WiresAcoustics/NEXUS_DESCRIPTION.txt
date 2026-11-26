@@ -31,7 +31,7 @@ Which way a sound is comes from the camera, as you see it. How far it is and wha
 [*][b]Walls by material:[/b] stone keeps out more than wood, a grate hardly anything. The next room is muffled, not silent.
 [*][b]Sound finds a way:[/b] through windows, doors and roof holes, round corners and over half walls, and it's heard from there. As you step past an edge it changes gradually.
 [*][b]Hills, rocks and trees[/b] block sound by their size: a trunk barely matters, a boulder takes the highs off, a hill takes a lot.
-[*][b]Distance and air:[/b] natural fading, travel time, Doppler, and air that takes the highs off far sounds, by the weather.
+[*][b]Distance and air:[/b] natural fading, travel time, Doppler, air that takes the highs off far sounds by the weather, and soft ground that thins distant sounds.
 [*][b]Wind:[/b] carries sound downwind, weakens it upwind, gusts and lulls, and drops to a low rumble when you're sheltered.
 [*][b]Weather and sea:[/b] rain sounds like the roof above you, the sea comes from the real shoreline, and under water everything above goes quiet.
 [*][b]Sounds come from where they're made:[/b] a swing from the weapon, a roar from the head, a chest from its lid, a fire from its flame, crafting from the station. Bigger things sound wider.
@@ -74,10 +74,11 @@ Wherever I could, the numbers come from measurements and standards instead of be
 [*][b]Edges of walls:[/b] Fresnel knife-edge diffraction ([url=https://www.itu.int/rec/R-REC-P.526]ITU-R P.526[/url]).
 [*][b]Corners, hills and obstacles:[/b] Maekawa's barrier formula as [url=https://doi.org/10.1016/0003-682X%2871%2990024-7]Kurze and Anderson[/url] wrote it (1971), capped at 20 dB as in [url=https://www.iso.org/standard/20649.html]ISO 9613-2[/url].
 [*][b]Air:[/b] [url=https://www.iso.org/standard/17426.html]ISO 9613-1[/url], with the climate of [url=https://en.wikipedia.org/wiki/Bergen]Bergen[/url] and [url=https://en.wikipedia.org/wiki/Finse]Finse[/url].
+[*][b]Ground between you and a sound:[/b] [url=https://www.iso.org/standard/20649.html]ISO 9613-2[/url], table 3.
 [*][b]Wind:[/b] the NCHRP Report 791 results in the [url=https://www.fhwa.dot.gov/Environment/noise/measurement/handbook.cfm]FHWA Noise Measurement Handbook[/url].
 [*][b]Surfaces:[/b] [url=https://sengpielaudio.com/calculator-RT60Coeff.htm]Sengpiel[/url], the [url=https://pyroomacoustics.readthedocs.io/en/stable/pyroomacoustics.materials.database.html]pyroomacoustics database[/url], [url=https://heyizhou.net/notes/absorption-coefficients]heyizhou.net[/url] (steel, and heavy wood from Vorländer); tree bark from [url=https://doi.org/10.1016/j.apacoust.2020.107328]Li et al., 2020[/url].
 [*][b]Ground:[/b] the Nord2000 classes ([url=https://www.dbaudio.com/assets/products/downloads/software/noizcalc/dbaudio-noizcalc-technical-white-paper-1.6-en.pdf]d&b NoizCalc white paper[/url]) with [url=https://doi.org/10.1016/0003-682X%2870%2990031-9]Delany and Bazley's model[/url] (1970).
-[*][b]Room reverb:[/b] [url=https://sengpielaudio.com/calculator-RT60.htm]Sabine's formula[/url] and the [url=https://strutt.arup.com/help/Electroacoustics/DCritical.htm]critical distance[/url].
+[*][b]Room reverb:[/b] [url=https://en.wikipedia.org/wiki/Reverberation]Eyring's formula[/url] with the mean free path (4V/S) and the [url=https://strutt.arup.com/help/Electroacoustics/DCritical.htm]critical distance[/url].
 [*][b]Outside sounds indoors:[/b] checked against [url=https://doi.org/10.3390/ijerph15010149]Locher et al., 2018[/url].
 [*][b]Direction round walls:[/b] the [url=https://en.wikipedia.org/wiki/Precedence_effect]precedence effect[/url] (Haas 1951, Blauert 1983).
 [*][b]HRTF:[/b] the average of 18 real people's measured ears, subjects H3 to H20 of the [url=https://www.york.ac.uk/sadie-project/database.html]SADIE II database[/url] (Armstrong, Thresh and Kearney, University of York, 2018; [url=https://doi.org/10.3390/app8112029]paper[/url]; Apache License 2.0, included). Turned into a filter and a delay per ear and direction, as [url=https://openal-soft.org]OpenAL Soft[/url] does. Of the colour both ears hear together only the broad shape is kept (see below), so Valheim still sounds like Valheim.
@@ -91,7 +92,7 @@ Not from a source (judgement values):
 [*][b]Rooms:[/b] heard at half their built size and as furnished homes (Valheim builds are about twice real size and bare), the reverb's loudness and tone, 3 dB softer first reflections and 4 dB darker reverb indoors, how much trees close a space in, what props absorb.
 [*][b]Wind:[/b] 12 dB less and down to 800 Hz in the lee of things, gusts up to 4 dB either way, up to 2 dB louder side-on and 3 dB quieter with your back to it, full wind taken as 12 m/s.
 [*][b]In the way:[/b] how much soft obstacles muffle, a wall counting once however many pieces it's built from, the two rays 8 cm beside every line, where the mod looks for a way round a wall (up to 5.5 m along it).
-[*][b]Distance:[/b] 6 dB more per doubling past the range Valheim gives a sound instead of a cut-off, fires by their range (10 m as full size).
+[*][b]Distance:[/b] 6 dB more per doubling past the range Valheim gives a sound instead of a cut-off, fires by their range (10 m as full size), the ground between you and a sound taken as flat and like the ground round you.
 [*][b]Placing:[/b] random bird and insect calls 1 m above whatever is at their spot and not on buildings within 10 m of you (moved out 4 m at a time), your unplaced sounds made placed with a near distance of at least 1 m, a door's sounds 15 cm in from its hinge.
 [*][b]HRTF:[/b] how broad that shape is (2 octaves): the narrow peaks and dips of real ears made everything sound like worse headphones.
 [*][b]Openings:[/b] how big a gap must be to count as an opening (a 10 cm sphere).

@@ -20,9 +20,6 @@ namespace WiresAcoustics
         {
             internal AcousticFilter F;
             internal Vector3 To, Listener;
-            internal float Loud; // how loud with nothing in the way, for the order (Tidy)
-            internal float Dist;   // its distance then, the tie-break (Tidy)
-            internal bool Urgent;  // a wall just added round it (Tidy)
             internal bool Under, Reverb, Corners, Probe, Started, Waiting; // Started: this check sent probes for its walls; Waiting: some still on their way
             internal int Slot, Dir, K, Version, Gen; // a probe piece: which record, which way, how many, which pass; geometry revision
             internal Vector3 At, N;             // and where on which wall
@@ -177,30 +174,35 @@ namespace WiresAcoustics
         // change. At a base of 60 to 70 sounds the machine beside you could wait behind every far
         // one, a second and more. Probe pieces waiting from an earlier batch go first.
         private static readonly HashSet<AcousticFilter> Seen = new HashSet<AcousticFilter>();
-        private static readonly System.Comparison<Req> Loudest = (a, b) =>
-        {
-            // A wall added right now has priority over speculative edge
-            // discovery from older sound checks.
-            // (Plain values worked out once in Tidy: the sort compares each request many times a frame.)
-            if (a.Urgent != b.Urgent) return a.Urgent ? -1 : 1;
-            if (a.Probe != b.Probe) return a.Probe ? -1 : 1;
-            int c = b.Loud.CompareTo(a.Loud);
-            return c != 0 ? c : a.Dist.CompareTo(b.Dist);
-        };
-        private static void Tidy()
+        // The order as one number each, and only the requests' places sorted: a request is a big
+        // struct, and sorting the list itself copied two of them per comparison, thousands of times a
+        // frame at a base (most of the mod's main-thread time). A wall added right now first, then
+        // probe pieces, then the loudest, then the nearest. Returns how many are in s_order.
+        private static double[] s_keys = new double[64];
+        private static int[] s_order = new int[64];
+
+        private static int Tidy()
         {
             Seen.Clear();
-            int keep = Queue.Count;
+            int n = 0, frame = Time.frameCount;
+            if (s_keys.Length < Queue.Count) { s_keys = new double[Queue.Count * 2]; s_order = new int[Queue.Count * 2]; }
+            // from the back: a sound queued again keeps its latest check
             for (int i = Queue.Count - 1; i >= 0; i--)
             {
                 Req r = Queue[i];
-                if (r.F == null || (!r.Probe && !Seen.Add(r.F))) { Queue[i] = Queue[--keep]; Queue.RemoveAt(keep); continue; }
-                r.Loud = Budget.Open(r.F);
-                r.Dist = r.F.LastDist;
-                r.Urgent = r.F.FastGeometryResponse;
-                Queue[i] = r;
+                AcousticFilter f = r.F;
+                if (ReferenceEquals(f, null) || !f.Alive || (!r.Probe && !Seen.Add(f))) continue;
+                // A probe piece from a pass that has since started over (the wall moved as you or the
+                // sound did): its answer would be thrown away (ReadProbe), so it isn't cast at all. These
+                // piled up into thousands at a base, all sorted again every frame.
+                if (r.Probe && (f.Records == null || r.Slot < 0 || r.Slot >= f.Records.Length ||
+                    f.Records[r.Slot].Version != r.Version || !f.Records[r.Slot].Valid)) continue;
+                s_keys[n] = (f.FastGeometryResponse ? 0.0 : r.Probe ? 1e15 : 2e15) - Budget.Open(f, frame) * 1e6 + f.LastDist;
+                s_order[n] = i;
+                n++;
             }
-            Queue.Sort(Loudest);
+            System.Array.Sort(s_keys, s_order, 0, n);
+            return n;
         }
 
         // Every frame, from the game's audio update.
@@ -221,15 +223,14 @@ namespace WiresAcoustics
             // Schedule at least one request even when the earlier audio tick
             // exceeded its 0.5 ms budget; the loop below defers the rest.
             // Otherwise dense scenes can permanently starve propagation.
-            Tidy();
-            int n = Queue.Count;
+            int n = Tidy();
             int routes = Mathf.Min(Portals.Routes, Portals.List.Count);
             int cmds = 0, m = 0, budget = ProbeBudget;
             for (int i = 0; i < n; i++)
             {
                 // out of this frame's time: the rest of the line waits for the next batch
-                if (m > 0 && Frame.Over) { for (; i < n; i++) Later.Add(Queue[i]); break; }
-                Req r = Queue[i];
+                if (m > 0 && Frame.Over) { for (; i < n; i++) Later.Add(Queue[s_order[i]]); break; }
+                Req r = Queue[s_order[i]];
                 if (r.Probe)
                 {
                     if (2 * r.K > budget && budget < ProbeBudget) { Later.Add(r); continue; }

@@ -1,3 +1,11 @@
+## 0.8.1
+
+- Improved: far sounds lose their highs the way real air takes them, at every pitch. Before, the very top (above about 12 kHz) stayed far too bright on distant sounds (up to 25 dB at 150 m).
+- Improved: a sound that is both behind a wall and far away gets the wall's muffling and the air's together, as in reality. Before, only the stronger of the two counted.
+- Added: the ground between you and a sound. Over grass, moss, snow or soil, distant sounds lose some of their low mids (about 6 dB around 250 to 500 Hz at 30 m), as over real soft ground (ISO 9613-2). Hard ground, floors and nearby sounds are unchanged.
+- Improved: how long a room rings, by Eyring's formula with the room's real average path between reflections. Rooms ring a little longer, half-open spaces a little shorter.
+- Performance: in a busy base, ordering the queue of sound checks costs a fraction of what it did (it was most of the mod's main-thread time). Wall probes that a newer check had already replaced stayed in the queue and were still cast; they're dropped now. Checks for building changes near a sound are faster, and nearby sounds use a shorter air filter.
+
 ## 0.8.0
 
 - Much better direction: which way a sound comes from is now told by the averaged ears of 18 real people (SADIE II database, University of York) instead of a model with picked values. The delay and the level difference between your ears come from those recordings, at 1,586 directions, blended smoothly as you turn.

@@ -119,7 +119,7 @@ namespace WiresAcoustics
             return new Ears(rate, Cols, n, m_heights, taps, delays);
         }
 
-        private static void Fft(double[] re, double[] im, bool inverse)
+        internal static void Fft(double[] re, double[] im, bool inverse)
         {
             int n = re.Length;
             for (int i = 1, j = 0; i < n; i++)

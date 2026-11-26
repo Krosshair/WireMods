@@ -181,7 +181,7 @@ namespace WiresAcoustics
                 f.UnderAmount = Underwater.SourceAmount(to, __instance.transform);
                 Underwater.Apply(ref gain, ref cutoff, f.UnderAmount);
                 f.DistanceGain = f.PastRange(dist);
-                f.AirCutoff = AcousticFilter.AirAt(dist);
+                f.SetAir(dist);
                 f.Set(gain, cutoff, true);
                 if (f.Active && f.Walls.Near)
                     Batch.Enqueue(f, to, under, reverb);
@@ -574,7 +574,7 @@ namespace WiresAcoustics
             foreach (AcousticFilter f in AcousticFilter.Live)
             {
                 if (f == null || !f.Voice || f.Source == null) continue;
-                if (!Plugin.VoiceChatOn.Value) { f.Hrtf = false; f.Placed = false; f.Set(1f, 22000f, false); f.AirCutoff = 22000f; continue; } // as the voice chat plays it
+                if (!Plugin.VoiceChatOn.Value) { f.Hrtf = false; f.Placed = false; f.Set(1f, 22000f, false); f.ClearAir(); continue; } // as the voice chat plays it
                 bool placed = f.Source.spatialBlend >= .5f;
                 bool on = Plugin.Hrtf.Value && placed;
                 f.Kind = AcousticFilter.Kinds.Voice;
@@ -586,7 +586,7 @@ namespace WiresAcoustics
                 }
                 f.Placed = placed;
                 Budget.Note(f, (f.transform.position - listener).magnitude);
-                if (!placed) { f.Set(1f, 22000f, false); f.AirCutoff = 22000f; continue; }
+                if (!placed) { f.Set(1f, 22000f, false); f.ClearAir(); continue; }
                 f.InWaterAmount = Underwater.SubmergedAmount(f.transform.position);
                 Batch.Enqueue(f, f.transform.position, Underwater.Muffles(f.transform.position, f.transform), false);
             }
@@ -677,15 +677,18 @@ namespace WiresAcoustics
         {
             if (since == WorldGen) return false;
             if (WorldGen - since >= Kept || since < 0) return true;
-            Vector3 ab = b - a;
-            float len2 = ab.sqrMagnitude;
+            float ax = a.x, ay = a.y, az = a.z, bx = b.x - ax, by = b.y - ay, bz = b.z - az;
+            float len2 = bx * bx + by * by + bz * bz, inv = len2 > 1e-6f ? 1f / len2 : 0f, m2 = margin * margin;
             for (int g = since + 1; g <= WorldGen; g++)
             {
                 int k = g % Kept;
                 if (ChangeAll[k]) return true;
                 Vector3 p = ChangeAt[k];
-                float t = len2 > 1e-6f ? Mathf.Clamp01(Vector3.Dot(p - a, ab) / len2) : 0f;
-                if ((a + ab * t - p).sqrMagnitude <= margin * margin) return true;
+                float px = p.x - ax, py = p.y - ay, pz = p.z - az;
+                float t = (px * bx + py * by + pz * bz) * inv;
+                if (t < 0f) t = 0f; else if (t > 1f) t = 1f;
+                float dx = bx * t - px, dy = by * t - py, dz = bz * t - pz;
+                if (dx * dx + dy * dy + dz * dz <= m2) return true;
             }
             return false;
         }

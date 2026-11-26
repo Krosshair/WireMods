@@ -198,7 +198,23 @@ namespace WiresAcoustics
         internal float OldPlayerBlend, OldPlayerMin, OldPlayerMax, OriginalAmbientPan;
         internal bool Cue;                         // a game cue, not a sound in the world (a skill level-up): left unplaced
         internal volatile float DistanceGain = 1f;
-        internal volatile float AirCutoff = 22000f;
+        internal volatile float AirCutoff = 22000f;   // the air as a cutoff: only for estimates and the debug log
+        internal volatile float AirDistance;           // metres of air the sound comes through (0: none)
+        internal volatile float GroundDipDb;           // the ground's dip (Directions.Ground), dB
+        internal volatile float GroundDipHz = 350f;    // and where it's centred
+
+        internal void SetAir(float dist)
+        {
+            AirCutoff = AirAt(dist);
+            AirDistance = Plugin.Air.Value ? dist : 0f;
+        }
+
+        internal void ClearAir()
+        {
+            AirCutoff = 22000f;
+            AirDistance = 0f;
+            GroundDipDb = 0f;
+        }
         private bool m_placed;
         internal bool Placed                       // a placed sound: gets the air (Directions)
         {
@@ -208,7 +224,7 @@ namespace WiresAcoustics
 
         // Anything for the callback to do; if not, Budget leaves it switched off (no cost at all).
         internal bool NeedsWork =>
-            m_hrtf || m_gain < .999f || m_cutoff < 20000f || m_targetGain < .999f || m_targetCutoff < 20000f || AirCutoff < 20000f ||
+            m_hrtf || m_gain < .999f || m_cutoff < 20000f || m_targetGain < .999f || m_targetCutoff < 20000f || AirDistance > 1.5f || GroundDipDb > .2f ||
             DistanceGain < .999f || DistanceGain > 1.001f || SourceLevel < .999f || SourceLevel > 1.001f || GlobalActive;
 
         internal static float AirAt(float dist)
@@ -250,6 +266,117 @@ namespace WiresAcoustics
                 t[i] = (float)lo;
             }
             return t;
+        }
+
+        // The air as a filter of its own. A low-pass can't follow it: the air's loss grows with the
+        // square of the frequency, so the cutoff alone left far sounds' top end (12-16 kHz) up to 25 dB
+        // too bright at 150 m. Instead, ISO's curve itself as a short minimum-phase filter (16 taps,
+        // within half a dB of ISO out to 150 m), every 2 m to 1 km, per weather and output rate, made
+        // on a worker the first time. It runs after the muffling, so a wall and the air add up.
+        private const int AirTaps = 16;
+        private sealed class AirFilters { internal int Rate; internal float[] Taps; internal byte[] Count; internal float Bypass; }
+        private static readonly AirFilters[] s_airFilters = new AirFilters[3];
+        private static int s_airMaking;
+        private static volatile AirFilters s_airLast;
+
+        private static AirFilters AirFiltersNow()
+        {
+            int w = AirWeather, rate = s_rate;
+            AirFilters t = s_airFilters[w];
+            if (t != null && t.Rate == rate) return s_airLast = t;
+            if (System.Threading.Interlocked.Exchange(ref s_airMaking, 1) == 0)
+                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try { s_airFilters[w] = MakeAirFilters(Temperatures[w], Humidity, rate); }
+                    finally { System.Threading.Interlocked.Exchange(ref s_airMaking, 0); }
+                });
+            // the weather's own is being made: the last one meanwhile
+            AirFilters last = s_airLast;
+            return last != null && last.Rate == rate ? last : null;
+        }
+
+        private static AirFilters MakeAirFilters(float celsius, float humidity, int rate)
+        {
+            double T = celsius + 273.15;
+            const int size = 1024, half = size / 2;
+            var re = new double[size];
+            var im = new double[size];
+            // One metre of air as a minimum-phase cepstrum. The loss in dB is the distance times the
+            // loss per metre, so every distance is this one scaled.
+            for (int k = 0; k <= half; k++)
+            {
+                double v = -AirAbsorption(k * (double)rate / size, T, humidity) / 8.686; // dB to nepers
+                re[k] = v;
+                if (k > 0 && k < half) re[size - k] = v;
+            }
+            Ears.Fft(re, im, true);
+            var metre = new double[size];
+            metre[0] = re[0]; metre[half] = re[half];
+            for (int i = 1; i < half; i++) metre[i] = 2.0 * re[i];
+            int entries = (int)(AirMax / AirStep) + 1;
+            var taps = new float[entries * AirTaps];
+            var count = new byte[entries];
+            // ISO at 1/12 octaves, 100 Hz to 16 kHz, to see how many taps each distance needs
+            int bands = 0;
+            var bandLoss = new double[90];
+            var bandCos = new double[90 * AirTaps];
+            var bandSin = new double[90 * AirTaps];
+            for (double f = 100.0; f <= 16001.0 && f < .45 * rate; f *= System.Math.Pow(2.0, 1.0 / 12.0))
+            {
+                bandLoss[bands] = AirAbsorption(f, T, humidity);
+                for (int i = 0; i < AirTaps; i++)
+                {
+                    bandCos[bands * AirTaps + i] = System.Math.Cos(2.0 * System.Math.PI * f / rate * i);
+                    bandSin[bands * AirTaps + i] = System.Math.Sin(2.0 * System.Math.PI * f / rate * i);
+                }
+                bands++;
+            }
+            var h = new double[AirTaps];
+            var best = new double[AirTaps];
+            for (int e = 0; e < entries; e++)
+            {
+                double d = e * AirStep;
+                for (int i = 0; i < size; i++) { re[i] = metre[i] * d; im[i] = 0.0; }
+                Ears.Fft(re, im, false);
+                for (int i = 0; i < size; i++) { double m = System.Math.Exp(re[i]), p = im[i]; re[i] = m * System.Math.Cos(p); im[i] = m * System.Math.Sin(p); }
+                Ears.Fft(re, im, true);
+                // Near, the air is a short filter: 4 taps are as close to ISO as 16 up to 20 m in a
+                // warm day's air (8 to 80 m). The fewest taps within 0.1 dB of what 16 manage.
+                double full = AirShape(re, AirTaps, d, bandCos, bandSin, bandLoss, bands, best);
+                int n = AirTaps;
+                for (int c = 4; c < AirTaps; c += 4)
+                    if (AirShape(re, c, d, bandCos, bandSin, bandLoss, bands, h) <= full + .1) { n = c; System.Array.Copy(h, best, AirTaps); break; }
+                if (n == AirTaps) AirShape(re, AirTaps, d, bandCos, bandSin, bandLoss, bands, best);
+                count[e] = (byte)n;
+                for (int i = 0; i < AirTaps; i++) taps[e * AirTaps + i] = (float)best[i];
+            }
+            // under half a dB at the top of what can be heard (16 kHz) or played: left alone
+            double top = AirAbsorption(System.Math.Min(16000.0, .45 * rate), T, humidity);
+            return new AirFilters { Rate = rate, Taps = taps, Count = count, Bypass = (float)(.5 / top) };
+        }
+
+        // The first n samples of the minimum-phase response, faded over the last quarter, the lows
+        // through untouched (as in the air), into h (zeros after); returns the biggest miss from ISO.
+        private static double AirShape(double[] re, int n, double d, double[] bandCos, double[] bandSin, double[] bandLoss, int bands, double[] h)
+        {
+            int fade = System.Math.Max(1, n / 4);
+            double sum = 0.0;
+            for (int i = 0; i < AirTaps; i++)
+            {
+                h[i] = i >= n ? 0.0 : re[i] * (i < n - fade ? 1.0 : .5 + .5 * System.Math.Cos(System.Math.PI * (i - (n - fade) + 1) / (fade + 1)));
+                sum += h[i];
+            }
+            double worst = 0.0;
+            for (int i = 0; i < AirTaps; i++) h[i] /= sum;
+            for (int b = 0; b < bands; b++)
+            {
+                double want = -bandLoss[b] * d;
+                if (want < -40.0) continue;
+                double c = 0.0, s = 0.0;
+                for (int i = 0; i < n; i++) { c += h[i] * bandCos[b * AirTaps + i]; s -= h[i] * bandSin[b * AirTaps + i]; }
+                worst = System.Math.Max(worst, System.Math.Abs(10.0 * System.Math.Log10(c * c + s * s) - want));
+            }
+            return worst;
         }
 
         // ISO 9613-1 (Bass et al. 1995): dB per metre at frequency f.
@@ -304,6 +431,113 @@ namespace WiresAcoustics
         private const float Stage = AcousticMath.FilterStage;
         private readonly float[] m_state = new float[2 * MaxChannels];
 
+        // The air's filter: the distance it's at glides like the muffling, the taps follow it per buffer.
+        private float m_airDist = -1f;
+        private bool m_airOn;
+        private int m_airGroups = 4; // taps in use, in fours
+        private readonly float[] m_airTaps = new float[AirTaps];
+        private readonly float[] m_airHistory = new float[MaxChannels * (AirTaps - 1)];
+        [System.ThreadStatic] private static float[] t_air;
+
+        // This buffer's air filter into m_airTaps; false when there's too little air to hear.
+        private bool AirFilter(int frames, bool restart)
+        {
+            AirFilters t = AirFiltersNow();
+            float target = AirDistance;
+            m_airDist = restart || m_airDist < 0f ? target : m_airDist + (target - m_airDist) * Glide(frames);
+            if (t == null || m_airDist <= t.Bypass) { m_airOn = false; return false; }
+            if (!m_airOn || restart) { System.Array.Clear(m_airHistory, 0, m_airHistory.Length); m_airOn = true; }
+            float x = Mathf.Min(m_airDist, AirMax) / AirStep;
+            int entries = t.Taps.Length / AirTaps, i = Mathf.Min((int)x, entries - 2);
+            float f = x - i;
+            float[] taps = t.Taps;
+            // back to front: the newest sample meets the first tap (Air)
+            for (int k = 0, a = i * AirTaps; k < AirTaps; k++, a++) m_airTaps[AirTaps - 1 - k] = taps[a] + (taps[a + AirTaps] - taps[a]) * f;
+            m_airGroups = System.Math.Max(t.Count[i], t.Count[i + 1]) / 4;
+            return true;
+        }
+
+        // The ground's dip: a peaking filter (RBJ cookbook, Q 0.7), its depth and centre gliding like
+        // the muffling. Coefficients per buffer, state per channel (transposed direct form II).
+        private float m_dipDb, m_dipHz = 350f;
+        private bool m_dipOn;
+        private readonly float[] m_dip = new float[5];
+        private readonly float[] m_dipState = new float[2 * MaxChannels];
+
+        private bool DipFilter(int frames, bool restart)
+        {
+            float db = GroundDipDb, hz = GroundDipHz, glide = Glide(frames);
+            if (restart) { m_dipDb = db; m_dipHz = hz; }
+            else { m_dipDb += (db - m_dipDb) * glide; m_dipHz = Mathf.Exp(Mathf.Lerp(Mathf.Log(m_dipHz), Mathf.Log(hz), glide)); }
+            if (m_dipDb < .2f) { m_dipOn = false; return false; }
+            if (!m_dipOn || restart) { System.Array.Clear(m_dipState, 0, m_dipState.Length); m_dipOn = true; }
+            float A = Mathf.Pow(10f, -m_dipDb / 40f), w = 2f * Mathf.PI * Mathf.Min(m_dipHz, .45f * s_rate) / s_rate;
+            float alpha = Mathf.Sin(w) / (2f * .7f), cos = Mathf.Cos(w), a0 = 1f + alpha / A;
+            m_dip[0] = (1f + alpha * A) / a0; m_dip[1] = -2f * cos / a0; m_dip[2] = (1f - alpha * A) / a0;
+            m_dip[3] = -2f * cos / a0; m_dip[4] = (1f - alpha / A) / a0;
+            return true;
+        }
+
+        private static unsafe void Dip(float* x, int stride, int frames, float* c, float* state)
+        {
+            float b0 = c[0], b1 = c[1], b2 = c[2], a1 = c[3], a2 = c[4], s1 = state[0], s2 = state[1];
+            for (int i = 0, k = 0; i < frames; i++, k += stride)
+            {
+                float v = x[k], y = b0 * v + s1;
+                s1 = b1 * v - a1 * y + s2;
+                s2 = b2 * v - a2 * y;
+                x[k] = y;
+            }
+            state[0] = s1; state[1] = s2;
+        }
+
+        // The air on one channel (every stride-th sample), carrying the last inputs over in history.
+        // Taps back to front (r), four at a time (Vector4, which Valheim's Mono runs as SIMD).
+        private static unsafe void Air(float* x, int stride, int frames, float* r, float* history, int groups)
+        {
+            const int H = AirTaps - 1;
+            float[] buffer = t_air;
+            if (buffer == null || buffer.Length < H + frames) t_air = buffer = new float[H + frames];
+            fixed (float* b = buffer)
+            {
+                for (int i = 0; i < H; i++) b[i] = history[i];
+                for (int i = 0; i < frames; i++) b[H + i] = x[i * stride];
+                System.Numerics.Vector4 r0 = *(System.Numerics.Vector4*)r, r1 = *(System.Numerics.Vector4*)(r + 4),
+                    r2 = *(System.Numerics.Vector4*)(r + 8), r3 = *(System.Numerics.Vector4*)(r + 12);
+                // the unused taps are at the front (back to front): only the last groups run
+                if (groups <= 1)
+                    for (int i = 0; i < frames; i++)
+                    {
+                        System.Numerics.Vector4 a = r3 * *(System.Numerics.Vector4*)(b + i + 12);
+                        x[i * stride] = a.X + a.Y + a.Z + a.W;
+                    }
+                else if (groups == 2)
+                    for (int i = 0; i < frames; i++)
+                    {
+                        float* p = b + i;
+                        System.Numerics.Vector4 a = r2 * *(System.Numerics.Vector4*)(p + 8) + r3 * *(System.Numerics.Vector4*)(p + 12);
+                        x[i * stride] = a.X + a.Y + a.Z + a.W;
+                    }
+                else if (groups == 3)
+                    for (int i = 0; i < frames; i++)
+                    {
+                        float* p = b + i;
+                        System.Numerics.Vector4 a = r1 * *(System.Numerics.Vector4*)(p + 4) + r2 * *(System.Numerics.Vector4*)(p + 8) +
+                            r3 * *(System.Numerics.Vector4*)(p + 12);
+                        x[i * stride] = a.X + a.Y + a.Z + a.W;
+                    }
+                else
+                    for (int i = 0; i < frames; i++)
+                    {
+                        float* p = b + i;
+                        System.Numerics.Vector4 a = r0 * *(System.Numerics.Vector4*)p + r1 * *(System.Numerics.Vector4*)(p + 4) +
+                            r2 * *(System.Numerics.Vector4*)(p + 8) + r3 * *(System.Numerics.Vector4*)(p + 12);
+                        x[i * stride] = a.X + a.Y + a.Z + a.W;
+                    }
+                for (int i = 0; i < H; i++) history[i] = b[frames + i];
+            }
+        }
+
         private readonly EarState m_ears = new EarState();
         private volatile bool m_primed;
         private float m_mono, m_side, m_mono2, m_side2;
@@ -313,6 +547,9 @@ namespace WiresAcoustics
         internal int Slot = -1;
         internal bool Queued;
         private bool m_alive;
+        internal bool Alive => m_alive;            // not destroyed: a plain flag, no call into Unity
+        internal int OpenFrame = -1;               // Budget.Open's last answer and its frame
+        internal float OpenValue;
         private int m_liveIndex = -1;
         internal bool Tracked => m_alive && (m_hrtf || m_placed);
 
@@ -423,7 +660,7 @@ namespace WiresAcoustics
                 if (f == null) continue;
                 f.Set(1f, 22000f, false);
                 f.DistanceGain = 1f;
-                f.AirCutoff = 22000f;
+                f.ClearAir();
                 f.Placed = false;
                 f.RouteSpread = 0f;
                 f.AnalyticActive = false;
@@ -652,13 +889,14 @@ namespace WiresAcoustics
             float tc = m_targetCutoff;
             float gc = GlobalCutoff;
             if (gc < tc) tc = gc;
-            if (AirCutoff < tc) tc = AirCutoff;
+            bool restartAir = false;
             if (m_snap)
             {
                 m_snap = false;
                 m_gain = tg; m_cutoff = tc;
                 for (int c = 0; c < m_state.Length; c++) m_state[c] = 0f;
                 m_primed = false;
+                restartAir = true;
             }
             if (channels <= 0 || channels > MaxChannels) return;
             if (m_hrtf && channels == 2)
@@ -666,14 +904,15 @@ namespace WiresAcoustics
                 Spatialize(data, channels, tg, tc);
                 return;
             }
+            int frames = data.Length / channels;
+            bool air = AirFilter(frames, restartAir), dip = DipFilter(frames, restartAir);
             m_primed = false;
-            if (m_gain >= .999f && tg >= .999f && m_cutoff >= 20000f && tc >= 20000f)
+            if (!air && !dip && m_gain >= .999f && tg >= .999f && m_cutoff >= 20000f && tc >= 20000f)
             {
                 // Untouched; the filter state follows the signal so closing it later doesn't click.
                 for (int c = 0; c < channels && data.Length >= channels; c++) m_state[c] = m_state[c + MaxChannels] = data[data.Length - channels + c];
                 return;
             }
-            int frames = data.Length / channels;
             SmoothOcclusion(frames, tg, tc, out float g0, out float g1, out float a);
             float inv = 1f / frames, dg = g1 - g0;
             // Through pointers: Mono checks the bounds of every array access, twice per sample per
@@ -692,6 +931,12 @@ namespace WiresAcoustics
                             d[k] = y * g;
                         }
                     }
+                    if (air)
+                        fixed (float* h = m_airTaps, history = m_airHistory)
+                            for (int c = 0; c < channels; c++) Air(d + c, channels, frames, h, history + c * (AirTaps - 1), m_airGroups);
+                    if (dip)
+                        fixed (float* co = m_dip, ds = m_dipState)
+                            for (int c = 0; c < channels; c++) Dip(d + c, channels, frames, co, ds + 2 * c);
                 }
             }
         }
@@ -762,6 +1007,18 @@ namespace WiresAcoustics
                     side2 += aOcc * (sideS - side2);
                     sides[i] = side2 * g;
                 }
+                if (AirFilter(frames, start))
+                    fixed (float* h = m_airTaps, history = m_airHistory)
+                    {
+                        Air(monos, 1, frames, h, history, m_airGroups);
+                        if (stereo) Air(sides, 1, frames, h, history + AirTaps - 1, m_airGroups);
+                    }
+                if (DipFilter(frames, start))
+                    fixed (float* co = m_dip, ds = m_dipState)
+                    {
+                        Dip(monos, 1, frames, co, ds);
+                        if (stereo) Dip(sides, 1, frames, co, ds + 2);
+                    }
                 // a wide source gets less direction
                 m_ears.Process(ears, monos, stereo ? sides : null, data, frames,
                     Mathf.Clamp(m_dx, -1f, 1f), Mathf.Clamp(m_dy, -1f, 1f), Mathf.Clamp(m_dz, -1f, 1f),
