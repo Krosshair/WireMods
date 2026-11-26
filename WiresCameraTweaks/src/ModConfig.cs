@@ -23,6 +23,14 @@ namespace WiresShakeItUp
         internal static ConfigEntry<bool> CollisionAutoZoomEnabled;
         internal static ConfigEntry<float> CollisionAutoZoomResponse;
 
+        internal static ConfigEntry<bool> DofEnabled;
+        public enum DofMode { Vanilla, LensBlur }
+        internal static ConfigEntry<DofMode> DofQuality;
+        internal static ConfigEntry<float> DofBlurInTime;
+        internal static ConfigEntry<float> DofClearTime;
+        internal static ConfigEntry<bool> DofNearBlur;
+        internal static ConfigEntry<float> DofAperture;
+
         internal static void Bind(ConfigFile file)
         {
             // Keep the original Shake It Up values when moving into Camera Tweaks.
@@ -163,6 +171,28 @@ namespace WiresShakeItUp
                 file, "2 - Smooth Zoom", "Automatic Zoom Response",
                 14f, 4f, 35f,
                 "How quickly collision-forced camera distance eases back outward.");
+
+            DofEnabled = file.Bind(
+                "3 - Depth of Field", "Enabled", true,
+                "Depth of Field rework. Needs Valheim's Depth of Field graphics setting on.");
+            DofQuality = file.Bind(
+                "3 - Depth of Field", "Quality", DofMode.LensBlur,
+                "LensBlur: lens-like focus and bokeh blur. Vanilla: Valheim's own blur with smoother focus.");
+            DofBlurInTime = Float(file, "3 - Depth of Field", "Blur In Time",
+                0.22f, 0.05f, 3f,
+                "Seconds for the background to blur when you look at something closer.");
+            DofClearTime = Float(file, "3 - Depth of Field", "Clear Time",
+                0.22f, 0.05f, 3f,
+                "Seconds for the blur to clear when you look further away.");
+            DofNearBlur = file.Bind(
+                "3 - Depth of Field", "Near Blur", true,
+                "Blur things between the camera and your character, like grass or a branch right at the lens.");
+            DofAperture = Float(file, "3 - Depth of Field", "Aperture",
+                30f, 1f, 150f,
+                "Lens opening in millimetres. 30 is about a 50 mm f/1.8 photo lens. Higher blurs more.");
+
+            DofEnabled.SettingChanged += delegate { LensEffect.Instance?.Refresh(); };
+            DofQuality.SettingChanged += delegate { LensEffect.Instance?.Refresh(); };
 
             Hook(ShakeEnabled);
             Hook(OverallStrength);

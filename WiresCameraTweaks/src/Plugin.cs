@@ -11,14 +11,16 @@ namespace WiresShakeItUp
         // configuration carries over into Camera Tweaks.
         public const string Guid = "wire.valheim.shakeitup";
         public const string Name = "Wire's Camera Tweaks";
-        public const string Version = "0.1.0";
+        public const string Version = "0.2.0";
 
         internal static Plugin Instance;
+        internal static BepInEx.Logging.ManualLogSource Log;
         private Harmony _harmony;
 
         private void Awake()
         {
             Instance = this;
+            Log = Logger;
             ModConfig.Bind(Config);
             _harmony = new Harmony(Guid);
             _harmony.PatchAll();
