@@ -1,6 +1,6 @@
 # Wire's Acoustics: context
 
-0.8.1 ready to publish (2026-11-26; 0.8.0 released 2026-11-25). Ray traced sound: reverb from the real room, muffling by material, sound through openings, distance, air, ground, wind, HRTF.
+Released 0.8.2 (2026-11-26): water muffling removed (Underwater.cs, the Under water setting, and the filter's global gain/cutoff stage only it used; code in `_removed/NO_UNDERWATER_20261126`). Bonemaws went silent in water (reported on Discord). Ray traced sound: reverb from the real room, muffling by material, sound through openings, distance, air, ground, wind, HRTF.
 
 ## Architecture
 - `Filter.cs` (AcousticFilter): per-sound OnAudioFilterRead on the audio thread: gain + 2-stage low-pass (occlusion, global), air FIR, ground dip, then `Spatialize` (HRTF) on stereo output only. Budget switches the callback's work on/off (a flag, never component enable: that stalls Unity's mixer).
@@ -28,6 +28,6 @@
 - Printf in bash eats `\v` / `\E` in Windows paths: write .cmd files with the Write tool.
 
 ## Next steps
-- Publish 0.8.1 (he runs it). Then re-capture WiresProfiler at the Black Forest base: Acoustics was 1.21 ms main thread before the Tidy fix.
+- Re-capture WiresProfiler at the Black Forest base: Acoustics was 1.21 ms main thread before the Tidy fix.
 - Not built: forest reverb (Koli, Shelley et al. DAFx 2013: RT 1.3-1.7 s at 1 kHz, dry; OpenAIR impulse responses behind an expired certificate).
 - Possible later: ambience through rain's energy model (his "own update").
