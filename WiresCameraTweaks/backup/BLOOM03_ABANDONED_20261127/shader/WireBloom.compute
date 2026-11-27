@@ -1,0 +1,136 @@
+// Wire's Camera Tweaks: convolution bloom through an FFT.
+// The bloom source (downsampled, padded with black to twice its size so nothing
+// wraps around) is transformed, multiplied by the spectrum of the bloom kernel
+// and transformed back. Each texel holds two complex numbers: (R + iG, B + i0).
+// The kernel is real, so that packing doesn't mix the channels.
+#pragma kernel Pad
+#pragma kernel KernelGen
+#pragma kernel RowForward
+#pragma kernel RowInverse
+#pragma kernel ColForward
+#pragma kernel ColInverse
+#pragma kernel Multiply
+#pragma kernel Output
+
+#define WIDTH 2048
+#define HEIGHT 1024
+#define PI 3.14159265
+
+Texture2D<float4> _Source;      // downsampled scene
+RWTexture2D<float4> _Buffer;    // working spectrum
+Texture2D<float4> _Kernel;      // kernel spectrum
+RWTexture2D<float4> _Result;    // bloom out
+int2 _Size;                     // scene size inside the buffer
+float _Strength;
+
+[numthreads(8, 8, 1)]
+void Pad(uint3 id : SV_DispatchThreadID)
+{
+    float3 c = 0;
+    if (all(id.xy < (uint2)_Size))
+        c = _Source[id.xy].rgb;
+    _Buffer[id.xy] = float4(c.r, c.g, c.b, 0);
+}
+
+// Valheim's bloom spreads light over its blur levels, each a texture half the
+// size of the one before (4 screen pixels per texel for the first) and each
+// adding the same amount. The kernel is that as one smooth shape: a Gaussian
+// per level, as wide as the level's texel, equal weight each.
+int _Levels;
+float _TexelPx;   // screen pixels per texel of this buffer
+
+[numthreads(8, 8, 1)]
+void KernelGen(uint3 id : SV_DispatchThreadID)
+{
+    int2 d = int2(id.xy);
+    if (d.x > WIDTH / 2) d.x -= WIDTH;
+    if (d.y > HEIGHT / 2) d.y -= HEIGHT;
+    float r2 = dot(float2(d), float2(d));
+    float k = 0;
+    for (int i = 0; i < _Levels; i++)
+    {
+        float sigma = max(4.0 * exp2(i) / _TexelPx, 0.5);
+        k += exp(-r2 / (2 * sigma * sigma)) / (2 * PI * sigma * sigma);
+    }
+    _Buffer[id.xy] = float4(k, 0, 0, 0);
+}
+
+// Two complex numbers times one.
+float4 Mul(float4 a, float2 w)
+{
+    return float4(a.x * w.x - a.y * w.y, a.x * w.y + a.y * w.x,
+                  a.z * w.x - a.w * w.y, a.z * w.y + a.w * w.x);
+}
+
+uint BitReverse(uint v, uint bits)
+{
+    return reversebits(v) >> (32 - bits);
+}
+
+// In-place radix-2 FFT of one line in shared memory (2048 x float4 = 32 KB, the limit).
+groupshared float4 s_line[WIDTH];
+
+void Fft(uint t, uint len, uint bits, uint threads, float sign)
+{
+    for (uint span = 1; span < len; span <<= 1)
+    {
+        GroupMemoryBarrierWithGroupSync();
+        for (uint k = t; k < len / 2; k += threads)
+        {
+            uint j = k & (span - 1);
+            uint i0 = ((k - j) << 1) + j;
+            uint i1 = i0 + span;
+            float ang = sign * PI * j / span;
+            float4 a = s_line[i0];
+            float4 b = Mul(s_line[i1], float2(cos(ang), sin(ang)));
+            s_line[i0] = a + b;
+            s_line[i1] = a - b;
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+}
+
+void Row(uint t, uint y, float sign)
+{
+    for (uint x = t; x < WIDTH; x += 1024)
+        s_line[BitReverse(x, 11)] = _Buffer[uint2(x, y)];
+    Fft(t, WIDTH, 11, 1024, sign);
+    for (uint x2 = t; x2 < WIDTH; x2 += 1024)
+        _Buffer[uint2(x2, y)] = s_line[x2];
+}
+
+void Col(uint t, uint x, float sign)
+{
+    for (uint y = t; y < HEIGHT; y += 512)
+        s_line[BitReverse(y, 10)] = _Buffer[uint2(x, y)];
+    Fft(t, HEIGHT, 10, 512, sign);
+    for (uint y2 = t; y2 < HEIGHT; y2 += 512)
+        _Buffer[uint2(x, y2)] = s_line[y2];
+}
+
+[numthreads(1024, 1, 1)]
+void RowForward(uint3 g : SV_GroupID, uint3 t : SV_GroupThreadID) { Row(t.x, g.x, -1); }
+[numthreads(1024, 1, 1)]
+void RowInverse(uint3 g : SV_GroupID, uint3 t : SV_GroupThreadID) { Row(t.x, g.x, 1); }
+[numthreads(512, 1, 1)]
+void ColForward(uint3 g : SV_GroupID, uint3 t : SV_GroupThreadID) { Col(t.x, g.x, -1); }
+[numthreads(512, 1, 1)]
+void ColInverse(uint3 g : SV_GroupID, uint3 t : SV_GroupThreadID) { Col(t.x, g.x, 1); }
+
+[numthreads(8, 8, 1)]
+void Multiply(uint3 id : SV_DispatchThreadID)
+{
+    // The kernel's DC term is its sum: dividing by it makes the glare carry
+    // exactly _Strength of the light. 1/(W*H) undoes the forward transform.
+    float4 k = _Kernel[id.xy];
+    float norm = _Strength / (_Kernel[uint2(0, 0)].x * WIDTH * HEIGHT);
+    _Buffer[id.xy] = Mul(_Buffer[id.xy], k.xy * norm);
+}
+
+[numthreads(8, 8, 1)]
+void Output(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id.xy >= (uint2)_Size)) return;
+    float4 v = _Buffer[id.xy];
+    _Result[id.xy] = float4(max(0, v.xyz), 1);
+}

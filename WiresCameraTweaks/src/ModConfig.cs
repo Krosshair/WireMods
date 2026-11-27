@@ -30,6 +30,9 @@ namespace WiresShakeItUp
         internal static ConfigEntry<float> DofClearTime;
         internal static ConfigEntry<bool> DofNearBlur;
         internal static ConfigEntry<float> DofAperture;
+        internal static ConfigEntry<bool> WideLensEnabled;
+        internal static ConfigEntry<float> WideLensFov;
+        internal static ConfigEntry<float> WideLensBarrel;
 
         internal static void Bind(ConfigFile file)
         {
@@ -190,6 +193,13 @@ namespace WiresShakeItUp
             DofAperture = Float(file, "3 - Depth of Field", "Aperture",
                 30f, 1f, 150f,
                 "Lens opening in millimetres. 30 is about a 50 mm f/1.8 photo lens. Higher blurs more.");
+            WideLensEnabled = file.Bind("4 - Wide Lens", "Enabled", false,
+                "Wider field of view with barrel distortion.");
+            WideLensFov = Float(file, "4 - Wide Lens", "Extra FOV", 10f, 0f, 30f,
+                "Degrees added to Valheim's field of view.");
+            WideLensBarrel = Float(file, "4 - Wide Lens", "Barrel Distortion", 1f, 0f, 2f,
+                "Lens curvature. 1 magnifies the centre about 6% while the edges stay put.");
+            WideLensEnabled.SettingChanged += delegate { LensEffect.Instance?.Refresh(); };
 
             DofEnabled.SettingChanged += delegate { LensEffect.Instance?.Refresh(); };
             DofQuality.SettingChanged += delegate { LensEffect.Instance?.Refresh(); };

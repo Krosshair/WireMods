@@ -15,4 +15,7 @@ GUID wire.valheim.shakeitup (kept from Shake It Up for config carry-over). Names
 
 ## Next
 - Helldivers 2 DoF unknown (packed shaders).
-- Barrel distortion tried, removed: doesn't fit Valheim.
+- Barrel distortion back as opt-in Wide Lens (0.2.1, WideLens.cs + WireLens pass 5): Teardown curve, amount slider, plus FOV added in a GameCamera.UpdateCamera postfix (both cameras). Off by default.
+- FFT convolution bloom tried 2026-11-27, dropped: Spencer PSF looked wrong (glints too hard, fire too weak), matching vanilla's level layout just looked like vanilla. Code in backup/BLOOM03_ABANDONED_20261127 and _removed/FftBloom_20261127.cs.
+- Menu/aim DoF states (0.2.1) tried 2026-11-27, dropped. Code in backup/DOFSTATES_ABANDONED_20261127.
+- Dynamic camera (speed/fall/tired FOV, landing dip, follow) tried 2026-11-27, dropped. Code in backup/DYNCAM_ABANDONED_20261127.

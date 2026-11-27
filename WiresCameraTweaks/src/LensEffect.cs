@@ -43,6 +43,7 @@ namespace WiresShakeItUp
         private static readonly int FarCapId = Shader.PropertyToID("_WireFarCap");
         private static readonly int CocScaleId = Shader.PropertyToID("_WireCocScale");
         private static readonly int MaxRadiusId = Shader.PropertyToID("_WireMaxRadius");
+        private static readonly int BarrelId = Shader.PropertyToID("_WireBarrel");
 
         internal static bool Ready => LoadMaterial() != null;
 
@@ -93,7 +94,7 @@ namespace WiresShakeItUp
             if (_vanillaDof != null)
                 _vanillaDof.enabled = _vanillaWanted && !_dofOn;
             _lastTime = -1f;
-            enabled = _dofOn;
+            enabled = _dofOn || (ready && WideLens.On);
         }
 
         private void Awake()
@@ -198,7 +199,17 @@ namespace WiresShakeItUp
                 m.SetTexture(BlurId, blur);
             }
 
-            Graphics.Blit(src, dst, m, 4);
+            bool barrel = WideLens.On;
+            m.SetFloat(BarrelId, ModConfig.WideLensBarrel.Value);
+            if (_dofOn && barrel)
+            {
+                RenderTexture combined = RenderTexture.GetTemporary(src.width, src.height, 0, src.format);
+                Graphics.Blit(src, combined, m, 4);
+                Graphics.Blit(combined, dst, m, 5);
+                RenderTexture.ReleaseTemporary(combined);
+            }
+            else if (_dofOn) Graphics.Blit(src, dst, m, 4);
+            else Graphics.Blit(src, dst, m, 5);
             if (blur != null) RenderTexture.ReleaseTemporary(blur);
         }
 

@@ -1,0 +1,21 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.0.75f1
+CRC: 496919777
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: 284e4017933ad278bbb9bcc43bcbb04a
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: bb8521372c98e74594d3b7eb1b0a7a88
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: 743077e1658251e031831fc83ba41b18
+HashAppended: 0
+ClassTypes:
+- Class: 48
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Assets/Shaders/WireLens.shader
+Dependencies: []

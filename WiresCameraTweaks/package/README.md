@@ -28,6 +28,10 @@ With Lens Blur:
 * **Focus from an area,** not a single point, so a branch crossing the centre of the screen doesn't make it jump. Your character is never the focus and never blurs.
 * **Near blur** for grass or a branch between the camera and your character.
 
+### Wide Lens (optional)
+
+* **Wider view with barrel distortion:** more of the world fits on screen, while the centre is magnified a little and the edges stay where they were. Off by default.
+
 ### Camera shake
 
 * **Weaker overall.** Short impacts keep a punchy kick, bigger events turn into a lower, sustained rumble with subtle secondary motion.
@@ -46,6 +50,12 @@ With Lens Blur:
 * **Aperture:** lens opening in millimetres for Lens Blur. 30 is about a 50 mm f/1.8 photo lens. Higher blurs more.
 * **Blur In Time / Clear Time:** how fast focus follows what you look at.
 * **Near Blur:** blur things between the camera and your character.
+
+### 4 - Wide Lens
+
+* **Enabled:** turns on the wider view and the distortion together.
+* **Extra FOV:** degrees added to Valheim's field of view (default 10).
+* **Barrel Distortion:** how strong the curvature is. 1 magnifies the centre about 6%.
 
 Shake and zoom strengths are under **1 - Shake** and **2 - Smooth Zoom**.
 

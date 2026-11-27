@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+* Added Wide Lens (off by default): a wider field of view with barrel distortion, which magnifies the centre a little and keeps the edges where they were. Config "4 - Wide Lens": Enabled, Extra FOV (default +10), Barrel Distortion.
+
 ## 0.2.0
 
 * Added a lens Depth of Field, used while the in-game Depth of Field setting is on. Blur works like a real lens: looking at something close softens what's behind it, looking into the distance blurs nothing.

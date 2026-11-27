@@ -1,0 +1,91 @@
+[size=6][b]Wire's Camera Tweaks[/b][/size]
+
+[b]A camera that feels like a lens. Depth of field that blurs like a real one, bloom shaped like real glare, shake that hits without wobbling, and zoom that glides.[/b]
+
+In short:
+
+[list]
+[*][b]Depth of field like a camera.[/b] Look at something close and what's behind it softens into round bokeh. Look into the distance and nothing blurs.
+[*][b]It never gets in your way.[/b] Focus follows what you look at and ignores your own character.
+[*][b]Lights glow like they do to your eyes.[/b] A bright core with a soft halo that fades out far across the screen.
+[*][b]Shake with weight.[/b] Short hits kick, big events settle into a low rumble instead of a wobble.
+[*][b]Smooth zoom.[/b] The mouse wheel glides, and the camera eases back out after a wall pushed it in.
+[/list]
+
+Focus on the table: what's right at the lens melts into the foreground, the room behind it softens, and the bright spots turn into bokeh.
+
+[img]https://raw.githubusercontent.com/Krosshair/WireMods/main/WiresCameraTweaks/images/lensblur.jpg[/img]
+
+[size=5][b]Features[/b][/size]
+
+[size=4][b]Depth of field[/b][/size]
+
+Needs Valheim's Depth of Field graphics setting on. Two qualities:
+
+[list]
+[*][b]Vanilla:[/b] Valheim's blur with smoother focus. Focus moves the same at any frame rate instead of snapping at high FPS and dragging at low.
+[*][b]Lens Blur (default):[/b] the way games like Call of Duty do bokeh. Blurred foreground spreads softly over what's behind it, the background never bleeds over something sharp, and bright highlights become round discs.
+[/list]
+
+With Lens Blur:
+
+[list]
+[*][b]Focus like a real lens:[/b] how blurry something is depends on how much closer or further it is than what you look at, so far views stay crisp and close-ups get depth.
+[*][b]Focus from an area,[/b] not a single point, so a branch crossing the centre of the screen doesn't make it jump. Your character is never the focus and never blurs.
+[*][b]Near blur[/b] for grass or a branch between the camera and your character.
+[/list]
+
+[size=4][b]Bloom[/b][/size]
+
+Needs Valheim's Bloom graphics setting on.
+
+[list]
+[*][b]Convolution bloom:[/b] bright light spreads in the shape of real glare in the eye (Spencer et al. 1995, "Physically-Based Glare Effects"), across the whole screen. Done with an FFT on the graphics card.
+[*][b]Same amount of glow[/b] as Valheim's bloom, from the same bright parts of the picture. Only the shape changes.
+[*][b]Lens dirt[/b] still shows, as strong as before.
+[/list]
+
+[size=4][b]Camera shake[/b][/size]
+
+[list]
+[*][b]Weaker overall.[/b] Short impacts keep a punchy kick, bigger events turn into a lower, sustained rumble with subtle secondary motion.
+[*][b]Directional impacts:[/b] hits push the camera the way they came from.
+[/list]
+
+[size=4][b]Smooth zoom[/b][/size]
+
+[list]
+[*][b]Mouse wheel and controller zoom glide[/b] to where you asked.
+[*][b]After a wall pushes the camera in,[/b] it eases back out instead of snapping.
+[/list]
+
+[size=5][b]Settings[/b][/size]
+
+[size=4][b]3 - Depth of Field[/b][/size]
+
+[list]
+[*][b]Quality:[/b] Vanilla or LensBlur.
+[*][b]Aperture:[/b] lens opening in millimetres for Lens Blur. 30 is about a 50 mm f/1.8 photo lens. Higher blurs more.
+[*][b]Blur In Time / Clear Time:[/b] how fast focus follows what you look at.
+[*][b]Near Blur:[/b] blur things between the camera and your character.
+[/list]
+
+[size=4][b]4 - Bloom[/b][/size]
+
+[list]
+[*][b]Intensity:[/b] how much light glows. 1 is as much as Valheim's bloom.
+[/list]
+
+Shake and zoom strengths are under [b]1 - Shake[/b] and [b]2 - Smooth Zoom[/b].
+
+[size=5][b]Performance[/b][/size]
+
+Lens Blur and the bloom run on the graphics card. Lens Blur is barely measurable on an RTX 4090. On the processor it costs less than Valheim's focus check, which it replaces.
+
+[size=5][b]Compatibility[/b][/size]
+
+Works with RenoDX: its HDR highlights make the bokeh brighter, and it tone maps the new bloom like the old one.
+
+Disclaimer: development is AI assisted. Not fully human or AI.
+
+Donations: [url=https://ko-fi.com/krosshair]ko-fi.com/krosshair[/url]

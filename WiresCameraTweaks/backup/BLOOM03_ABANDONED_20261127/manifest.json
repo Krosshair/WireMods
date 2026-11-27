@@ -1,0 +1,7 @@
+{
+    "name": "WiresCameraTweaks",
+    "description": "Lens blur depth of field, convolution bloom, refined camera shake and smooth zoom.",
+    "version_number": "0.2.0",
+    "website_url": "",
+    "dependencies": []
+}
